@@ -15,6 +15,9 @@ data/analytical/*
 !data/processed/.gitkeep
 !data/analytical/.gitkeep
 
+# Documentos de referência (PDFs das aulas — arquivos grandes, não versionados)
+docs/referencias/
+
 # Power BI cache
 *.pbix.bak
 

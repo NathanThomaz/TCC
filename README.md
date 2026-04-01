@@ -1,94 +1,103 @@
 # TCC — Arquitetura Lakehouse para E-commerce
 
-**Instituição:** UnilaSalle  
-**Autor:** Nathan Thomaz  
+**Instituição:** Centro Universitário La Salle (Unilasalle)
+**Autor:** Nathan Thomaz
+**Curso:** Sistemas de Informação
 
-## Pergunta de Pesquisa
+---
 
-Como a arquitetura Lakehouse com camadas Bronze, Silver e Gold aplicada a dados de e-commerce pode oferecer uma alternativa escalável e de baixo custo ao Data Warehouse tradicional, sem abrir mão da qualidade analítica para geração de indicadores de negócio?
+## Sobre o Projeto
 
-## Visão Geral
+Este trabalho investiga a viabilidade da arquitetura Lakehouse como alternativa ao
+Data Warehouse tradicional no contexto do comércio eletrônico. A implementação
+utiliza as camadas Bronze, Silver e Gold sobre Delta Lake com modelagem dimensional
+Star Schema na camada analítica.
 
-Este projeto implementa uma arquitetura Lakehouse completa para análise de dados de e-commerce, com modelagem dimensional Star Schema na camada Gold, comparando a abordagem com o Data Warehouse tradicional em termos de custo, escalabilidade e qualidade analítica.
+**Pergunta de pesquisa:**
+Como a arquitetura Lakehouse com camadas Bronze, Silver e Gold aplicada a dados de
+e-commerce pode oferecer uma alternativa escalável e de baixo custo ao Data Warehouse
+tradicional, sem abrir mão da qualidade analítica para geração de indicadores de negócio?
+
+---
 
 ## Tecnologias
 
-| Componente | Tecnologia |
-|---|---|
-| Linguagem | Python |
-| Processamento | Apache Spark |
-| Armazenamento | Delta Lake |
-| API de dados | FastAPI |
-| Visualização | Power BI |
+- **Python** — linguagem principal
+- **FastAPI** — API simuladora de dados de e-commerce
+- **Apache Spark** — processamento distribuído
+- **Delta Lake** — armazenamento das camadas Bronze, Silver e Gold
+- **Power BI** — visualização e dashboard analítico
 
-## Arquitetura
-
-```
-E-commerce API (FastAPI)
-        │
-        ▼
-┌───────────────┐
-│    BRONZE     │  Ingestão raw → Delta Lake (data/raw/)
-│   (src/bronze)│
-└───────┬───────┘
-        │
-        ▼
-┌───────────────┐
-│    SILVER     │  Limpeza, validação e padronização (data/processed/)
-│   (src/silver)│
-└───────┬───────┘
-        │
-        ▼
-┌───────────────┐
-│     GOLD      │  Star Schema dimensional (data/analytical/)
-│   (src/gold)  │
-└───────┬───────┘
-        │
-        ▼
-   Power BI Dashboard
-```
-
-## Star Schema (Modelagem Dimensional)
-
-- **fato_pedidos** — fato principal com métricas de vendas
-- **dim_cliente** — dados dos clientes
-- **dim_produto** — catálogo de produtos
-- **dim_tempo** — calendário analítico
+---
 
 ## Estrutura do Repositório
 
 ```
 TCC/
-├── docs/               # Capítulos do TCC
+├── docs/
+│   ├── tcc/            Capítulos do TCC (Markdown e DOCX)
+│   ├── referencias/    Material de apoio (PDFs das aulas, não versionados)
+│   └── templates/      Templates institucionais
+│
 ├── src/
-│   ├── api/            # API simuladora de e-commerce (FastAPI)
-│   ├── bronze/         # Scripts de ingestão
-│   ├── silver/         # Scripts de transformação e limpeza
-│   └── gold/           # Modelagem Star Schema
-├── data/
-│   ├── raw/            # Dados brutos (camada Bronze)
-│   ├── processed/      # Dados tratados (camada Silver)
-│   └── analytical/     # Dados modelados (camada Gold)
-├── dashboard/          # Arquivo Power BI (.pbix)
-├── Exemplos/           # Material de referência do curso
-├── Projeto/            # Documentos do projeto (proposta, tema)
-├── Templates/          # Templates acadêmicos
-├── requirements.txt
-└── .gitignore
+│   ├── api/            API simuladora de e-commerce (FastAPI)
+│   ├── bronze/         Ingestão de dados brutos para o Delta Lake
+│   ├── silver/         Limpeza, validação e padronização dos dados
+│   └── gold/           Modelagem dimensional Star Schema
+│
+├── dashboard/          Arquivo Power BI (.pbix)
+│
+└── data/               Dados por camada (não versionados)
+    ├── raw/
+    ├── processed/
+    └── analytical/
 ```
+
+---
+
+## Arquitetura
+
+```
+API E-commerce (FastAPI)
+        |
+        v
+    [ BRONZE ]   Ingestão raw — dados brutos em Delta Lake
+        |
+        v
+    [ SILVER ]   Limpeza, padronização e validação
+        |
+        v
+     [ GOLD ]    Modelagem Star Schema (fato + dimensões)
+        |
+        v
+  Power BI Dashboard
+```
+
+**Star Schema — camada Gold:**
+- `fato_pedidos` — métricas de vendas
+- `dim_cliente` — dados dos clientes
+- `dim_produto` — catálogo de produtos
+- `dim_tempo` — calendário analítico
+
+---
 
 ## Como Executar
 
-> Em construção — instruções serão adicionadas conforme o pipeline for implementado.
+> Em construção. As instruções serão adicionadas conforme o pipeline for implementado.
 
-## Status do Projeto
+---
 
-- [x] Capítulo 1 — Introdução
-- [ ] Star Schema definido
-- [ ] API simuladora (FastAPI)
-- [ ] Pipeline Bronze
-- [ ] Pipeline Silver
-- [ ] Pipeline Gold
-- [ ] Dashboard Power BI
-- [ ] Capítulo 2 — Referencial Teórico
-- [ ] Capítulo 3 — Metodologia
+## Progresso do TCC
+
+| Seção | Status |
+|---|---|
+| 1.1 Motivação | Concluído |
+| 1.2 Problema de Pesquisa | Concluído |
+| 1.4 Objetivos | Concluído |
+| API simuladora (FastAPI) | Pendente |
+| Pipeline Bronze | Pendente |
+| Pipeline Silver | Pendente |
+| Pipeline Gold / Star Schema | Pendente |
+| Dashboard Power BI | Pendente |
+| Cap. 2 — Referencial Teórico | Pendente |
+| Cap. 3 — Metodologia | Pendente |
