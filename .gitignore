@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.env
+.venv/
+venv/
+env/
+
+# Dados — não versionar arquivos Delta Lake e dados brutos grandes
+data/raw/*
+data/processed/*
+data/analytical/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/analytical/.gitkeep
+
+# Power BI cache
+*.pbix.bak
+
+# Spark
+derby.log
+metastore_db/
+spark-warehouse/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDEs
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
