@@ -7,13 +7,14 @@ __pycache__/
 venv/
 env/
 
-# Dados — não versionar arquivos Delta Lake e dados brutos grandes
-data/raw/*
-data/processed/*
-data/analytical/*
-!data/raw/.gitkeep
-!data/processed/.gitkeep
-!data/analytical/.gitkeep
+# Dados — não versionar os arquivos das camadas Bronze/Silver/Gold
+projeto/dados/bronze/**
+projeto/dados/silver/**
+projeto/dados/gold/**
+!projeto/dados/bronze/**/
+!projeto/dados/silver/**/
+!projeto/dados/gold/**/
+!projeto/dados/**/.gitkeep
 
 # Documentos de referência (PDFs das aulas — arquivos grandes, não versionados)
 docs/referencias/
@@ -21,10 +22,11 @@ docs/referencias/
 # Power BI cache
 *.pbix.bak
 
-# Spark
-derby.log
-metastore_db/
-spark-warehouse/
+# Airflow (Docker Compose)
+logs/
+plugins/
+airflow.cfg
+airflow-webserver.pid
 
 # Jupyter
 .ipynb_checkpoints/
