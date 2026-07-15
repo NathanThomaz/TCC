@@ -521,7 +521,35 @@ mercado de trabalho em tecnologia, foco deste trabalho.
 
 Fonte: Adzuna (2024).
 
-#### 3.3.2 API IBGE — Dados Geográficos e Populacionais
+#### 3.3.2 API Jooble — Vagas de Emprego Complementares
+
+A API da Jooble é a segunda fonte de vagas do projeto, agregando anúncios de
+múltiplos portais de emprego (ziprecruiter.com, appcast.io, lensa.com, entre
+outros). O parâmetro de localização da API não filtra corretamente por Brasil, então
+a coleta é feita sem filtro geográfico, e cada vaga é classificada como nacional ou
+internacional na camada Silver — por correspondência de UF/município (IBGE) ou, na
+ausência desta, pela menção a "Brasil"/"Brazil" no título ou na descrição da vaga.
+
+#### Quadro 3.1 — Endpoint da API Jooble utilizado
+
+| Método | Endpoint | Retorno |
+|---|---|---|
+| POST | `/api/{chave}` | Lista de vagas por palavra-chave, paginada |
+
+Fonte: Jooble (2026).
+
+#### 3.3.3 APIs de Vagas Remotas Complementares
+
+Três fontes adicionais, com acesso público, gratuito e sem cadastro, ampliam a
+cobertura de vagas remotas: **RemoteOK** (`/api`, lista completa sem paginação),
+**Remotive** (`/api/remote-jobs?category=software-dev`) e **Arbeitnow**
+(`/api/job-board-api`, paginada, com sinalizador estruturado `remote`). As três são
+majoritariamente vagas remotas/globais, contribuindo sobretudo para os indicadores
+de tecnologias, cargos e modalidade de trabalho.
+
+Fonte: RemoteOK, Remotive e Arbeitnow (2026).
+
+#### 3.3.4 API IBGE — Dados Geográficos e Populacionais
 
 Os serviços do IBGE fornecem dados complementares sobre estados, municípios, regiões e
 indicadores populacionais, enriquecendo as análises geográficas e permitindo
@@ -548,21 +576,30 @@ de dados.
 
 #### 3.4.1 Camada Bronze — Ingestão Bruta
 
-A camada Bronze realiza a ingestão dos dados diretamente das APIs Adzuna e IBGE, sem
-nenhuma transformação. Os dados são armazenados em formato JSON particionado por data
-de ingestão, com metadados de rastreabilidade (`_data_ingestao`, `_origem`), em
-`dados/bronze/{fonte}/`.
+A camada Bronze realiza a ingestão dos dados diretamente das APIs Adzuna, Jooble,
+RemoteOK, Remotive, Arbeitnow e IBGE, sem nenhuma transformação. Os dados são
+armazenados em formato JSON particionado por data de ingestão, com metadados de
+rastreabilidade (`_data_ingestao`, `_origem`), em `dados/bronze/{fonte}/`.
 
 #### 3.4.2 Camada Silver — Refinamento e Qualidade
 
 A camada Silver aplica regras de qualidade e padronização sobre os dados da camada
-Bronze. As transformações incluem: remoção de duplicatas por chave de negócio;
-preenchimento ou exclusão de registros com campos obrigatórios nulos; validação de
-domínio (salários não negativos, datas válidas); normalização de strings; extração de
-habilidades técnicas a partir das descrições das vagas, de forma insensível a
-acentuação; classificação do cargo/área de atuação a partir de palavras-chave no
-título da vaga; e integração com dados geográficos do IBGE (município, UF, região e
-população). Saída em formato Parquet em `dados/silver/{fonte}/`.
+Bronze, unificando as cinco fontes de vagas em um esquema comum com chave de negócio
+prefixada por fonte (`adzuna_{id}`, `jooble_{id}`, `remoteok_{id}`, `remotive_{id}`,
+`arbeitnow_{slug}`). As transformações incluem: remoção de duplicatas por chave de
+negócio; preenchimento ou exclusão de registros com campos obrigatórios nulos;
+validação de domínio (salários não negativos; datas válidas em formatos distintos
+entre as fontes, incluindo a conversão de timestamp Unix da Arbeitnow e o descarte
+de datas-sentinela implausíveis); normalização de strings e remoção de marcações
+HTML; extração de mais de 100 habilidades técnicas catalogadas a partir das
+descrições das vagas, de forma insensível a acentuação; classificação do cargo/área
+de atuação, da senioridade (estágio a especialista) e da modalidade de trabalho
+(remoto/híbrido/presencial) a partir de palavras-chave, com sinalizadores
+estruturados da fonte tendo prioridade quando disponíveis; extração do número
+mínimo de anos de experiência exigido, quando mencionado; e integração com dados
+geográficos do IBGE (município, UF, região e população), incluindo a classificação
+de cada vaga como nacional ou internacional. Saída em formato Parquet em
+`dados/silver/{fonte}/`.
 
 #### 3.4.3 Camada Gold — Modelo Dimensional
 
@@ -577,32 +614,46 @@ métricas de qualidade (seção 3.7.1). Gravação em formato Parquet em
 ### 3.5 Modelo Dimensional — Camada Gold
 
 O modelo implementado na camada Gold segue o padrão Star Schema (KIMBALL; ROSS, 2013):
-uma tabela fato central (grão "uma vaga de TI publicada na Adzuna") circundada por
-tabelas dimensão, mais uma tabela ponte e uma tabela de referência.
+uma tabela fato central (grão "uma vaga de TI publicada em uma das cinco fontes")
+circundada por tabelas dimensão, mais uma tabela ponte e uma tabela de referência.
 
 #### Quadro 5 — Tabela fato: fato_vagas
 
 | Coluna | Tipo | Descrição |
 |---|---|---|
-| id_vaga | STRING | Identificador único da vaga — grão da fato |
+| id_vaga | STRING | Identificador único da vaga, prefixado por fonte — grão da fato |
 | id_tempo | INT | FK → dim_tempo |
 | id_localizacao | INT | FK → dim_localizacao |
 | id_empresa | INT | FK → dim_empresa |
 | id_categoria | INT | FK → dim_categoria |
+| id_fonte | INT | FK → dim_fonte |
+| id_senioridade | INT | FK → dim_senioridade |
+| id_modalidade | INT | FK → dim_modalidade |
 | titulo | STRING | Título do cargo |
-| salario_min | DECIMAL(10,2) | Salário mínimo anunciado |
-| salario_max | DECIMAL(10,2) | Salário máximo anunciado |
+| salario_min | DECIMAL(10,2) | Salário mínimo anunciado (apenas Adzuna) |
+| salario_max | DECIMAL(10,2) | Salário máximo anunciado (apenas Adzuna) |
 | salario_medio | DECIMAL(10,2) | Média entre salario_min e salario_max |
+| anos_experiencia_min | INT | Anos mínimos de experiência exigidos, quando extraível da descrição |
 | quantidade | INT | Medida aditiva de contagem (valor fixo 1) |
 
 As dimensões do modelo são: **dim_tempo** (id_tempo, data, ano, mes, nome_mes,
 trimestre, ano_mes), **dim_localizacao** (id_localizacao, municipio, uf, nome_estado,
-regiao, populacao, total_vagas, vagas_por_100k_hab), **dim_empresa** (id_empresa,
-nome_empresa), **dim_categoria** (id_categoria, categoria) e **dim_habilidade**
-(id_habilidade, habilidade, categoria_skill). A relação N:N entre vagas e habilidades
-é resolvida pela tabela ponte **ponte_vaga_habilidade** (id_vaga, id_habilidade), e a
-tabela de referência **benchmark_salarial_categoria** (categoria, faixa_salarial_min,
-quantidade_vagas) traz a distribuição salarial agregada da própria Adzuna.
+regiao, pais, populacao, total_vagas, vagas_por_100k_hab), **dim_empresa**
+(id_empresa, nome_empresa, empresa_identificada, cnpj, razao_social,
+situacao_cadastral, porte, cnae_principal, cnpj_verificado — nomes quase-idênticos
+são agrupados por remoção de sufixo societário, e as principais empresas têm CNPJ
+validado manualmente junto à Receita Federal via BrasilAPI), **dim_categoria**
+(id_categoria, categoria), **dim_habilidade** (id_habilidade, habilidade,
+categoria_skill), **dim_fonte** (id_fonte, fonte, portal_origem), **dim_senioridade**
+(id_senioridade, senioridade, ordem) e **dim_modalidade** (id_modalidade,
+modalidade). A relação N:N entre vagas e habilidades é resolvida pela tabela ponte
+**ponte_vaga_habilidade** (id_vaga, id_habilidade), e a tabela de referência
+**benchmark_salarial_categoria** (categoria, faixa_salarial_min, quantidade_vagas)
+traz a distribuição salarial agregada da própria Adzuna — única fonte usada nas
+medidas salariais, por ser 100% brasileira e em uma
+moeda única (BRL); as demais fontes misturam vagas de múltiplos países e moedas em um
+campo de texto livre, então suas vagas ficam com salário nulo para não corromper as
+médias.
 
 ---
 
@@ -616,6 +667,8 @@ da plataforma. Cada camada da Arquitetura Medalhão possui uma DAG dedicada.
 | DAG | Fonte | Periodicidade | Descrição |
 |---|---|---|---|
 | `dag_bronze_adzuna` | Adzuna API | Diária | Coleta de vagas |
+| `dag_bronze_jooble` | Jooble API | Semanal | Coleta de vagas complementares (cota limitada) |
+| `dag_bronze_fontes_remotas` | RemoteOK, Remotive, Arbeitnow | Semanal | Coleta de vagas remotas complementares |
 | `dag_bronze_ibge` | IBGE API | Semanal | Coleta de dados geográficos |
 | `dag_silver_tratamento` | Bronze | Diária | Limpeza e integração |
 | `dag_gold_analitico` | Silver | Diária | Geração do modelo dimensional e cálculo das métricas de qualidade |
@@ -641,9 +694,18 @@ aplicadas em duas dimensões: qualidade dos dados e capacidade analítica.
 | Métrica | Fórmula | Critério |
 |---|---|---|
 | Completude | registros_completos / total_esperado × 100 | ≥ 95% |
-| Consistência | registros_íntegros / total_bronze × 100 | ≥ 98% |
+| Consistência | (total_bronze − perda_não_justificada) / total_bronze × 100 | ≥ 98% |
+| Aproveitamento bruto | total_gold / total_bronze × 100 | ≥ 85% (auxiliar) |
 | Unicidade | (total − duplicatas) / total × 100 | = 100% |
 | Acurácia de tipos | campos_tipados_corretamente / total × 100 | = 100% |
+| Validade de empresa | vagas_com_empresa_identificada / total × 100 | ≥ 95% |
+
+A consistência opera literalmente a definição do Capítulo 3 ("sem perda não
+justificada"): perda por regra de validação de domínio documentada (duplicata,
+campo obrigatório vazio, data implausível) não conta contra a métrica; a camada
+Silver decompõe toda perda por causa em `dados/silver/vagas/relatorio_limpeza.json`.
+O aproveitamento bruto complementa isso como indicador auxiliar de volume, sem
+distinguir a causa da perda.
 
 Fonte: elaborado pelo autor.
 
@@ -698,6 +760,12 @@ ADZUNA. **API Documentation**. Disponível em: <https://developer.adzuna.com>. A
 APACHE AIRFLOW. **Apache Airflow Documentation**. Disponível em:
 <https://airflow.apache.org/docs/>. Acesso em: 2024.
 
+ARBEITNOW. **Job Board API**. Disponível em: <https://www.arbeitnow.com/api/job-board-api>.
+Acesso em: 2026.
+
+BRASILAPI. **API de CNPJ**. Disponível em: <https://brasilapi.com.br/docs#tag/CNPJ>.
+Acesso em: 2026.
+
 CHEN, Min; MAO, Shiwen; LIU, Yunhao. **Big Data: A Survey**. Mobile Networks and
 Applications, v. 19, n. 2, p. 171–209, 2014.
 
@@ -722,12 +790,23 @@ Disponível em: <https://servicodados.ibge.gov.br/api/docs>. Acesso em: 2024.
 INMON, William H. **Building the Data Warehouse**. 4. ed. Nova York: John Wiley & Sons,
 2002.
 
+JOOBLE. **REST API Documentation**. Disponível em: <https://jooble.org/api/about>.
+Acesso em: 2026.
+
+KIMBALL, Ralph; ROSS, Margy. **The Data Warehouse Toolkit**. 3. ed. Indianapolis:
+Wiley, 2013.
+
 LANEY, Doug. **3D Data Management: Controlling Data Volume, Velocity, and Variety**.
 META Group Research Note, 2001.
 
 MICROSOFT. **Power BI Documentation**. Microsoft Docs, 2023.
 
 RAMALHO, Luciano. **Python Fluente**. 2. ed. São Paulo: O'Reilly / Novatec, 2022.
+
+REMOTEOK. **RemoteOK API**. Disponível em: <https://remoteok.com/api>. Acesso em: 2026.
+
+REMOTIVE. **Remote Jobs API**. Disponível em: <https://remotive.com/remote-jobs/api>.
+Acesso em: 2026.
 
 VASSILIADIS, Panos. **A Survey of Extract-Transform-Load Technology**. International
 Journal of Data Warehousing and Mining, v. 5, n. 3, p. 1–27, 2009.

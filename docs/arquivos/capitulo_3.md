@@ -76,7 +76,51 @@ mercado de trabalho em tecnologia, foco deste trabalho.
 
 Fonte: Adzuna (2024).
 
-### 3.3.2 API IBGE — Dados Geográficos e Populacionais
+### 3.3.2 API Jooble — Vagas de Emprego Complementares
+
+A API da Jooble é a segunda fonte de vagas do projeto, agregando anúncios de
+múltiplos portais de emprego (ziprecruiter.com, appcast.io, lensa.com, entre
+outros), o que amplia a cobertura e a diversidade de empresas anunciantes em
+relação a uma única fonte. O acesso é gratuito, mediante cadastro e obtenção de
+uma chave de API, com cota limitada de requisições.
+
+O parâmetro de localização da API não filtra corretamente por Brasil (testes
+com "Brasil", "Brazil", "BR" e nomes de cidade retornaram poucos ou nenhum
+resultado), portanto a coleta é feita sem filtro geográfico, e cada vaga é
+classificada como nacional ou internacional na camada Silver — por correspondência
+de UF/município (IBGE) ou, na ausência desta, pela menção a "Brasil"/"Brazil" no
+título ou na descrição da vaga (comum em vagas remotas anunciadas por agências
+internacionais para candidatos no Brasil).
+
+#### Quadro 3.1 — Endpoint da API Jooble utilizado
+
+| Método | Endpoint | Retorno |
+|---|---|---|
+| POST | `/api/{chave}` | Lista de vagas por palavra-chave, paginada |
+
+Fonte: Jooble (2026).
+
+### 3.3.3 APIs de Vagas Remotas Complementares
+
+Três fontes adicionais, todas com acesso público, gratuito e sem necessidade de
+cadastro, ampliam a cobertura de vagas remotas de tecnologia: **RemoteOK**,
+**Remotive** e **Arbeitnow**. As três são majoritariamente compostas por vagas
+remotas/globais — por isso contribuem principalmente para os indicadores de
+tecnologias, cargos e modalidade de trabalho, e menos para a distribuição
+geográfica por UF (tratadas como "internacional" quando não é possível
+identificar vínculo com o Brasil, seção 3.4.2).
+
+#### Quadro 3.2 — Endpoints das APIs de vagas remotas utilizados
+
+| Fonte | Método | Endpoint | Retorno |
+|---|---|---|---|
+| RemoteOK | GET | `/api` | Lista completa de vagas remotas mais recentes (sem paginação) |
+| Remotive | GET | `/api/remote-jobs?category=software-dev` | Vagas remotas filtradas por categoria de tecnologia |
+| Arbeitnow | GET | `/api/job-board-api?page={n}` | Lista paginada de vagas (europeu-focado, com sinalizador `remote`) |
+
+Fonte: RemoteOK, Remotive e Arbeitnow (2026).
+
+### 3.3.4 API IBGE — Dados Geográficos e Populacionais
 
 Os serviços do IBGE fornecem dados complementares sobre estados, municípios, regiões e
 indicadores populacionais, enriquecendo as análises geográficas e permitindo
@@ -103,9 +147,10 @@ de dados.
 
 ### 3.4.1 Camada Bronze — Ingestão Bruta
 
-A camada Bronze realiza a ingestão dos dados diretamente das APIs Adzuna e IBGE, sem
-nenhuma transformação. Os dados são armazenados em formato JSON particionado por data
-de ingestão, preservando o histórico completo e garantindo rastreabilidade total.
+A camada Bronze realiza a ingestão dos dados diretamente das APIs Adzuna, Jooble,
+RemoteOK, Remotive, Arbeitnow e IBGE, sem nenhuma transformação. Os dados são
+armazenados em formato JSON particionado por data de ingestão, preservando o
+histórico completo e garantindo rastreabilidade total.
 
 **Processo:**
 
@@ -117,22 +162,56 @@ de ingestão, preservando o histórico completo e garantindo rastreabilidade tot
 ### 3.4.2 Camada Silver — Refinamento e Qualidade
 
 A camada Silver aplica as regras de qualidade e padronização sobre os dados da camada
-Bronze. Cada regra é documentada e auditável.
+Bronze, unificando as cinco fontes de vagas em um esquema comum. Cada regra é
+documentada e auditável.
 
 **Transformações aplicadas:**
 
-- Remoção de registros duplicados com base em chave de negócio
-- Preenchimento ou exclusão de registros com campos obrigatórios nulos
-- Validação de domínio (salários não negativos, datas válidas)
-- Normalização de strings (trim, minúsculas, remoção de espaços duplicados)
-- Extração de habilidades técnicas a partir das descrições das vagas, de forma
-  insensível a acentuação
+- Unificação das cinco fontes de vagas em um esquema comum, com chave de negócio
+  prefixada por fonte (`adzuna_{id}`, `jooble_{id}`, `remoteok_{id}`, `remotive_{id}`,
+  `arbeitnow_{slug}`) para garantir unicidade global
+- Remoção de registros duplicados com base na chave de negócio
+- Preenchimento ou exclusão de registros com campos obrigatórios nulos — inclui a
+  normalização de campos "vazios" (string em branco), que não são detectados pela
+  checagem padrão de valor nulo
+- Validação de identidade da empresa: nomes que indicam que a fonte não revelou a
+  empresa contratante (ex.: "confidencial") são normalizados para um rótulo único
+  e explícito, e a vaga é marcada como `empresa_identificada = falso` — a vaga é
+  mantida (ainda é um registro real de mercado), mas não contamina indicadores
+  por empresa
+- Deduplicação de empresas quase-idênticas por remoção determinística de sufixo
+  societário (ex.: "Stefanini" e "Stefanini Group" tornam-se a mesma empresa) —
+  normalização por regra, não por similaridade probabilística, para não arriscar
+  unir empresas diferentes por engano
+- Validação de domínio (salários não negativos; datas válidas — inclui a correção
+  de formatos de data distintos entre as fontes e a conversão de timestamp Unix da
+  Arbeitnow; descarte de datas-sentinela implausíveis, como "1970-01-01" retornada
+  por registros sem data real)
+- Normalização de strings (trim, minúsculas, remoção de espaços duplicados) e
+  remoção de marcações HTML residuais (presentes nos textos da Jooble, RemoteOK e
+  Remotive)
+- Extração de habilidades técnicas a partir das descrições das vagas (mais de 100
+  termos catalogados, entre linguagens, frameworks, bancos de dados, nuvem, dados/IA
+  e metodologias), de forma insensível a acentuação
 - Classificação do cargo/área de atuação (ex.: desenvolvimento, dados e analytics,
-  infraestrutura e cloud, suporte técnico) a partir de palavras-chave no título da
-  vaga — necessária porque a categoria bruta da Adzuna é constante após o filtro
-  por `it-jobs`, não servindo isoladamente como dimensão analítica
+  infraestrutura e cloud, suporte técnico, mobile) a partir de palavras-chave no
+  título da vaga — necessária porque nenhuma das fontes fornece uma categoria de
+  cargo diretamente utilizável como dimensão analítica
+- Classificação da senioridade (estágio/trainee, júnior, pleno, sênior,
+  especialista) e da modalidade de trabalho (remoto, híbrido, presencial) a partir
+  de palavras-chave no título/descrição, com sinalizadores estruturados da fonte
+  (ex.: campo `remote` da Arbeitnow) tendo prioridade sobre a inferência textual
+- Extração do número mínimo de anos de experiência exigido, quando mencionado
+  explicitamente na descrição (expressão regular)
 - Integração com dados geográficos do IBGE (município, UF, região e população
-  estimada)
+  estimada) e classificação de cada vaga como nacional ou internacional
+
+Cada execução grava uma decomposição da perda entre a Bronze e a Silver por
+causa (duplicata, campo obrigatório vazio, data inválida) em
+`dados/silver/vagas/relatorio_limpeza.json`, distinguindo perda **justificada**
+(por uma regra de validação documentada) de perda **não justificada** (que
+indicaria um defeito no pipeline) — base do cálculo da métrica de consistência
+(seção 3.7.1).
 
 **Saída:** tabelas em formato Parquet em `dados/silver/{fonte}/`
 
@@ -156,20 +235,23 @@ diretamente aos indicadores de mercado de trabalho definidos na hipótese.
 ## 3.5 Modelo Dimensional — Camada Gold
 
 O modelo implementado na camada Gold segue o padrão Star Schema (KIMBALL; ROSS,
-2013; seção 2.2.1): uma tabela fato central, com grão "uma vaga de TI publicada na
-Adzuna", circundada por tabelas dimensão que fornecem contexto descritivo. Uma tabela
-ponte resolve o relacionamento N:N entre vagas e habilidades, e uma tabela de
-referência complementa o modelo com a distribuição salarial agregada da própria
-Adzuna.
+2013; seção 2.2.1): uma tabela fato central, com grão "uma vaga de TI publicada em
+uma das cinco fontes", circundada por tabelas dimensão que fornecem contexto
+descritivo. Uma tabela ponte resolve o relacionamento N:N entre vagas e
+habilidades, e uma tabela de referência complementa o modelo com a distribuição
+salarial agregada da própria Adzuna.
 
 ```
-        dim_tempo        dim_localizacao
-             \                  /
-              \                /
-  dim_empresa —— fato_vagas —— dim_categoria
-              /                \
-             /                  \
-  ponte_vaga_habilidade ——— dim_habilidade
+   dim_tempo   dim_localizacao   dim_senioridade   dim_modalidade
+        \             |                 |                /
+         \            |                 |               /
+dim_empresa ────────────────── fato_vagas ────────────────── dim_categoria
+                       |         |        \                        |
+                       |         |         \                  dim_fonte
+              ponte_vaga_habilidade    (nenhuma; benchmark é tabela de referência)
+                       |
+                       |
+               dim_habilidade
 
   benchmark_salarial_categoria  (tabela de referência, independente do grão da fato)
 ```
@@ -178,15 +260,19 @@ Adzuna.
 
 | Coluna | Tipo | Descrição |
 |---|---|---|
-| id_vaga | STRING | Identificador único da vaga (Adzuna) — grão da fato |
+| id_vaga | STRING | Identificador único da vaga, prefixado por fonte (`adzuna_{id}`, `jooble_{id}`, `remoteok_{id}`, `remotive_{id}`, `arbeitnow_{slug}`) — grão da fato |
 | id_tempo | INT | FK → dim_tempo (formato AAAAMMDD) |
 | id_localizacao | INT | FK → dim_localizacao |
 | id_empresa | INT | FK → dim_empresa |
 | id_categoria | INT | FK → dim_categoria |
+| id_fonte | INT | FK → dim_fonte |
+| id_senioridade | INT | FK → dim_senioridade |
+| id_modalidade | INT | FK → dim_modalidade |
 | titulo | STRING | Título do cargo |
-| salario_min | DECIMAL(10,2) | Salário mínimo anunciado |
-| salario_max | DECIMAL(10,2) | Salário máximo anunciado |
+| salario_min | DECIMAL(10,2) | Salário mínimo anunciado (apenas Adzuna — ver seção 3.5.9) |
+| salario_max | DECIMAL(10,2) | Salário máximo anunciado (apenas Adzuna) |
 | salario_medio | DECIMAL(10,2) | Média entre salario_min e salario_max |
+| anos_experiencia_min | INT | Anos mínimos de experiência exigidos, quando extraível da descrição (nulo caso contrário) |
 | quantidade | INT | Medida aditiva de contagem (valor fixo 1, soma-se para contar vagas) |
 
 ### 3.5.2 Tabela dimensão: dim_tempo
@@ -207,19 +293,47 @@ Adzuna.
 |---|---|---|
 | id_localizacao | INT | Chave substituta |
 | municipio | STRING | Município da vaga (quando identificado) |
-| uf | STRING | Sigla do estado |
-| nome_estado | STRING | Nome completo do estado |
-| regiao | STRING | Norte, Nordeste, Centro-Oeste, Sudeste, Sul |
-| populacao | BIGINT | População estimada do estado (IBGE) |
+| uf | STRING | Sigla do estado; `NI` = Brasil sem UF identificada; `XX` = internacional |
+| nome_estado | STRING | Nome completo do estado, "Não informado" ou "Internacional" |
+| regiao | STRING | Norte, Nordeste, Centro-Oeste, Sudeste, Sul, "Não informado" ou "Internacional" |
+| pais | STRING | "Brasil" ou "Internacional" — permite filtrar vagas nacionais x internacionais |
+| populacao | BIGINT | População estimada do estado (IBGE); nula para UF não identificada ou internacional |
 | total_vagas | INT | Total de vagas associadas à localização |
-| vagas_por_100k_hab | DECIMAL(8,2) | Vagas por 100 mil habitantes |
+| vagas_por_100k_hab | DECIMAL(8,2) | Vagas por 100 mil habitantes (apenas onde população é conhecida) |
 
 ### 3.5.4 Tabela dimensão: dim_empresa
+
+Nomes de empresa quase-idênticos (ex.: "Stefanini" e "Stefanini Group") são
+agrupados por remoção determinística de sufixo societário antes da geração da
+chave substituta (seção 3.4.2), evitando que a mesma empresa apareça duplicada
+no indicador "empresas com mais vagas".
 
 | Coluna | Tipo | Descrição |
 |---|---|---|
 | id_empresa | INT | Chave substituta |
-| nome_empresa | STRING | Nome da empresa anunciante |
+| nome_empresa | STRING | Nome da empresa anunciante (grafia mais frequente do grupo) |
+| empresa_identificada | BOOLEAN | Falso quando a fonte não revelou o nome real (ex.: "confidencial") |
+| cnpj | STRING | CNPJ, apenas para empresas com verificação manual (seção 3.5.4.1) |
+| razao_social | STRING | Razão social oficial na Receita Federal, quando verificado |
+| situacao_cadastral | STRING | Situação cadastral na Receita Federal (ex.: ATIVA), quando verificado |
+| porte | STRING | Porte da empresa na Receita Federal, quando verificado |
+| cnae_principal | STRING | Atividade econômica principal (CNAE), quando verificado |
+| cnpj_verificado | BOOLEAN | Verdadeiro para as empresas com CNPJ validado manualmente |
+
+#### 3.5.4.1 Verificação de CNPJ
+
+Nenhuma das cinco fontes de vagas retorna CNPJ — apenas o nome da empresa em
+texto livre — e não existe busca reversa gratuita "nome da empresa → CNPJ" em
+escala nacional no Brasil, o que torna inviável validar automaticamente a
+totalidade das empresas do dataset. Em vez disso, as empresas com maior volume
+de vagas e identificação inequívoca tiveram o CNPJ pesquisado manualmente e
+validado de forma real: verificação algorítmica dos dígitos verificadores e
+consulta à base pública da Receita Federal via BrasilAPI, confirmando razão
+social, situação cadastral ATIVA e CNAE compatível com a atividade anunciada
+(ver src/comum/empresas_verificadas.py e src/comum/cliente_brasilapi.py). As
+demais empresas permanecem no modelo com base apenas no nome informado pela
+fonte, sem enriquecimento adicional — uma limitação documentada, não uma
+lacuna oculta.
 
 ### 3.5.5 Tabela dimensão: dim_categoria
 
@@ -243,13 +357,43 @@ Adzuna.
 | id_vaga | STRING | FK → fato_vagas |
 | id_habilidade | INT | FK → dim_habilidade |
 
-### 3.5.8 Tabela de referência: benchmark_salarial_categoria
+### 3.5.8 Tabela dimensão: dim_fonte
+
+| Coluna | Tipo | Descrição |
+|---|---|---|
+| id_fonte | INT | Chave substituta |
+| fonte | STRING | Sistema de ingestão: adzuna, jooble, remoteok, remotive ou arbeitnow |
+| portal_origem | STRING | Portal de emprego original da vaga (ex.: ziprecruiter.com para vagas via Jooble); igual à `fonte` para as demais |
+
+### 3.5.9 Tabela dimensão: dim_senioridade
+
+| Coluna | Tipo | Descrição |
+|---|---|---|
+| id_senioridade | INT | Chave substituta |
+| senioridade | STRING | Estágio/trainee, júnior, pleno, sênior, especialista ou "não informado" |
+| ordem | INT | Ordinal para ordenação correta em visuais (0 a 4; -1 para "não informado") |
+
+### 3.5.10 Tabela dimensão: dim_modalidade
+
+| Coluna | Tipo | Descrição |
+|---|---|---|
+| id_modalidade | INT | Chave substituta |
+| modalidade | STRING | Remoto, híbrido, presencial ou "não informado" |
+
+### 3.5.11 Tabela de referência: benchmark_salarial_categoria
 
 | Coluna | Tipo | Descrição |
 |---|---|---|
 | categoria | STRING | Categoria da Adzuna usada na coleta (`it-jobs`) |
 | faixa_salarial_min | DECIMAL(10,2) | Valor mínimo da faixa salarial do histograma |
 | quantidade_vagas | INT | Quantidade de vagas de TI nessa faixa, segundo a Adzuna |
+
+Nota sobre salário: as medidas salariais (`salario_min`, `salario_max`,
+`salario_medio` e o benchmark) usam exclusivamente dados da Adzuna, fonte 100%
+brasileira com valores em Real (BRL). As demais fontes agregam vagas de múltiplos
+países com moedas diferentes em um único campo de texto livre — convertê-las sem
+detectar a moeda de origem produziria médias salariais incorretas, portanto
+`salario_min`/`salario_max` ficam nulos para vagas dessas origens.
 
 ---
 
@@ -264,9 +408,16 @@ modularidade e rastreabilidade das execuções.
 | DAG | Fonte | Periodicidade | Descrição |
 |---|---|---|---|
 | `dag_bronze_adzuna` | Adzuna API | Diária | Coleta de vagas e armazenamento em Bronze |
+| `dag_bronze_jooble` | Jooble API | Semanal | Coleta de vagas complementares (cota limitada de requisições) |
+| `dag_bronze_fontes_remotas` | RemoteOK, Remotive, Arbeitnow | Semanal | Coleta de vagas remotas complementares (3 fontes sem autenticação) |
 | `dag_bronze_ibge` | IBGE API | Semanal | Coleta de dados geográficos e populacionais |
 | `dag_silver_tratamento` | Bronze | Diária | Limpeza, padronização e integração |
 | `dag_gold_analitico` | Silver | Diária | Geração do modelo dimensional e cálculo das métricas de qualidade |
+
+As DAGs `dag_bronze_jooble` e `dag_bronze_fontes_remotas` não disparam
+`dag_silver_tratamento` diretamente — seus arquivos ficam disponíveis para o
+próximo processamento acionado por `dag_bronze_adzuna` (diária), evitando cargas
+concorrentes da camada Silver no mesmo dia.
 
 ### 3.6.2 Mecanismos de Controle
 
@@ -292,12 +443,25 @@ aplicadas em duas dimensões: qualidade dos dados e capacidade analítica.
 | Métrica | Fórmula | Critério de Aceitação |
 |---|---|---|
 | Completude | registros_completos / total_esperado × 100 | ≥ 95% |
-| Consistência | registros_íntegros / total_bronze × 100 | ≥ 98% |
+| Consistência | (total_bronze − perda_não_justificada) / total_bronze × 100 | ≥ 98% |
+| Aproveitamento bruto | total_gold / total_bronze × 100 | ≥ 85% (auxiliar/informativa) |
 | Unicidade | (total − duplicatas) / total × 100 | = 100% |
 | Acurácia de tipos | campos_tipados_corretamente / total_campos × 100 | = 100% |
+| Validade de empresa | vagas_com_empresa_identificada / total × 100 | ≥ 95% |
 
-As quatro métricas são calculadas automaticamente pelo módulo `src/qualidade/metricas.py`,
-executado como última tarefa da DAG `dag_gold_analitico` sobre a tabela `fato_vagas`.
+A fórmula de **consistência** opera literalmente sua própria definição — "sem
+perda não justificada" — separando perda por regra de validação de domínio
+documentada (duplicata, campo obrigatório vazio, data implausível: seção 3.4.2)
+de qualquer perda inexplicada, que indicaria um defeito real no pipeline. A
+métrica **aproveitamento bruto** complementa essa leitura sem misturar as duas
+naturezas de perda: mostra a taxa bruta de registros que chegam à Gold,
+independentemente da causa, servindo de indicador auxiliar de volume — não é
+usada para confirmar a hipótese do trabalho (seção 1.3), apenas para
+transparência sobre o quanto do dado bruto é efetivamente aproveitado.
+
+As seis métricas são calculadas automaticamente pelo módulo `src/qualidade/metricas.py`,
+executado como última tarefa da DAG `dag_gold_analitico` sobre a tabela `fato_vagas`
+e a decomposição de perdas gravada pela camada Silver (`relatorio_limpeza.json`).
 O resultado é gravado como tabela Gold (`metricas_qualidade`), permitindo tanto a
 auditoria pelo Airflow Web UI quanto o acompanhamento histórico no próprio Power BI.
 
@@ -344,11 +508,28 @@ O desenvolvimento do trabalho está organizado nas seguintes etapas:
 ADZUNA. **API Documentation**. Disponível em: <https://developer.adzuna.com>. Acesso em:
 2024.
 
+ARBEITNOW. **Job Board API**. Disponível em: <https://www.arbeitnow.com/api/job-board-api>.
+Acesso em: 2026.
+
+BRASILAPI. **API de CNPJ**. Disponível em: <https://brasilapi.com.br/docs#tag/CNPJ>.
+Acesso em: 2026.
+
 GIL, Antonio Carlos. **Como elaborar projetos de pesquisa**. 6. ed. São Paulo: Atlas,
 2002.
 
 IBGE — INSTITUTO BRASILEIRO DE GEOGRAFIA E ESTATÍSTICA. **API IBGE Serviços**.
 Disponível em: <https://servicodados.ibge.gov.br/api/docs>. Acesso em: 2024.
+
+JOOBLE. **REST API Documentation**. Disponível em: <https://jooble.org/api/about>.
+Acesso em: 2026.
+
+KIMBALL, Ralph; ROSS, Margy. **The Data Warehouse Toolkit**. 3. ed. Indianapolis:
+Wiley, 2013.
+
+REMOTEOK. **RemoteOK API**. Disponível em: <https://remoteok.com/api>. Acesso em: 2026.
+
+REMOTIVE. **Remote Jobs API**. Disponível em: <https://remotive.com/remote-jobs/api>.
+Acesso em: 2026.
 
 YIN, Robert K. **Estudo de caso: planejamento e métodos**. 5. ed. Porto Alegre:
 Bookman, 2015.
