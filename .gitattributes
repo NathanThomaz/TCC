@@ -1,0 +1,4 @@
+# LF em todos os arquivos de texto: os hashes dos pacotes de tarefa (selos) precisam
+# ser idênticos em qualquer máquina e em qualquer checkout.
+* text=auto eol=lf
+*.png binary

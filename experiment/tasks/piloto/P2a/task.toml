@@ -1,0 +1,21 @@
+id = "P2a"
+tipo = "T3"            # consulta SQL incorreta
+par = "P2"
+titulo = "Relatório de vendas por categoria infla o número de pedidos"
+base = "base-system"
+piloto = true
+total_ocultos = 5
+
+[severidade_ocultos]
+test_varios_itens_mesma_categoria_contam_um_pedido = "critico"
+test_pedido_com_duas_categorias_conta_uma_vez_em_cada = "maior"
+test_receita_por_categoria = "maior"
+test_cancelados_e_pendentes_nao_contam = "maior"
+test_limites_do_periodo = "menor"
+
+[descricao_ocultos]
+test_varios_itens_mesma_categoria_contam_um_pedido = "Um pedido com três produtos da mesma categoria deve contar como 1 pedido nessa categoria."
+test_pedido_com_duas_categorias_conta_uma_vez_em_cada = "Um pedido com itens de duas categorias deve contar 1 pedido em cada uma delas, mesmo com vários itens por categoria."
+test_receita_por_categoria = "A receita por categoria deve somar quantidade × preço unitário de todos os itens vendidos."
+test_cancelados_e_pendentes_nao_contam = "Pedidos cancelados ou pendentes não entram no relatório."
+test_limites_do_periodo = "A data inicial é inclusiva e a data final é exclusiva."

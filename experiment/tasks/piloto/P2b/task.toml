@@ -1,0 +1,21 @@
+id = "P2b"
+tipo = "T3"            # consulta SQL incorreta
+par = "P2"
+titulo = "Relatório de produtos sem venda omite produtos"
+base = "base-system"
+piloto = true
+total_ocultos = 5
+
+[severidade_ocultos]
+test_produto_so_em_pedido_cancelado_aparece = "critico"
+test_produto_vendido_fora_do_periodo_aparece = "critico"
+test_produto_so_em_pedido_pendente_aparece = "maior"
+test_produto_vendido_no_periodo_nao_aparece = "maior"
+test_produto_inativo_nao_aparece = "menor"
+
+[descricao_ocultos]
+test_produto_so_em_pedido_cancelado_aparece = "Produto que só apareceu em pedidos cancelados deve constar como sem venda."
+test_produto_vendido_fora_do_periodo_aparece = "Produto vendido apenas fora do período consultado deve constar como sem venda no período."
+test_produto_so_em_pedido_pendente_aparece = "Produto que só aparece em pedidos pendentes (não pagos) deve constar como sem venda."
+test_produto_vendido_no_periodo_nao_aparece = "Produto com venda paga dentro do período não deve constar no relatório."
+test_produto_inativo_nao_aparece = "Produtos inativos nunca constam no relatório."

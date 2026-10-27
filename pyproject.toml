@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tcc-exp"
+version = "0.1.0"
+description = "Instrumento de coleta e análise do experimento do TCC (IA generativa × tempo, qualidade e retrabalho)"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=1.26",
+    "pandas>=2.0",
+    "scipy>=1.11",
+    "matplotlib>=3.8",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+# Métricas estruturais (complexidade e alertas de linter). Sem elas, o instrumento
+# registra explicitamente "indisponível" e não inventa valores.
+estatica = ["ruff>=0.6", "radon>=6.0"]
+
+[project.scripts]
+exp = "tcc_exp.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "experiment/base-system/tests"]
+addopts = "-p no:cacheprovider"

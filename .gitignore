@@ -1,0 +1,12 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ipynb_checkpoints/
+# pacotes selados da coleta principal ficam FORA do repositório (TCC_TAREFAS_DIR); por segurança:
+sealed/
+*.egg-info/
+build/
+# workspaces de execução ficam fora do repositório (TCC_WORKSPACES); por segurança:
+tcc-workspaces/

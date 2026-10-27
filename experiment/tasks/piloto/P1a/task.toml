@@ -1,0 +1,21 @@
+id = "P1a"
+tipo = "T1"            # correção de defeito
+par = "P1"
+titulo = "Frete grátis concedido indevidamente em pedidos com cupom"
+base = "base-system"
+piloto = true
+total_ocultos = 5
+
+[severidade_ocultos]
+test_frete_cobrado_quando_cupom_reduz_abaixo_do_limite = "critico"
+test_total_persistido_inclui_frete_quando_cupom_reduz = "critico"
+test_frete_gratis_exatamente_no_limite_apos_cupom = "maior"
+test_cupom_expirado_nao_altera_regra_de_frete = "maior"
+test_frete_gratis_sem_cupom_no_limite = "menor"
+
+[descricao_ocultos]
+test_frete_cobrado_quando_cupom_reduz_abaixo_do_limite = "Pedido cujo subtotal supera R$ 300,00, mas fica abaixo disso após um cupom de 5%, deve pagar frete."
+test_total_persistido_inclui_frete_quando_cupom_reduz = "O total gravado no pedido (criar_pedido) deve incluir o frete quando o cupom deixa o valor abaixo de R$ 300,00."
+test_frete_gratis_exatamente_no_limite_apos_cupom = "Pedido que fica exatamente em R$ 300,00 após o cupom deve ter frete grátis."
+test_cupom_expirado_nao_altera_regra_de_frete = "Cupom expirado não concede desconto e, portanto, não deve afetar o frete."
+test_frete_gratis_sem_cupom_no_limite = "Pedido sem cupom com subtotal de exatamente R$ 300,00 deve ter frete grátis."

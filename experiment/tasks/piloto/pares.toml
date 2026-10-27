@@ -1,0 +1,10 @@
+# Pares de tarefas gêmeas da fase PILOTO.
+[[par]]
+id = "P1"
+tipo = "T1"
+gemeas = ["P1a", "P1b"]
+
+[[par]]
+id = "P2"
+tipo = "T3"
+gemeas = ["P2a", "P2b"]

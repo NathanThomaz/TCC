@@ -1,0 +1,21 @@
+id = "P1b"
+tipo = "T1"            # correção de defeito
+par = "P1"
+titulo = "Estoque não é totalmente devolvido ao cancelar pedidos"
+base = "base-system"
+piloto = true
+total_ocultos = 5
+
+[severidade_ocultos]
+test_cancelamento_varios_itens_quantidades_diferentes = "critico"
+test_cancelamento_por_alterar_status = "maior"
+test_cancelamento_de_pedido_pago = "maior"
+test_nao_cancela_duas_vezes_nem_devolve_em_dobro = "maior"
+test_cancelamento_quantidade_unitaria = "menor"
+
+[descricao_ocultos]
+test_cancelamento_varios_itens_quantidades_diferentes = "Cancelar um pedido com vários itens, de quantidades diferentes, deve devolver ao estoque exatamente as quantidades de cada item."
+test_cancelamento_por_alterar_status = "Cancelar pelo fluxo de alteração de status (alterar_status para 'cancelado') deve devolver todo o estoque."
+test_cancelamento_de_pedido_pago = "Cancelar um pedido já pago deve devolver todo o estoque."
+test_nao_cancela_duas_vezes_nem_devolve_em_dobro = "Um pedido já cancelado não pode ser cancelado de novo, e o estoque não pode ser devolvido duas vezes."
+test_cancelamento_quantidade_unitaria = "Cancelar um pedido de uma única unidade deve devolver essa unidade."

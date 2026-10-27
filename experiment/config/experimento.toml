@@ -1,0 +1,37 @@
+# Parâmetros do experimento. Toda alteração após o congelamento do protocolo (Etapa 5)
+# deve ser registrada em docs/decisoes-metodologicas.md e no CHANGELOG.
+
+[experimento]
+id = "tcc-ia-manutencao"
+protocolo_versao = "0.9-rascunho"
+limite_minutos = 90           # tempo-limite ativo por execução [calibrar no piloto]
+max_rodadas_correcao = 2      # rodadas de devolutiva após a 1ª entrega
+pausa_maxima_minutos = 10     # interrupções maiores viram desvio registrado
+
+[executor]
+id = "E01"
+
+# Ferramenta da condição B (com IA). PREENCHER APÓS A DECISÃO D3.
+# Enquanto estiver vazia, o instrumento recusa iniciar execuções na condição B.
+[ferramenta_ia]
+nome = ""            # ex.: nome comercial da ferramenta
+fornecedor = ""
+modalidade = ""      # "ide-chat" | "chat-externo" | "agente"
+modelo = ""          # identificador exato do modelo, se a ferramenta permitir escolher
+versao_cliente = ""  # versão da extensão/aplicativo
+busca_web = false    # a ferramenta pode pesquisar na web durante a tarefa?
+observacoes = ""
+
+# Recursos permitidos nas duas condições (decisão D5).
+[recursos]
+permitidos = [
+  "Documentação oficial do Python (docs.python.org)",
+  "Documentação oficial do SQLite (sqlite.org)",
+  "Documentação oficial do pandas, se usado",
+  "Código e documentação da própria aplicação-base",
+]
+proibidos_condicao_A = [
+  "Qualquer assistente de IA (chat, autocompletar por IA, agentes)",
+  "Buscadores que exibem respostas/resumos gerados por IA",
+  "Fóruns e sites de perguntas e respostas",
+]
