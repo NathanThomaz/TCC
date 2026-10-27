@@ -28,9 +28,14 @@ Contexto: o autor confirmou o tema e pediu a montagem completa do projeto com ba
 - O autor executará as tarefas (inferido do contexto, **a confirmar**).
 - Falta registrar a experiência com Python, SQL e ferramentas de IA, no formulário `docs/perfil-executor.md` (a criar quando houver as respostas).
 
-### D3. Ferramenta de IA da condição B — PENDENTE
-- O instrumento foi construído **independente de fornecedor**. Ele recusa execuções na condição B enquanto `experiment/config/experimento.toml` → `[ferramenta_ia]` estiver vazio.
-- Critérios de escolha e opções: [ferramentas-ia.md](ferramentas-ia.md).
+### D3. Ferramenta de IA da condição B — ADOTADA-PROVISÓRIA (2026-10-28)
+- **Escolha do executor:** GitHub Copilot no VS Code, modalidade `ide-chat`, com uso livre de autocompletar, chat e modo agente.
+- **Justificativa:** validade ecológica (é a ferramenta que o executor usaria); maior comparabilidade com a literatura (Peng et al., 2023; Vaithilingam et al., 2022; Mozannar et al., 2024; Cui et al., 2026); mesmo editor nas duas condições, via perfis do VS Code; exportação da sessão em JSON. Comparação completa em [ferramentas-ia.md](ferramentas-ia.md), seção 2.1.
+- **Restrições:** modelo fixo escolhido no seletor (não "Auto", **não Claude**, por causa da afinidade com o autor das tarefas); atualização automática da extensão desligada.
+- **Pendências do executor:**
+  1. informar qual plano/ferramenta paga já possui;
+  2. preencher `modelo` e `versao_cliente`;
+  3. medir o consumo de créditos na prática e confirmar que 32 sessões cabem no plano.
 
 ### D4. Autoria das tarefas — ADOTADA-PROVISÓRIA (com ajuste)
 - **Piloto:** as tarefas P1a, P1b, P2a e P2b foram escritas pelo Claude (assistente de IA usado na elaboração do projeto) e estão **públicas** no repositório. Isso é aceitável porque o piloto testa o procedimento, e os dados do piloto não entram na análise principal.

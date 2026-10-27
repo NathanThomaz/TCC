@@ -10,7 +10,7 @@ Atualizado em: 2026-10-27.
 | Inspecionar ambiente | ✅ | — | plano §0 | Feito |
 | Avaliar viabilidade e literatura-semente | ✅ | — | plano §1, `pesquisa/referencias-verificadas.md` | Feito (metadados) |
 | Refinar pergunta, objetivos e hipóteses | ✅ | — | plano §2–4 | Feito, pendente de orientador |
-| Decisões D2, D3, D7 | ⛔ | Respostas do autor | `decisoes-metodologicas.md` | Todas com status ≠ PENDENTE |
+| Decisões D2, D7 (D3 adotada: Copilot; falta modelo) | ⛔ | Respostas do autor | `decisoes-metodologicas.md` | Todas com status ≠ PENDENTE |
 | Validar o plano com o orientador | ⏳ | D7 | Registro em decisões | Aprovação registrada |
 
 ## E2. Fundamentação — ⏳

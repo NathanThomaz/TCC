@@ -23,13 +23,13 @@ pergunta = "Em tarefas de manutenção e evolução de uma aplicação de pequen
 # Ferramenta da condição B (com IA). PREENCHER APÓS A DECISÃO D3.
 # Enquanto estiver vazia, o instrumento recusa iniciar execuções na condição B.
 [ferramenta_ia]
-nome = ""            # ex.: nome comercial da ferramenta
-fornecedor = ""
-modalidade = ""      # "ide-chat" | "chat-externo" | "agente"
-modelo = ""          # identificador exato do modelo, se a ferramenta permitir escolher
-versao_cliente = ""  # versão da extensão/aplicativo
+nome = "GitHub Copilot"            # decisão D3 (2026-10-28), escolhida pelo executor
+fornecedor = "GitHub (Microsoft)"
+modalidade = "ide-chat"            # "ide-chat" | "chat-externo" | "agente"
+modelo = ""          # PREENCHER: nome exato do modelo no seletor do Copilot. NÃO usar "Auto" nem modelos Claude.
+versao_cliente = ""  # PREENCHER: versão da extensão GitHub Copilot Chat (Extensões → Copilot Chat)
 busca_web = false    # a ferramenta pode pesquisar na web durante a tarefa?
-observacoes = ""
+observacoes = "VS Code, perfil B. Uso livre: autocompletar, chat e modo agente do Copilot. Atualização automática de extensões desligada durante a coleta."
 
 # Recursos permitidos nas duas condições (decisão D5).
 [recursos]
