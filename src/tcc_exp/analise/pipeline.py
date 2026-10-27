@@ -40,6 +40,9 @@ SECUNDARIAS = [
     ("delta_cc_soma", "Δ complexidade ciclomática (soma)"),
     ("n_testes_publicos", "Execuções dos testes públicos"),
     ("percepcao_erro_min", "Erro de percepção de tempo (estimado − real, min)"),
+    ("confianca_1a", "Confiança declarada antes da 1ª entrega (1–5)"),
+    ("dificuldade_percebida", "Dificuldade percebida (1–5)"),
+    ("esforco_mental", "Esforço mental percebido (1–5)"),
 ]
 
 
@@ -187,6 +190,8 @@ def analisar(cfg: Config, saida: Path | None = None) -> Path:
 
 def _relatorio(cfg, df_todos, df, exclusoes, tab_res, tab_desc, tab_h4, sintetico) -> str:
     n_pares = df.groupby("par")["condicao"].nunique().eq(2).sum() if len(df) else 0
+    origem = cfg.dados_processados
+    origem = origem.relative_to(cfg.raiz) if origem.is_relative_to(cfg.raiz) else origem
     partes = []
     if sintetico:
         partes.append("> **DADOS SINTÉTICOS. ESTE RELATÓRIO NÃO CONTÉM RESULTADOS DO EXPERIMENTO.**\n")
@@ -194,7 +199,7 @@ def _relatorio(cfg, df_todos, df, exclusoes, tab_res, tab_desc, tab_h4, sintetic
         f"# Relatório do experimento — fase {cfg.fase}",
         "",
         f"Gerado automaticamente em {datetime.now(timezone.utc).isoformat(timespec='seconds')} "
-        f"por `exp analisar`, a partir de `{cfg.dados_processados.relative_to(cfg.raiz).as_posix()}"
+        f"por `exp analisar`, a partir de `{origem.as_posix()}"
         "/execucoes.csv`. Este arquivo apresenta números, sem interpretação.",
         "",
         f"- Execuções registradas: {len(df_todos)}",

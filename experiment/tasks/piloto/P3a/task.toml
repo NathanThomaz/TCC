@@ -1,0 +1,23 @@
+id = "P3a"
+tipo = "T2"            # nova funcionalidade
+par = "P3"
+titulo = "Relatório de produtos abaixo do estoque mínimo"
+base = "base-system"
+piloto = true
+total_ocultos = 6
+
+[severidade_ocultos]
+test_minimo_por_categoria_sobrepoe_padrao = "critico"
+test_produto_sem_registro_de_estoque_tem_saldo_zero = "maior"
+test_produtos_inativos_ignorados = "maior"
+test_minimo_negativo_rejeitado = "maior"
+test_empate_de_deficit_ordena_por_sku = "menor"
+test_saldo_igual_ao_minimo_nao_entra = "menor"
+
+[descricao_ocultos]
+test_minimo_por_categoria_sobrepoe_padrao = "Quando a categoria tem mínimo próprio, ele substitui o mínimo padrão."
+test_produto_sem_registro_de_estoque_tem_saldo_zero = "Produto ativo sem registro na tabela de estoque deve ser tratado como saldo 0."
+test_produtos_inativos_ignorados = "Produtos inativos nunca aparecem no relatório."
+test_minimo_negativo_rejeitado = "Mínimo negativo (padrão ou por categoria) deve gerar ValueError."
+test_empate_de_deficit_ordena_por_sku = "Produtos com o mesmo déficit são ordenados por SKU crescente."
+test_saldo_igual_ao_minimo_nao_entra = "Produto com saldo exatamente igual ao mínimo não está abaixo do mínimo."

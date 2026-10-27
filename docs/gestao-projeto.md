@@ -36,9 +36,12 @@ Atualizado em: 2026-10-27.
 | Tarefa | Status | Depende de | Artefato | Critério |
 |---|---|---|---|---|
 | Instrumento mínimo + testes | ✅ | — | `src/tcc_exp`, `tests/` | 39 testes passando (2026-10-27) |
-| Tarefas-piloto P1 e P2 | ✅ | — | `experiment/tasks/piloto` | `validar-tarefa` OK nas 4 |
-| Plano do piloto | ✅ | — | `experiment/randomization/plano-piloto.csv` | Sorteado (semente 20261027) |
-| Executar as 4 execuções-piloto | ⛔ | D3 (cond. B) | `data/raw/piloto` | 4 execuções concluídas |
+| Tarefas-piloto P1–P4 (4 tipos) | ✅ | — | `experiment/tasks/piloto` | `validar-tarefa` OK nas 8 (2026-10-28) |
+| Plano do piloto | ✅ | — | `experiment/randomization/plano-piloto.csv` | Sorteado (semente 20261028) |
+| Dashboard e demonstração | ✅ | — | `src/tcc_exp/analise/dashboard.py` | 45 testes passando (2026-10-28) |
+| Análise de poder | ✅ | — | `docs/analise-poder.md` | Gerada por script |
+| Perfil do executor | ⏳ | D2 | `docs/perfil-executor.md` | Preenchido |
+| Executar as 8 execuções-piloto | ⛔ | D3 (cond. B) | `data/raw/piloto` | 8 execuções concluídas |
 | Relatório de ajustes do piloto | ⏳ | execuções | `docs/relatorio-piloto.md` | Ajustes registrados |
 
 ## E5. Congelamento — ⏳

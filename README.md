@@ -26,6 +26,8 @@ docs/            planejamento e metodologia
   protocolo-experimental.md  protocolo (versionado; congela na Etapa 5)
   metricas.md                definições operacionais de cada métrica
   ferramentas-ia.md          categorias de IA, critérios de escolha, registro, ameaças
+  analise-poder.md           poder estatístico do desenho (simulação)
+  perfil-executor.md         formulário de perfil e expectativas prévias
   guia-sessao.md             roteiro do executor em cada sessão
   decisoes-metodologicas.md  decisões (pendentes, provisórias, aprovadas)
   desvios.md                 desvios do protocolo
@@ -47,7 +49,7 @@ src/tcc_exp/     instrumento: CLI `exp`, eventos, sessão, avaliação, métrica
 tests/           testes do instrumento (unit + integration; dados sintéticos isolados)
 data/            raw/ (somente-acréscimo) → processed/ (gerado)
 reports/         tabelas, figuras e relatório (gerados por `exp analisar`)
-thesis/          capítulos do TCC e referências ABNT
+thesis/          capítulos do TCC, referências ABNT e roteiro da defesa (apresentacao/)
 ```
 
 ## Instalação
@@ -75,16 +77,45 @@ Roteiro completo em [docs/guia-sessao.md](docs/guia-sessao.md). Em resumo:
 exp abrir X01 --confirmo-sem-ia    # (condição A)  |  exp abrir X01 --modelo "<modelo>"  (condição B)
 exp iniciar X01
 exp testar X01
-exp entregar X01                   # avaliação oculta → aceita ou devolutiva
+exp entregar X01 --confianca 4     # avaliação oculta → aceita ou devolutiva
 exp percepcao X01 <minutos>
+exp questionario X01 --dificuldade 3 --esforco 3
 ```
 
-## Gerar resultados
+## Gerar resultados e o dashboard final
 
 ```bash
 exp processar     # data/raw/<fase> → data/processed/<fase>/execucoes.csv
 exp analisar      # → reports/<fase>/ (tabelas, figuras, relatorio-experimento.md)
+exp dashboard     # → reports/<fase>/dashboard.html (apresentação, resumo, gráficos, análises, dados, limitações)
 ```
+
+O dashboard é um único arquivo HTML que funciona offline e se adapta aos temas claro e escuro. Ele tem seis seções:
+- **Apresentação:** título, pergunta, hipóteses, desenho e condições;
+- **Resumo:** indicadores e gráfico de efeitos com IC 95%;
+- **Gráficos:** pares A × B de H1–H3, velocidade × qualidade, aprendizagem ao longo da sequência e H4 por tipo;
+- **Análises:** comparações pareadas e descritivas;
+- **Dados:** exclusões e execuções;
+- **Limitações.**
+
+### Ver como o dashboard ficará (antes da coleta)
+
+```bash
+exp demo-dashboard --saida ../tcc-demo   # dados SINTÉTICOS com efeito nulo, fora do repositório
+```
+
+A demonstração exibe uma faixa de aviso e **não pode** ser gravada em `reports/` nem em `data/`. Ela mostra o formato, não resultados.
+
+## Tarefas do piloto
+
+| Par | Tipo | Gêmea a | Gêmea b |
+|---|---|---|---|
+| P1 | T1 correção de defeito | P1a frete grátis indevido com cupom | P1b estoque não volta ao cancelar |
+| P2 | T3 consulta SQL | P2a nº de pedidos inflado por categoria | P2b produtos sem venda incompleto |
+| P3 | T2 nova funcionalidade | P3a produtos abaixo do estoque mínimo | P3b resumo de compras do cliente |
+| P4 | T4 robustez da importação | P4a CSV do Excel (BOM, duplicados, linhas) | P4b formato de preço inválido |
+
+Todas foram validadas com `exp validar-tarefa`: o estado inicial falha em parte dos testes ocultos, e a referência passa em 100%.
 
 ## Princípios de integridade
 

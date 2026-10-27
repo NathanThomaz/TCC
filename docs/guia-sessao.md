@@ -37,7 +37,7 @@ Descubra a próxima execução no plano (`experiment/randomization/plano-<fase>.
 | Testar | `exp testar X01` | Quantas vezes quiser. Cada execução é registrada |
 | Pausar | `exp pausar X01 --motivo "..."` / `exp retomar X01` | **Só** para interrupções externas |
 | Ver o tempo | `exp status X01` | Mostra o tempo ativo e o restante |
-| Entregar | `exp entregar X01` | Aceita → fim. Senão → devolutiva → corrija → entregue de novo |
+| Entregar | `exp entregar X01 --confianca <1-5>` | Antes de entregar, responda: quão confiante você está de que a entrega atende a **todos** os cenários? Aceita → fim. Senão → devolutiva → corrija → entregue de novo |
 | Limite | `exp encerrar-limite X01` | Use ao chegar a 90 min ativos |
 | Abortar | `exp abortar X01 --motivo "..."` | Falha de ambiente ou da IA. Registre em `docs/desvios.md` |
 | Observação | `exp nota X01 "texto"` | Qualquer coisa relevante para a análise |
@@ -45,6 +45,7 @@ Descubra a próxima execução no plano (`experiment/randomization/plano-<fase>.
 ## 3. Depois da sessão
 
 - [ ] `exp percepcao X01 <minutos>`: quanto tempo você **acha** que gastou, antes de olhar o status.
+- [ ] `exp questionario X01 --dificuldade <1-5> --esforco <1-5> [--utilidade-ia <1-5>] [--comentario "..."]` (a utilidade da IA só se responde na condição B).
 - [ ] Condição B: exportar a conversa ou log da ferramenta e rodar `exp anexar X01 <arquivo> --descricao "transcrição"`.
 - [ ] Se houve algo fora do protocolo, registrar em [desvios.md](desvios.md).
 - [ ] Commit dos dados brutos: `git add data/raw && git commit -m "dados: sessão X01"`.

@@ -38,6 +38,10 @@ As métricas são calculadas por [src/tcc_exp/metricas.py](../src/tcc_exp/metric
 | `delta_cc_soma` | Soma da complexidade ciclomática (radon) no final menos no início | CC | radon | Possível perda de manutenibilidade | Métrica isolada é fraca |
 | `n_testes_publicos` | Número de `exp testar` | contagem | Eventos | Esforço de validação | Estilo pessoal |
 | `percepcao_erro_min` | Estimativa do executor menos `t_total_min` | min | `exp percepcao` | Viés de percepção | Autorrelato |
+| `confianca_1a` | Resposta 1–5 a "quão confiante você está de que a entrega atende a TODOS os cenários?", dada **antes** de ver a avaliação da 1ª entrega | 1–5 | `exp entregar --confianca` | Comparada com `taxa_ocultos_1a`, mede a calibração e o excesso de confiança (cf. Perry et al., 2023) | Escala ordinal, autorrelato |
+| `dificuldade_percebida` | Dificuldade da tarefa, 1 (muito fácil) a 5 (muito difícil) | 1–5 | `exp questionario` | Controle da equivalência das gêmeas | Influenciada pela condição |
+| `esforco_mental` | Esforço mental percebido, 1 a 5 | 1–5 | `exp questionario` | Custo cognitivo | Autorrelato |
+| `utilidade_ia` (só B) | Utilidade percebida da IA, de 1 (atrapalhou muito) a 5 (ajudou muito) | 1–5 | `exp questionario --utilidade-ia` | Percepção × medição | Autorrelato |
 | Uso da IA (descritor, só B) | Transcrições anexadas | — | `exp anexar` | Caracteriza o tratamento. **Não é desfecho** | Depende do que a ferramenta exporta |
 
 ## Regras de tratamento

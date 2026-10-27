@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from tcc_exp.eventos import ts
 
 # Eventos que podem ocorrer em qualquer estado depois da abertura.
-LIVRES = {"nota", "analise_estatica", "metadados_ia", "anexo", "percepcao"}
+LIVRES = {"nota", "analise_estatica", "metadados_ia", "anexo", "percepcao", "questionario"}
 
 TRANSICOES: dict[str | None, dict[str, str]] = {
     None: {"abertura": "aberta"},

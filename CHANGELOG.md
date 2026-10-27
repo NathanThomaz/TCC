@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.2.0] — 2026-10-28
+
+### Adicionado
+- Tarefas-piloto P3a e P3b (T2, nova funcionalidade) e P4a e P4b (T4, robustez da importação). O piloto cobre os 4 tipos (8 tarefas, todas validadas). Plano do piloto sorteado de novo (semente 20261028), sem dados afetados.
+- `exp dashboard`: dashboard HTML autocontido com apresentação, resumo, gráficos SVG interativos, análises, dados e limitações.
+- `exp demo-dashboard`: demonstração com dados sintéticos de efeito nulo, bloqueada para `reports/` e `data/`.
+- Confiança antes da entrega (`--confianca`) e questionário pós-sessão (`exp questionario`) como métricas secundárias.
+- Análise de poder por simulação (`docs/analise-poder.md`), formulário de perfil do executor e roteiro da defesa.
+
+### Corrigido
+- A avaliação quebrava no Windows quando a saída do pytest tinha acentos (cp1252). Agora força UTF-8.
+- O relatório quebrava quando os dados processados ficavam fora da raiz do projeto.
+
 ## [0.1.0] — 2026-10-27
 
 ### Adicionado

@@ -29,6 +29,7 @@ TIPOS = {
     "metadados_ia",
     "anexo",             # transcrição ou outro arquivo bruto anexado
     "percepcao",         # estimativa do executor sobre o próprio tempo
+    "questionario",      # questionário pós-sessão (escalas 1–5)
 }
 
 

@@ -111,6 +111,15 @@ def calcular(eventos: list[dict], severidade: dict[str, str], limite_min: float)
     linha["delta_alertas_ruff"] = _delta(ini_e, fim_e, "ruff", "total")
     linha["delta_cc_soma"] = _delta(ini_e, fim_e, "radon_cc", "soma")
 
+    if entregas:
+        linha["confianca_1a"] = eventos[entregas[0]]["payload"].get("confianca")
+    quest = [e for e in eventos if e["tipo"] == "questionario"]
+    if quest:
+        q = quest[-1]["payload"]
+        linha["dificuldade_percebida"] = q.get("dificuldade")
+        linha["esforco_mental"] = q.get("esforco")
+        linha["utilidade_ia"] = q.get("utilidade_ia")
+
     perc = [e for e in eventos if e["tipo"] == "percepcao"]
     if perc:
         est = perc[-1]["payload"].get("estimativa_min")

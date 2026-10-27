@@ -1,0 +1,23 @@
+id = "P4a"
+tipo = "T4"            # robustez da importação
+par = "P4"
+titulo = "Importação falha com arquivos exportados pelo Excel"
+base = "base-system"
+piloto = true
+total_ocultos = 6
+
+[severidade_ocultos]
+test_bom_e_quebra_de_linha_windows = "critico"
+test_sku_duplicado_no_arquivo_rejeitado = "critico"
+test_cabecalho_com_espacos = "maior"
+test_numero_da_linha_considera_linhas_vazias = "maior"
+test_linhas_vazias_ignoradas = "menor"
+test_cabecalho_invalido_nao_importa_nada = "menor"
+
+[descricao_ocultos]
+test_bom_e_quebra_de_linha_windows = "Arquivo com BOM UTF-8 e quebras de linha do Windows (CRLF) deve ser importado normalmente."
+test_sku_duplicado_no_arquivo_rejeitado = "Se o mesmo SKU aparece mais de uma vez no arquivo, vale a primeira ocorrência e as seguintes são rejeitadas com motivo contendo 'duplicado'."
+test_cabecalho_com_espacos = "Espaços ao redor dos nomes das colunas no cabeçalho devem ser ignorados."
+test_numero_da_linha_considera_linhas_vazias = "O número de linha das rejeições deve ser a linha física do arquivo, contando as linhas vazias."
+test_linhas_vazias_ignoradas = "Linhas totalmente vazias são ignoradas e não contam como rejeitadas."
+test_cabecalho_invalido_nao_importa_nada = "Cabeçalho inválido deve gerar ValueError sem importar nenhuma linha."

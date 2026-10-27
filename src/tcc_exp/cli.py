@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import hashlib
 import json
 import platform
@@ -12,9 +13,9 @@ import sys
 import tempfile
 from pathlib import Path
 
-from tcc_exp import analise_estatica, avaliacao, config, ia, sessao, sorteio, tarefas, workspace
+from tcc_exp import analise_estatica, avaliacao, config, ia, sessao, sintetico, sorteio, tarefas, workspace
 from tcc_exp import eventos as ev
-from tcc_exp.analise import pipeline
+from tcc_exp.analise import dashboard, pipeline
 
 
 class ErroProtocolo(RuntimeError):
@@ -206,7 +207,7 @@ def _finalizar(cfg, exec_id, motivo, s, ws) -> None:
     })
 
 
-def _entregar(cfg, exec_id, forcada: bool) -> int:
+def _entregar(cfg, exec_id, forcada: bool, confianca: int | None = None) -> int:
     s = _estado(cfg, exec_id)
     sessao.proximo_estado(s.estado, "entrega")
     t = _tarefa_da_sessao(cfg, s)
@@ -214,7 +215,8 @@ def _entregar(cfg, exec_id, forcada: bool) -> int:
     lim = cfg.experimento["experimento"]
     numero = s.entregas + 1
     commit = workspace.snapshot(ws, f"entrega {numero}")
-    _registrar(cfg, exec_id, "entrega", {"numero": numero, "commit": commit, "forcada_por_limite": forcada})
+    _registrar(cfg, exec_id, "entrega", {"numero": numero, "commit": commit, "forcada_por_limite": forcada,
+                                         "confianca": confianca})
     r = avaliacao.rodar_pytest(ws, t.testes_ocultos, t.total_ocultos)
     _registrar(cfg, exec_id, "avaliacao", {"numero": numero, "resultado": r.como_dict()})
 
@@ -240,7 +242,21 @@ def _entregar(cfg, exec_id, forcada: bool) -> int:
 
 
 def cmd_entregar(cfg, args) -> int:
-    return _entregar(cfg, args.exec_id, forcada=False)
+    return _entregar(cfg, args.exec_id, forcada=False, confianca=args.confianca)
+
+
+def cmd_questionario(cfg, args) -> int:
+    s = _estado(cfg, args.exec_id)
+    if not s.finalizada:
+        raise ErroProtocolo("O questionário é respondido depois do fim da execução.")
+    if args.utilidade_ia is not None and s.condicao != "B":
+        raise ErroProtocolo("--utilidade-ia só se aplica à condição B.")
+    _registrar(cfg, args.exec_id, "questionario", {
+        "dificuldade": args.dificuldade, "esforco": args.esforco,
+        "utilidade_ia": args.utilidade_ia, "comentario": args.comentario,
+    })
+    print("Questionário registrado.")
+    return 0
 
 
 def cmd_encerrar_limite(cfg, args) -> int:
@@ -296,6 +312,34 @@ def cmd_analisar(cfg, args) -> int:
     return 0
 
 
+def cmd_dashboard(cfg, args) -> int:
+    print(f"Gerado: {dashboard.gerar(cfg, Path(args.saida) if args.saida else None)}")
+    return 0
+
+
+def cmd_demo_dashboard(cfg, args) -> int:
+    """Dashboard de DEMONSTRAÇÃO com dados sintéticos de efeito nulo, sempre fora de reports/ e data/."""
+    saida = Path(args.saida).resolve()
+    for proibido in (cfg.raiz / "reports", cfg.raiz / "data"):
+        if saida.is_relative_to(proibido.resolve()):
+            raise ErroProtocolo(f"A demonstração sintética não pode ser gravada em {proibido}.")
+    tmp = saida / "_dados_sinteticos"
+    if tmp.exists():
+        shutil.rmtree(tmp)
+    piloto = cfg.raiz / "experiment" / "tasks" / "piloto"
+    cfg_demo = dataclasses.replace(
+        cfg, fase="demonstracao", tarefas=piloto, dados_brutos=tmp / "raw",
+        dados_processados=tmp / "processed", plano=tmp / "sem-plano.csv", relatorios=tmp / "nao-usar",
+    )
+    pares = {"T1": ("P1a", "P1b"), "T2": ("P3a", "P3b"), "T3": ("P2a", "P2b"), "T4": ("P4a", "P4b")}
+    ocultos = {t: list(tarefas.carregar(piloto, t, cfg.base_dir).severidade) for par in pares.values() for t in par}
+    n = sintetico.gerar_conjunto_demo(cfg_demo.dados_brutos / "sessoes", pares, ocultos, semente=args.semente)
+    pipeline.processar(cfg_demo)
+    arq = dashboard.gerar(cfg_demo, saida)
+    print(f"{n} execuções SINTÉTICAS (efeito nulo) → {arq}")
+    return 0
+
+
 # ---------------------------------------------------------------- parser
 
 def construir_parser() -> argparse.ArgumentParser:
@@ -334,7 +378,17 @@ def construir_parser() -> argparse.ArgumentParser:
     com_exec("pausar", cmd_simples("pausa"), "Pausa (interrupção externa)", motivo=True)
     com_exec("retomar", cmd_simples("retomada"), "Retoma após pausa")
     com_exec("testar", cmd_testar, "Roda os testes públicos")
-    com_exec("entregar", cmd_entregar, "Entrega a solução para avaliação")
+    sp = com_exec("entregar", cmd_entregar, "Entrega a solução para avaliação")
+    sp.add_argument("--confianca", type=int, choices=range(1, 6),
+                    help="1–5: quão confiante você está de que a entrega atende a TODOS os cenários")
+    sp = com_exec("questionario", cmd_questionario, "Questionário pós-sessão (escalas 1–5)")
+    sp.add_argument("--dificuldade", type=int, choices=range(1, 6), required=True,
+                    help="1 = muito fácil … 5 = muito difícil")
+    sp.add_argument("--esforco", type=int, choices=range(1, 6), required=True,
+                    help="esforço mental: 1 = muito baixo … 5 = muito alto")
+    sp.add_argument("--utilidade-ia", type=int, choices=range(1, 6),
+                    help="só condição B: 1 = atrapalhou muito … 5 = ajudou muito")
+    sp.add_argument("--comentario", default="")
     com_exec("encerrar-limite", cmd_encerrar_limite, "Encerra ao atingir o tempo-limite")
     sp = com_exec("abortar", cmd_abortar, "Aborta por falha de ambiente/API")
     sp.add_argument("--motivo", required=True)
@@ -352,6 +406,13 @@ def construir_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser("analisar", help="data/processed → reports")
     sp.add_argument("--saida")
     sp.set_defaults(func=cmd_analisar)
+    sp = sub.add_parser("dashboard", help="Gera reports/<fase>/dashboard.html a partir dos dados reais")
+    sp.add_argument("--saida")
+    sp.set_defaults(func=cmd_dashboard)
+    sp = sub.add_parser("demo-dashboard", help="Dashboard de DEMONSTRAÇÃO com dados sintéticos (efeito nulo)")
+    sp.add_argument("--saida", required=True, help="Diretório fora de reports/ e data/")
+    sp.add_argument("--semente", type=int, default=7)
+    sp.set_defaults(func=cmd_demo_dashboard)
     return p
 
 

@@ -67,13 +67,14 @@ def rodar_pytest(
         copia = tmp / "testes"
         shutil.copytree(testes, copia, ignore=shutil.ignore_patterns("__pycache__"))
         xml_path = tmp / "junit.xml"
-        env = {**os.environ, "PYTHONPATH": str(workspace), "PYTHONDONTWRITEBYTECODE": "1"}
+        env = {**os.environ, "PYTHONPATH": str(workspace), "PYTHONDONTWRITEBYTECODE": "1",
+               "PYTHONIOENCODING": "utf-8"}  # no Windows, a saída padrão seria cp1252
         try:
             r = subprocess.run(
                 [sys.executable, "-m", "pytest", str(copia), "-q", "-p", "no:cacheprovider",
                  "--rootdir", str(tmp), f"--junitxml={xml_path}"],
                 cwd=workspace, env=env, capture_output=True, text=True, encoding="utf-8",
-                timeout=timeout,
+                errors="replace", timeout=timeout,
             )
             codigo, saida = r.returncode, (r.stdout + r.stderr)[-4000:]
         except subprocess.TimeoutExpired:

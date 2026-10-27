@@ -1,0 +1,23 @@
+id = "P3b"
+tipo = "T2"            # nova funcionalidade
+par = "P3"
+titulo = "Resumo de compras do cliente"
+base = "base-system"
+piloto = true
+total_ocultos = 6
+
+[severidade_ocultos]
+test_cancelados_e_pendentes_nao_contam = "critico"
+test_produto_favorito_por_unidades_com_desempate = "maior"
+test_ticket_medio_arredonda_meio_para_cima = "maior"
+test_cliente_sem_vendas = "maior"
+test_ultimo_pedido_considera_apenas_vendas = "menor"
+test_cliente_inexistente = "menor"
+
+[descricao_ocultos]
+test_cancelados_e_pendentes_nao_contam = "Pedidos cancelados ou pendentes não entram em nenhum campo do resumo."
+test_produto_favorito_por_unidades_com_desempate = "O produto favorito é o de mais unidades compradas. Em caso de empate, o de menor SKU."
+test_ticket_medio_arredonda_meio_para_cima = "O ticket médio é arredondado em centavos com meio para cima."
+test_cliente_sem_vendas = "Cliente sem vendas: contagens e valores 0, último pedido e favorito None."
+test_ultimo_pedido_considera_apenas_vendas = "O último pedido é a data do pedido de venda mais recente."
+test_cliente_inexistente = "Cliente inexistente deve gerar ErroPedido."

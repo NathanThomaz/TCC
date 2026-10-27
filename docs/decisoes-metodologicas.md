@@ -53,3 +53,20 @@ Contexto: o autor confirmou o tema e pediu a montagem completa do projeto com ba
   1. tarefas principais e testes ocultos nunca vão para lá;
   2. dados brutos e transcrições de IA ficarão públicos quando forem versionados. Revisar antes de cada envio para que não haja dados pessoais nem segredos;
   3. ferramentas de IA com busca web podem, em tese, encontrar o repositório. Isso não afeta as tarefas principais, porque elas não estão nele.
+
+---
+
+## 2026-10-28 — Ampliação do piloto e do instrumento
+
+### D9. Piloto com os 4 tipos de tarefa — ADOTADA-PROVISÓRIA
+- Foram acrescentados os pares P3 (T2, nova funcionalidade) e P4 (T4, robustez da importação). O piloto passa a ter 4 pares (8 execuções).
+- O plano do piloto foi **sorteado de novo** (semente 20261028, substituindo a 20261027). Isso foi feito **antes** de qualquer execução: `data/raw/piloto` não existia, então nenhum dado foi afetado.
+- **Ressalva:** em P4 as duas gêmeas alteram o mesmo módulo (`etl.py`), mas funções diferentes (`importar_produtos_csv` e `preco_br_para_centavos`). O critério "módulos diferentes" foi relaxado para T4 porque a rotina de importação é um único módulo. Avaliar no piloto se resolver uma gêmea ajuda na outra.
+
+### D10. Medidas de percepção — ADOTADA-PROVISÓRIA
+- Confiança declarada antes da 1ª entrega (`exp entregar --confianca`, 1–5) e questionário pós-sessão (`exp questionario`: dificuldade, esforço mental e utilidade da IA).
+- Entram como métricas **secundárias e exploratórias**.
+
+### D11. Dashboard e demonstração sintética — REGISTRADA
+- `exp dashboard` gera `reports/<fase>/dashboard.html` somente a partir dos dados registrados.
+- `exp demo-dashboard` usa dados sintéticos com **efeito nulo**, é proibido de gravar em `reports/` ou `data/` e exibe uma faixa de aviso em todas as visualizações.

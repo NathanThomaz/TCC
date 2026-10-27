@@ -1,0 +1,23 @@
+id = "P4b"
+tipo = "T4"            # robustez da importação
+par = "P4"
+titulo = "Preços em formato inválido importados com valor errado"
+base = "base-system"
+piloto = true
+total_ocultos = 6
+
+[severidade_ocultos]
+test_agrupamento_de_milhar_invalido_rejeitado = "critico"
+test_ponto_decimal_rejeitado_na_importacao = "critico"
+test_milhar_valido_aceito = "maior"
+test_negativo_e_vazio_rejeitados = "maior"
+test_sem_separador_de_milhar_aceito = "menor"
+test_espacos_e_prefixo_aceitos = "menor"
+
+[descricao_ocultos]
+test_agrupamento_de_milhar_invalido_rejeitado = "Ponto como separador de milhar só é válido em grupos de exatamente 3 dígitos (ex.: '1.23,45' é inválido)."
+test_ponto_decimal_rejeitado_na_importacao = "Na importação, a linha com preço usando ponto decimal (ex.: '9.90') é rejeitada com o número da linha, e as demais são importadas."
+test_milhar_valido_aceito = "Valores com milhar válido, como '1.234.567,89' e '1.000', devem ser aceitos."
+test_negativo_e_vazio_rejeitados = "Valores negativos, vazios ou só com espaços devem ser rejeitados."
+test_sem_separador_de_milhar_aceito = "Valores sem separador de milhar, como '1234,5', devem ser aceitos."
+test_espacos_e_prefixo_aceitos = "Prefixo 'R$' e espaços ao redor devem ser aceitos."

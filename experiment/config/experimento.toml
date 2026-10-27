@@ -11,6 +11,15 @@ pausa_maxima_minutos = 10     # interrupções maiores viram desvio registrado
 [executor]
 id = "E01"
 
+# Textos exibidos na seção "Apresentação" do dashboard (exp dashboard).
+[apresentacao]
+titulo = "Avaliação experimental do impacto de um assistente de IA generativa no tempo, na qualidade e no retrabalho em tarefas de manutenção de software"
+autor = "Nathan Thomaz"
+curso = "Sistemas de Informação"
+instituicao = ""     # preencher (D7)
+orientador = ""      # preencher (D7)
+pergunta = "Em tarefas de manutenção e evolução de uma aplicação de pequeno porte em Python e SQL, executadas sob protocolo controlado, como o uso de um assistente de IA generativa altera (a) o tempo até uma entrega aceita, (b) a qualidade funcional da entrega, medida por testes ocultos, e (c) o retrabalho após a devolutiva, em comparação com a execução sem esse assistente?"
+
 # Ferramenta da condição B (com IA). PREENCHER APÓS A DECISÃO D3.
 # Enquanto estiver vazia, o instrumento recusa iniciar execuções na condição B.
 [ferramenta_ia]
