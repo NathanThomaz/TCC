@@ -10,3 +10,8 @@ sealed/
 build/
 # workspaces de execução ficam fora do repositório (TCC_WORKSPACES); por segurança:
 tcc-workspaces/
+# arquivos temporários de bloqueio do Office (criados enquanto um .pptx/.docx está aberto)
+~$*
+# estado local do Obsidian (layout de janelas, lixeira); a configuração do vault é versionada
+Documentação TCC/.obsidian/workspace*.json
+Documentação TCC/.trash/
