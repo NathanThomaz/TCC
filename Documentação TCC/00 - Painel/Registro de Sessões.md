@@ -215,3 +215,15 @@ Histórico cronológico do trabalho no TCC (do mais antigo para o mais recente).
 **Instalação:** sem o pacote `wheel` não foi possível gerar o wheel. A prova foi feita com `build_py` + importação isolada: o contrato é encontrado fora do repositório.
 
 **Próximo:** etapa 2 (validador semântico).
+
+## Sessão 11 — 28/10/2026 · Registro de trabalho, apresentação e GitHub
+**Feito:**
+- criado `docs/registro-de-trabalho/` (entradas 001 a 004). De agora em diante, cada interação gera uma entrada;
+- apresentação ajustada:
+  - "Próximos passos" removido (22 slides);
+  - slide 11 alinhado ao contrato v0.2;
+- `.gitignore`: ignora `~$*` e o estado do Obsidian;
+- testes: 72 passaram;
+- push da branch `forja-marco-1`, com 4 commits.
+
+Detalhes em `docs/registro-de-trabalho/004-registro-apresentacao-github.md`.

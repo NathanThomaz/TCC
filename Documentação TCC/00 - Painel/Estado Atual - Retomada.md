@@ -36,6 +36,10 @@ tags: [tcc, retomada]
 >   - 27 testes estruturais em `tests/forja/`;
 >   - suíte completa com 72 testes passando.
 > - **Próximo:** etapa 2 (validador semântico + códigos de erro), aguardando o "ok" do autor.
+>
+> **GitHub (28/10):** tudo enviado na branch **`forja-marco-1`** (a `main` não foi alterada); merge ou PR a decidir.
+> **Apresentação:** versão única `proposta-v2-forja.pptx`, com 22 slides e sem "Próximos passos". A `rev3` local está obsoleta.
+> **Registro de trabalho:** `docs/registro-de-trabalho/` guarda cada pedido, o que foi feito e a resposta (001–004). **Manter uma entrada por interação.**
 > O plano v0.1 está **suspenso**. **Não configurar o Copilot nem rodar o piloto N-de-1.**
 > **Próximo passo:** levar `docs/proposta-v2-gerador-de-sistemas.md` e `thesis/apresentacao/proposta-v2-forja.pptx` ao orientador e descobrir o prazo. Nada de código da Forja antes do aval.
 > *O que vem abaixo descreve o estado do plano v0.1, que continua no repositório.*
