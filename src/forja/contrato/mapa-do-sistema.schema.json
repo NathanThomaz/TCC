@@ -1,0 +1,419 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/NathanThomaz/TCC/blob/main/src/forja/contrato/mapa-do-sistema.schema.json",
+  "title": "Mapa do sistema (Forja) — contrato v0.2",
+  "description": "Fonte única da verdade de um sistema gerado pela Forja. Este schema verifica a FORMA do mapa; a coerência (referências, tipos, ciclos, ciclo de vida) é verificada pela validação semântica do pacote forja. A IA e o modo guiado produzem o MESMO formato.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["versao_mapa", "metadados", "negocio", "entidades", "relacionamentos", "regras", "telas", "perfis", "testes_aceitacao", "tema"],
+  "properties": {
+    "versao_mapa": { "const": "0.2" },
+
+    "metadados": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["criado_em", "modo", "versao_forja"],
+      "properties": {
+        "criado_em": { "type": "string", "format": "date-time", "description": "ISO 8601. O formato é conferido pela validação semântica (DATA_INVALIDA)." },
+        "modo": { "enum": ["ia", "guiado"], "description": "Como o mapa foi preenchido. Registrado para a avaliação." },
+        "versao_forja": { "type": "string" }
+      }
+    },
+
+    "negocio": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nome", "ramo", "modulos"],
+      "properties": {
+        "nome": { "type": "string", "minLength": 1 },
+        "ramo": { "type": "string", "minLength": 1 },
+        "descricao": { "type": "string" },
+        "modulos": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["estoque", "vendas", "clientes", "fornecedores", "agenda", "financeiro"] }
+        }
+      }
+    },
+
+    "entidades": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/entidade" } },
+    "relacionamentos": { "type": "array", "items": { "$ref": "#/$defs/relacionamento" } },
+    "regras": { "type": "array", "items": { "$ref": "#/$defs/regra" } },
+
+    "telas": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["menu", "itens"],
+      "properties": {
+        "menu": { "type": "array", "items": { "$ref": "#/$defs/id" }, "description": "Ordem das telas no menu (ids de telas)." },
+        "itens": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/tela" } }
+      }
+    },
+
+    "perfis": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/perfil" } },
+
+    "testes_aceitacao": {
+      "type": "array",
+      "description": "Testes do PRÓPRIO sistema, derivados dos exemplos confirmados pelo usuário. Não confundir com os testes ocultos da avaliação do TCC, que ficam fora do mapa.",
+      "items": { "$ref": "#/$defs/teste" }
+    },
+
+    "tema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nome_sistema", "estilo", "cor_primaria"],
+      "properties": {
+        "nome_sistema": { "type": "string", "minLength": 1 },
+        "estilo": { "enum": ["claro", "escuro", "alto_contraste"] },
+        "cor_primaria": { "$ref": "#/$defs/cor" },
+        "cor_secundaria": { "$ref": "#/$defs/cor" },
+        "logo": { "type": ["string", "null"], "description": "Caminho relativo de uma imagem PNG/SVG local." }
+      }
+    }
+  },
+
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,39}$" },
+    "caminho": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$",
+      "description": "Campo da entidade atual ou caminho por relacionamentos, ex.: 'quantidade', 'produto.estoque', 'cliente.limite_fiado'."
+    },
+    "referencia_teste": { "type": "string", "pattern": "^@[a-z][a-z0-9_]*$" },
+    "cor": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" },
+    "evento_crud": { "enum": ["criar", "editar", "excluir"] },
+    "lista_ids": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/id" } },
+
+    "entidade": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "nome", "campos", "rotulo"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "nome": { "type": "string", "minLength": 1 },
+        "nome_plural": { "type": "string" },
+        "descricao": { "type": "string" },
+        "rotulo": { "$ref": "#/$defs/id", "description": "Campo usado para exibir um registro em listas e seletores." },
+        "campos": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/campo" } },
+        "ciclo_de_vida": { "$ref": "#/$defs/ciclo_de_vida" }
+      }
+    },
+
+    "campo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "nome", "tipo"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "nome": { "type": "string", "minLength": 1 },
+        "tipo": { "enum": ["texto", "texto_longo", "inteiro", "decimal", "moeda", "data", "data_hora", "booleano", "opcoes", "telefone", "email"] },
+        "origem": {
+          "enum": ["usuario", "calculo", "acao", "estado"],
+          "default": "usuario",
+          "description": "Quem altera o campo. usuario: o usuário (e ações); calculo: só uma regra de cálculo; acao: só ações; estado: só transições do ciclo de vida. Só campos 'usuario' são editáveis na aplicação."
+        },
+        "calculado": {
+          "type": "boolean",
+          "deprecated": true,
+          "description": "OBSOLETO (v0.1). Equivale a origem 'calculo' e gera o aviso CAMPO_CALCULADO_OBSOLETO. Não pode ser usado junto com 'origem'."
+        },
+        "obrigatorio": { "type": "boolean", "default": false },
+        "unico": { "type": "boolean", "default": false },
+        "padrao": { "type": ["string", "number", "boolean", "null"] },
+        "min": { "type": "number" },
+        "max": { "type": "number" },
+        "opcoes": { "type": "array", "minItems": 2, "uniqueItems": true, "items": { "type": "string" } }
+      },
+      "allOf": [
+        { "if": { "properties": { "tipo": { "const": "opcoes" } } }, "then": { "required": ["opcoes"] } },
+        { "not": { "required": ["origem", "calculado"] } }
+      ]
+    },
+
+    "ciclo_de_vida": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["campo", "inicial", "estados", "transicoes"],
+      "description": "Estados de um registro e as transições (eventos de domínio) entre eles.",
+      "properties": {
+        "campo": { "$ref": "#/$defs/id", "description": "Campo (tipo opcoes, origem estado) que guarda o estado atual." },
+        "inicial": { "$ref": "#/$defs/id" },
+        "estados": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "nome", "editavel", "excluivel"],
+            "properties": {
+              "id": { "$ref": "#/$defs/id" },
+              "nome": { "type": "string", "minLength": 1 },
+              "editavel": { "type": "boolean", "description": "Permite editar o registro (e seus detalhes) neste estado." },
+              "excluivel": { "type": "boolean", "description": "Permite excluir o registro neste estado." },
+              "final": { "type": "boolean", "default": false, "description": "Nenhuma transição pode sair deste estado." }
+            }
+          }
+        },
+        "transicoes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "nome", "de", "para"],
+            "properties": {
+              "id": { "$ref": "#/$defs/id" },
+              "nome": { "type": "string", "minLength": 1 },
+              "de": { "$ref": "#/$defs/lista_ids" },
+              "para": { "$ref": "#/$defs/id" },
+              "estorna": { "$ref": "#/$defs/id", "description": "Transição cujos efeitos esta desfaz, exatamente uma vez, a partir do registro de efeitos." }
+            }
+          }
+        },
+        "detalhes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/id" },
+          "description": "Relacionamentos (com esta entidade como origem) cujos registros seguem a editabilidade deste registro."
+        }
+      }
+    },
+
+    "relacionamento": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "tipo", "origem", "destino", "nome_na_origem", "nome_no_destino"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "tipo": { "enum": ["um_para_muitos", "muitos_para_muitos"], "description": "N:N sem atributos. N:N com atributos é modelado como entidade + dois 1:N." },
+        "origem": { "$ref": "#/$defs/id", "description": "Entidade do lado 'um' (ou um dos lados no N:N)." },
+        "destino": { "$ref": "#/$defs/id" },
+        "nome_na_origem": { "$ref": "#/$defs/id", "description": "Nome da coleção vista da origem, ex.: cliente.vendas." },
+        "nome_no_destino": { "$ref": "#/$defs/id", "description": "Nome da referência vista do destino, ex.: venda.cliente." },
+        "obrigatorio": { "type": "boolean", "default": false },
+        "ao_excluir_origem": { "enum": ["bloquear", "cascata", "desvincular"], "default": "bloquear" }
+      }
+    },
+
+    "expr": {
+      "description": "Expressão estruturada (sem texto livre). Avaliada como árvore de dados; nunca por eval.",
+      "oneOf": [
+        { "type": "object", "additionalProperties": false, "required": ["valor"], "properties": { "valor": { "type": ["number", "string", "boolean", "null"] } } },
+        { "type": "object", "additionalProperties": false, "required": ["campo"], "properties": { "campo": { "$ref": "#/$defs/caminho" } } },
+        { "type": "object", "additionalProperties": false, "required": ["funcao"], "properties": { "funcao": { "enum": ["hoje", "agora"] } } },
+        { "type": "object", "additionalProperties": false, "required": ["op", "args"], "properties": {
+            "op": { "enum": ["+", "-", "*", "/"] },
+            "args": { "type": "array", "minItems": 2, "items": { "$ref": "#/$defs/expr" } } } },
+        { "type": "object", "additionalProperties": false, "required": ["comparar", "esq", "dir"], "properties": {
+            "comparar": { "enum": ["=", "!=", "<", "<=", ">", ">="] },
+            "esq": { "$ref": "#/$defs/expr" },
+            "dir": { "$ref": "#/$defs/expr" } } },
+        { "type": "object", "additionalProperties": false, "required": ["e"], "properties": { "e": { "type": "array", "minItems": 2, "items": { "$ref": "#/$defs/expr" } } } },
+        { "type": "object", "additionalProperties": false, "required": ["ou"], "properties": { "ou": { "type": "array", "minItems": 2, "items": { "$ref": "#/$defs/expr" } } } },
+        { "type": "object", "additionalProperties": false, "required": ["nao"], "properties": { "nao": { "$ref": "#/$defs/expr" } } },
+        { "type": "object", "additionalProperties": false, "required": ["agregar", "colecao"], "properties": {
+            "agregar": { "enum": ["soma", "contagem", "minimo", "maximo"] },
+            "colecao": { "$ref": "#/$defs/caminho" },
+            "expr": { "$ref": "#/$defs/expr" },
+            "filtro": { "$ref": "#/$defs/expr" } } }
+      ]
+    },
+
+    "exemplo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["descricao", "esperado", "confirmado"],
+      "properties": {
+        "descricao": { "type": "string", "description": "Exemplo mostrado ao usuário, gerado de forma determinística a partir da regra." },
+        "esperado": { "enum": ["permite", "bloqueia", "calcula"] },
+        "confirmado": { "type": "boolean" }
+      }
+    },
+
+    "regra": {
+      "type": "object",
+      "required": ["id", "tipo", "nome", "entidade"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "tipo": { "enum": ["restricao", "calculo", "acao"] },
+        "nome": { "type": "string" },
+        "frase_original": { "type": "string", "description": "Como o usuário disse a regra." },
+        "entidade": { "$ref": "#/$defs/id" },
+        "exemplos": { "type": "array", "items": { "$ref": "#/$defs/exemplo" } }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "tipo": { "const": "restricao" }, "id": true, "nome": true, "frase_original": true, "entidade": true, "exemplos": true,
+            "eventos": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/evento_crud" }, "description": "Operações CRUD que disparam a verificação." },
+            "transicoes": { "$ref": "#/$defs/lista_ids", "description": "Transições (eventos de domínio) que disparam a verificação." },
+            "para_cada": { "$ref": "#/$defs/caminho", "description": "Coleção cujos itens precisam, cada um, satisfazer a condição." },
+            "condicao": { "$ref": "#/$defs/expr", "description": "Deve ser verdadeira para a operação ser permitida." },
+            "mensagem": { "type": "string", "minLength": 1 }
+          },
+          "required": ["condicao", "mensagem"],
+          "anyOf": [ { "required": ["eventos"] }, { "required": ["transicoes"] } ],
+          "additionalProperties": false
+        },
+        {
+          "properties": {
+            "tipo": { "const": "calculo" }, "id": true, "nome": true, "frase_original": true, "entidade": true, "exemplos": true,
+            "campo": { "$ref": "#/$defs/id", "description": "Campo com origem 'calculo'." },
+            "expressao": { "$ref": "#/$defs/expr" }
+          },
+          "required": ["campo", "expressao"],
+          "additionalProperties": false
+        },
+        {
+          "properties": {
+            "tipo": { "const": "acao" }, "id": true, "nome": true, "frase_original": true, "entidade": true, "exemplos": true,
+            "eventos": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/evento_crud" } },
+            "transicoes": { "$ref": "#/$defs/lista_ids" },
+            "para_cada": { "$ref": "#/$defs/caminho", "description": "Aplica a ação a cada item da coleção, no contexto do item." },
+            "condicao": { "$ref": "#/$defs/expr" },
+            "alvo": { "$ref": "#/$defs/caminho", "description": "Campo alterado, ex.: produto.estoque." },
+            "operacao": { "enum": ["somar", "subtrair", "definir"] },
+            "valor": { "$ref": "#/$defs/expr" },
+            "reverter_ao_excluir": { "type": "boolean", "description": "Só para ações disparadas por eventos CRUD. Em transições, o estorno é feito pela transição com 'estorna'." }
+          },
+          "required": ["alvo", "operacao", "valor"],
+          "anyOf": [ { "required": ["eventos"] }, { "required": ["transicoes"] } ],
+          "additionalProperties": false
+        }
+      ]
+    },
+
+    "indicador": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "titulo", "entidade", "agregar", "formato"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "titulo": { "type": "string" },
+        "entidade": { "$ref": "#/$defs/id" },
+        "agregar": { "enum": ["soma", "contagem"] },
+        "campo": { "$ref": "#/$defs/id" },
+        "filtro": { "$ref": "#/$defs/expr" },
+        "formato": { "enum": ["moeda", "numero"] }
+      }
+    },
+
+    "tela": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "tipo", "titulo"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "tipo": { "enum": ["painel", "lista", "formulario", "mestre_detalhe", "relatorio"] },
+        "titulo": { "type": "string" },
+        "entidade": { "$ref": "#/$defs/id" },
+        "campos": { "type": "array", "items": { "$ref": "#/$defs/caminho" } },
+        "filtros": { "type": "array", "items": { "$ref": "#/$defs/caminho" } },
+        "detalhe": { "$ref": "#/$defs/id", "description": "Relacionamento exibido como itens (mestre_detalhe)." },
+        "indicadores": { "type": "array", "items": { "$ref": "#/$defs/indicador" } },
+        "agrupar_por": { "$ref": "#/$defs/caminho" },
+        "campo_periodo": { "$ref": "#/$defs/id" },
+        "totalizar": { "$ref": "#/$defs/id" },
+        "filtro": { "$ref": "#/$defs/expr", "description": "Filtro fixo dos registros considerados (ex.: só vendas concluídas)." }
+      },
+      "allOf": [
+        { "if": { "properties": { "tipo": { "const": "painel" } } }, "then": { "required": ["indicadores"] } },
+        { "if": { "properties": { "tipo": { "enum": ["lista", "formulario", "mestre_detalhe", "relatorio"] } } }, "then": { "required": ["entidade"] } },
+        { "if": { "properties": { "tipo": { "const": "mestre_detalhe" } } }, "then": { "required": ["detalhe"] } },
+        { "if": { "properties": { "tipo": { "const": "relatorio" } } }, "then": { "required": ["agrupar_por", "campo_periodo"] } }
+      ]
+    },
+
+    "perfil": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "nome", "permissoes"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "nome": { "type": "string" },
+        "permissoes": {
+          "type": "object",
+          "description": "Por entidade: operações CRUD permitidas.",
+          "propertyNames": { "$ref": "#/$defs/id" },
+          "additionalProperties": {
+            "type": "array", "uniqueItems": true,
+            "items": { "enum": ["ler", "criar", "editar", "excluir"] }
+          }
+        },
+        "permissoes_transicoes": {
+          "type": "object",
+          "description": "Por entidade: transições (eventos de domínio) que o perfil pode executar. Ausente = nenhuma.",
+          "propertyNames": { "$ref": "#/$defs/id" },
+          "additionalProperties": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/id" } }
+        }
+      }
+    },
+
+    "preparacao": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entidade", "ref"],
+      "description": "Registro criado ANTES dos passos, só no ambiente de teste. 'forcar' só existe aqui.",
+      "properties": {
+        "entidade": { "$ref": "#/$defs/id" },
+        "ref": { "$ref": "#/$defs/id" },
+        "dados": { "type": "object", "description": "Campos de origem 'usuario'." },
+        "forcar": { "type": "object", "minProperties": 1, "description": "Valores para campos protegidos (origem calculo, acao ou estado). Nunca disponível no sistema publicado." }
+      }
+    },
+
+    "passo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["acao", "entidade"],
+      "properties": {
+        "acao": { "enum": ["criar", "editar", "excluir", "transicao"] },
+        "entidade": { "$ref": "#/$defs/id" },
+        "ref": { "$ref": "#/$defs/id", "description": "Nome local do registro criado, usado como @ref em passos seguintes." },
+        "alvo": { "$ref": "#/$defs/referencia_teste" },
+        "transicao": { "$ref": "#/$defs/id" },
+        "dados": { "type": "object" }
+      },
+      "allOf": [
+        { "if": { "properties": { "acao": { "const": "transicao" } } }, "then": { "required": ["transicao", "alvo"] }, "else": { "not": { "required": ["transicao"] } } },
+        { "if": { "properties": { "acao": { "enum": ["editar", "excluir"] } } }, "then": { "required": ["alvo"] } }
+      ]
+    },
+
+    "teste": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "descricao", "passos", "esperado"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "regra": { "$ref": "#/$defs/id" },
+        "descricao": { "type": "string" },
+        "preparacao": { "type": "array", "items": { "$ref": "#/$defs/preparacao" } },
+        "passos": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/passo" } },
+        "esperado": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["resultado"],
+          "properties": {
+            "resultado": { "enum": ["sucesso", "erro"], "description": "Resultado do ÚLTIMO passo." },
+            "mensagem_contem": { "type": "string" },
+            "verificar": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["registro", "campo", "igual"],
+                "properties": {
+                  "registro": { "$ref": "#/$defs/referencia_teste" },
+                  "campo": { "$ref": "#/$defs/id" },
+                  "igual": { "type": ["number", "string", "boolean", "null"] }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

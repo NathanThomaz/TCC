@@ -1,0 +1,250 @@
+{
+  "versao_mapa": "0.2",
+  "metadados": { "criado_em": "2026-10-28T12:00:00-03:00", "modo": "guiado", "versao_forja": "0.0.1" },
+  "negocio": {
+    "nome": "Padaria da Ana",
+    "ramo": "padaria",
+    "descricao": "Cenário de DESENVOLVIMENTO (fictício, público). Não é cenário de avaliação.",
+    "modulos": ["estoque", "vendas", "clientes", "agenda"]
+  },
+
+  "entidades": [
+    { "id": "cliente", "nome": "Cliente", "nome_plural": "Clientes", "rotulo": "nome", "campos": [
+      { "id": "nome", "nome": "Nome", "tipo": "texto", "obrigatorio": true },
+      { "id": "telefone", "nome": "Telefone", "tipo": "telefone" },
+      { "id": "limite_fiado", "nome": "Limite de fiado", "tipo": "moeda", "padrao": 0, "min": 0 },
+      { "id": "saldo_fiado", "nome": "Fiado em aberto", "tipo": "moeda", "padrao": 0, "origem": "acao" }
+    ] },
+    { "id": "produto", "nome": "Produto", "nome_plural": "Produtos", "rotulo": "nome", "campos": [
+      { "id": "nome", "nome": "Nome", "tipo": "texto", "obrigatorio": true, "unico": true },
+      { "id": "preco", "nome": "Preço", "tipo": "moeda", "obrigatorio": true, "min": 0 },
+      { "id": "estoque", "nome": "Estoque", "tipo": "inteiro", "padrao": 0, "min": 0 },
+      { "id": "estoque_minimo", "nome": "Estoque mínimo", "tipo": "inteiro", "padrao": 0, "min": 0 }
+    ] },
+    { "id": "venda", "nome": "Venda", "nome_plural": "Vendas", "rotulo": "data", "campos": [
+      { "id": "data", "nome": "Data", "tipo": "data_hora", "obrigatorio": true },
+      { "id": "forma_pagamento", "nome": "Forma de pagamento", "tipo": "opcoes", "obrigatorio": true, "opcoes": ["dinheiro", "pix", "cartao", "fiado"] },
+      { "id": "total", "nome": "Total", "tipo": "moeda", "padrao": 0, "origem": "calculo" },
+      { "id": "situacao", "nome": "Situação", "tipo": "opcoes", "origem": "estado", "padrao": "rascunho", "opcoes": ["rascunho", "concluida", "cancelada"] }
+    ],
+      "ciclo_de_vida": {
+        "campo": "situacao",
+        "inicial": "rascunho",
+        "estados": [
+          { "id": "rascunho", "nome": "Rascunho", "editavel": true, "excluivel": true },
+          { "id": "concluida", "nome": "Concluída", "editavel": false, "excluivel": false },
+          { "id": "cancelada", "nome": "Cancelada", "editavel": false, "excluivel": false, "final": true }
+        ],
+        "transicoes": [
+          { "id": "concluir", "nome": "Concluir venda", "de": ["rascunho"], "para": "concluida" },
+          { "id": "cancelar", "nome": "Cancelar venda", "de": ["concluida"], "para": "cancelada", "estorna": "concluir" }
+        ],
+        "detalhes": ["venda_itens"]
+      }
+    },
+    { "id": "item_venda", "nome": "Item da venda", "nome_plural": "Itens da venda", "rotulo": "quantidade", "campos": [
+      { "id": "quantidade", "nome": "Quantidade", "tipo": "inteiro", "obrigatorio": true, "min": 1 },
+      { "id": "preco_unitario", "nome": "Preço unitário", "tipo": "moeda", "obrigatorio": true, "min": 0 },
+      { "id": "subtotal", "nome": "Subtotal", "tipo": "moeda", "origem": "calculo" }
+    ] },
+    { "id": "encomenda", "nome": "Encomenda", "nome_plural": "Encomendas", "rotulo": "descricao", "campos": [
+      { "id": "descricao", "nome": "Descrição", "tipo": "texto_longo", "obrigatorio": true },
+      { "id": "data_entrega", "nome": "Data de entrega", "tipo": "data", "obrigatorio": true },
+      { "id": "valor", "nome": "Valor", "tipo": "moeda", "min": 0 },
+      { "id": "status", "nome": "Situação", "tipo": "opcoes", "padrao": "pendente", "opcoes": ["pendente", "pronta", "entregue"] }
+    ] }
+  ],
+
+  "relacionamentos": [
+    { "id": "cliente_vendas", "tipo": "um_para_muitos", "origem": "cliente", "destino": "venda", "nome_na_origem": "vendas", "nome_no_destino": "cliente", "obrigatorio": false, "ao_excluir_origem": "bloquear" },
+    { "id": "venda_itens", "tipo": "um_para_muitos", "origem": "venda", "destino": "item_venda", "nome_na_origem": "itens", "nome_no_destino": "venda", "obrigatorio": true, "ao_excluir_origem": "cascata" },
+    { "id": "produto_itens", "tipo": "um_para_muitos", "origem": "produto", "destino": "item_venda", "nome_na_origem": "itens_vendidos", "nome_no_destino": "produto", "obrigatorio": true, "ao_excluir_origem": "bloquear" },
+    { "id": "cliente_encomendas", "tipo": "um_para_muitos", "origem": "cliente", "destino": "encomenda", "nome_na_origem": "encomendas", "nome_no_destino": "cliente", "obrigatorio": true, "ao_excluir_origem": "bloquear" }
+  ],
+
+  "regras": [
+    { "id": "r_venda_com_itens", "tipo": "restricao", "nome": "Venda precisa ter itens para ser concluída",
+      "entidade": "venda", "transicoes": ["concluir"],
+      "condicao": { "comparar": ">=", "esq": { "agregar": "contagem", "colecao": "itens" }, "dir": { "valor": 1 } },
+      "mensagem": "Inclua ao menos um item antes de concluir a venda." },
+
+    { "id": "r_estoque_suficiente", "tipo": "restricao", "nome": "Não vender o que acabou",
+      "frase_original": "Não posso vender o que acabou.",
+      "entidade": "venda", "transicoes": ["concluir"], "para_cada": "itens",
+      "condicao": { "comparar": "<=", "esq": { "campo": "quantidade" }, "dir": { "campo": "produto.estoque" } },
+      "mensagem": "Estoque insuficiente para este produto.",
+      "exemplos": [ { "descricao": "Concluir uma venda de 5 pães com 3 em estoque", "esperado": "bloqueia", "confirmado": true },
+                    { "descricao": "Concluir uma venda de 3 pães com 3 em estoque", "esperado": "permite", "confirmado": true } ] },
+
+    { "id": "r_subtotal", "tipo": "calculo", "nome": "Subtotal do item",
+      "entidade": "item_venda", "campo": "subtotal",
+      "expressao": { "op": "*", "args": [ { "campo": "quantidade" }, { "campo": "preco_unitario" } ] } },
+
+    { "id": "r_total_venda", "tipo": "calculo", "nome": "Total da venda",
+      "entidade": "venda", "campo": "total",
+      "expressao": { "agregar": "soma", "colecao": "itens", "expr": { "campo": "subtotal" } } },
+
+    { "id": "r_baixa_estoque", "tipo": "acao", "nome": "Baixar o estoque ao concluir a venda",
+      "frase_original": "Quando vender, tira do estoque.",
+      "entidade": "venda", "transicoes": ["concluir"], "para_cada": "itens",
+      "alvo": "produto.estoque", "operacao": "subtrair", "valor": { "campo": "quantidade" } },
+
+    { "id": "r_limite_fiado", "tipo": "restricao", "nome": "Fiado só até o limite do cliente",
+      "frase_original": "Cada cliente tem um limite de fiado.",
+      "entidade": "venda", "transicoes": ["concluir"],
+      "condicao": { "ou": [
+        { "comparar": "!=", "esq": { "campo": "forma_pagamento" }, "dir": { "valor": "fiado" } },
+        { "comparar": "<=",
+          "esq": { "op": "+", "args": [ { "campo": "cliente.saldo_fiado" }, { "campo": "total" } ] },
+          "dir": { "campo": "cliente.limite_fiado" } }
+      ] },
+      "mensagem": "Este cliente atingiu o limite de fiado.",
+      "exemplos": [ { "descricao": "Cliente com limite R$ 200 e R$ 180 em aberto conclui uma compra de R$ 30 no fiado", "esperado": "bloqueia", "confirmado": true } ] },
+
+    { "id": "r_soma_fiado", "tipo": "acao", "nome": "Somar a venda fiado ao saldo do cliente",
+      "entidade": "venda", "transicoes": ["concluir"],
+      "condicao": { "comparar": "=", "esq": { "campo": "forma_pagamento" }, "dir": { "valor": "fiado" } },
+      "alvo": "cliente.saldo_fiado", "operacao": "somar", "valor": { "campo": "total" } },
+
+    { "id": "r_entrega_futura", "tipo": "restricao", "nome": "Encomenda não pode ser para o passado",
+      "entidade": "encomenda", "eventos": ["criar"],
+      "condicao": { "comparar": ">=", "esq": { "campo": "data_entrega" }, "dir": { "funcao": "hoje" } },
+      "mensagem": "A data de entrega não pode estar no passado." }
+  ],
+
+  "telas": {
+    "menu": ["painel", "vendas", "produtos", "clientes", "encomendas", "relatorio_vendas"],
+    "itens": [
+      { "id": "painel", "tipo": "painel", "titulo": "Painel", "indicadores": [
+        { "id": "vendas_hoje", "titulo": "Vendas do dia", "entidade": "venda", "agregar": "soma", "campo": "total",
+          "filtro": { "e": [
+            { "comparar": ">=", "esq": { "campo": "data" }, "dir": { "funcao": "hoje" } },
+            { "comparar": "=", "esq": { "campo": "situacao" }, "dir": { "valor": "concluida" } } ] },
+          "formato": "moeda" },
+        { "id": "acabando", "titulo": "Produtos acabando", "entidade": "produto", "agregar": "contagem",
+          "filtro": { "comparar": "<=", "esq": { "campo": "estoque" }, "dir": { "campo": "estoque_minimo" } }, "formato": "numero" },
+        { "id": "fiado_aberto", "titulo": "Fiado em aberto", "entidade": "cliente", "agregar": "soma", "campo": "saldo_fiado", "formato": "moeda" }
+      ] },
+      { "id": "vendas", "tipo": "mestre_detalhe", "titulo": "Vendas", "entidade": "venda", "detalhe": "venda_itens",
+        "campos": ["data", "cliente.nome", "forma_pagamento", "total", "situacao"], "filtros": ["data", "forma_pagamento", "situacao"] },
+      { "id": "produtos", "tipo": "lista", "titulo": "Produtos", "entidade": "produto",
+        "campos": ["nome", "preco", "estoque", "estoque_minimo"], "filtros": ["nome"] },
+      { "id": "clientes", "tipo": "lista", "titulo": "Clientes", "entidade": "cliente",
+        "campos": ["nome", "telefone", "limite_fiado", "saldo_fiado"], "filtros": ["nome"] },
+      { "id": "encomendas", "tipo": "lista", "titulo": "Encomendas", "entidade": "encomenda",
+        "campos": ["data_entrega", "cliente.nome", "descricao", "status"], "filtros": ["data_entrega", "status"] },
+      { "id": "relatorio_vendas", "tipo": "relatorio", "titulo": "Vendas por forma de pagamento", "entidade": "venda",
+        "agrupar_por": "forma_pagamento", "campo_periodo": "data", "totalizar": "total",
+        "filtro": { "comparar": "=", "esq": { "campo": "situacao" }, "dir": { "valor": "concluida" } } }
+    ]
+  },
+
+  "perfis": [
+    { "id": "dona", "nome": "Dona",
+      "permissoes": {
+        "cliente": ["ler", "criar", "editar", "excluir"], "produto": ["ler", "criar", "editar", "excluir"],
+        "venda": ["ler", "criar", "editar", "excluir"], "item_venda": ["ler", "criar", "editar", "excluir"],
+        "encomenda": ["ler", "criar", "editar", "excluir"] },
+      "permissoes_transicoes": { "venda": ["concluir", "cancelar"] } },
+    { "id": "atendente", "nome": "Atendente",
+      "permissoes": {
+        "cliente": ["ler", "criar"], "produto": ["ler"],
+        "venda": ["ler", "criar", "editar"], "item_venda": ["ler", "criar", "editar", "excluir"],
+        "encomenda": ["ler", "criar", "editar"] },
+      "permissoes_transicoes": { "venda": ["concluir"] } }
+  ],
+
+  "testes_aceitacao": [
+    { "id": "t_rascunho_nao_movimenta", "descricao": "Itens numa venda em rascunho não mexem no estoque",
+      "passos": [
+        { "acao": "criar", "entidade": "produto", "ref": "pao", "dados": { "nome": "Pão francês", "preco": 0.5, "estoque": 3 } },
+        { "acao": "criar", "entidade": "venda", "ref": "v1", "dados": { "data": "2026-11-02T08:00:00", "forma_pagamento": "pix" } },
+        { "acao": "criar", "entidade": "item_venda", "dados": { "venda": "@v1", "produto": "@pao", "quantidade": 2, "preco_unitario": 0.5 } }
+      ],
+      "esperado": { "resultado": "sucesso", "verificar": [
+        { "registro": "@pao", "campo": "estoque", "igual": 3 },
+        { "registro": "@v1", "campo": "total", "igual": 1.0 },
+        { "registro": "@v1", "campo": "situacao", "igual": "rascunho" } ] } },
+
+    { "id": "t_concluir_baixa_estoque", "regra": "r_baixa_estoque", "descricao": "Concluir uma venda de 2 pães com 3 em estoque deixa 1",
+      "passos": [
+        { "acao": "criar", "entidade": "produto", "ref": "pao", "dados": { "nome": "Pão francês", "preco": 0.5, "estoque": 3 } },
+        { "acao": "criar", "entidade": "venda", "ref": "v1", "dados": { "data": "2026-11-02T08:00:00", "forma_pagamento": "pix" } },
+        { "acao": "criar", "entidade": "item_venda", "dados": { "venda": "@v1", "produto": "@pao", "quantidade": 2, "preco_unitario": 0.5 } },
+        { "acao": "transicao", "entidade": "venda", "transicao": "concluir", "alvo": "@v1" }
+      ],
+      "esperado": { "resultado": "sucesso", "verificar": [
+        { "registro": "@pao", "campo": "estoque", "igual": 1 },
+        { "registro": "@v1", "campo": "situacao", "igual": "concluida" } ] } },
+
+    { "id": "t_bloqueia_sem_estoque", "regra": "r_estoque_suficiente", "descricao": "Concluir uma venda de 5 pães com 3 em estoque é bloqueado",
+      "passos": [
+        { "acao": "criar", "entidade": "produto", "ref": "pao", "dados": { "nome": "Pão francês", "preco": 0.5, "estoque": 3 } },
+        { "acao": "criar", "entidade": "venda", "ref": "v1", "dados": { "data": "2026-11-02T08:00:00", "forma_pagamento": "dinheiro" } },
+        { "acao": "criar", "entidade": "item_venda", "dados": { "venda": "@v1", "produto": "@pao", "quantidade": 5, "preco_unitario": 0.5 } },
+        { "acao": "transicao", "entidade": "venda", "transicao": "concluir", "alvo": "@v1" }
+      ],
+      "esperado": { "resultado": "erro", "mensagem_contem": "Estoque insuficiente" } },
+
+    { "id": "t_cancelar_estorna", "descricao": "Cancelar uma venda concluída devolve o estoque",
+      "passos": [
+        { "acao": "criar", "entidade": "produto", "ref": "pao", "dados": { "nome": "Pão francês", "preco": 0.5, "estoque": 3 } },
+        { "acao": "criar", "entidade": "venda", "ref": "v1", "dados": { "data": "2026-11-02T08:00:00", "forma_pagamento": "pix" } },
+        { "acao": "criar", "entidade": "item_venda", "dados": { "venda": "@v1", "produto": "@pao", "quantidade": 2, "preco_unitario": 0.5 } },
+        { "acao": "transicao", "entidade": "venda", "transicao": "concluir", "alvo": "@v1" },
+        { "acao": "transicao", "entidade": "venda", "transicao": "cancelar", "alvo": "@v1" }
+      ],
+      "esperado": { "resultado": "sucesso", "verificar": [
+        { "registro": "@pao", "campo": "estoque", "igual": 3 },
+        { "registro": "@v1", "campo": "situacao", "igual": "cancelada" } ] } },
+
+    { "id": "t_cancelar_duas_vezes", "descricao": "Cancelar duas vezes é recusado (sem estorno duplicado)",
+      "passos": [
+        { "acao": "criar", "entidade": "produto", "ref": "pao", "dados": { "nome": "Pão francês", "preco": 0.5, "estoque": 3 } },
+        { "acao": "criar", "entidade": "venda", "ref": "v1", "dados": { "data": "2026-11-02T08:00:00", "forma_pagamento": "pix" } },
+        { "acao": "criar", "entidade": "item_venda", "dados": { "venda": "@v1", "produto": "@pao", "quantidade": 2, "preco_unitario": 0.5 } },
+        { "acao": "transicao", "entidade": "venda", "transicao": "concluir", "alvo": "@v1" },
+        { "acao": "transicao", "entidade": "venda", "transicao": "cancelar", "alvo": "@v1" },
+        { "acao": "transicao", "entidade": "venda", "transicao": "cancelar", "alvo": "@v1" }
+      ],
+      "esperado": { "resultado": "erro", "verificar": [
+        { "registro": "@pao", "campo": "estoque", "igual": 3 } ] } },
+
+    { "id": "t_concluida_nao_exclui", "descricao": "Venda concluída não pode ser excluída",
+      "passos": [
+        { "acao": "criar", "entidade": "produto", "ref": "pao", "dados": { "nome": "Pão francês", "preco": 0.5, "estoque": 3 } },
+        { "acao": "criar", "entidade": "venda", "ref": "v1", "dados": { "data": "2026-11-02T08:00:00", "forma_pagamento": "pix" } },
+        { "acao": "criar", "entidade": "item_venda", "dados": { "venda": "@v1", "produto": "@pao", "quantidade": 1, "preco_unitario": 0.5 } },
+        { "acao": "transicao", "entidade": "venda", "transicao": "concluir", "alvo": "@v1" },
+        { "acao": "excluir", "entidade": "venda", "alvo": "@v1" }
+      ],
+      "esperado": { "resultado": "erro" } },
+
+    { "id": "t_limite_fiado", "regra": "r_limite_fiado", "descricao": "Concluir venda fiado acima do limite é bloqueado",
+      "preparacao": [
+        { "entidade": "cliente", "ref": "joao", "dados": { "nome": "João", "limite_fiado": 200 }, "forcar": { "saldo_fiado": 180 } }
+      ],
+      "passos": [
+        { "acao": "criar", "entidade": "produto", "ref": "bolo", "dados": { "nome": "Bolo", "preco": 30, "estoque": 5 } },
+        { "acao": "criar", "entidade": "venda", "ref": "v1", "dados": { "data": "2026-11-02T09:00:00", "forma_pagamento": "fiado", "cliente": "@joao" } },
+        { "acao": "criar", "entidade": "item_venda", "dados": { "venda": "@v1", "produto": "@bolo", "quantidade": 1, "preco_unitario": 30 } },
+        { "acao": "transicao", "entidade": "venda", "transicao": "concluir", "alvo": "@v1" }
+      ],
+      "esperado": { "resultado": "erro", "mensagem_contem": "limite de fiado" } },
+
+    { "id": "t_estorno_fiado", "regra": "r_soma_fiado", "descricao": "Concluir soma o fiado; cancelar devolve",
+      "passos": [
+        { "acao": "criar", "entidade": "cliente", "ref": "maria", "dados": { "nome": "Maria", "limite_fiado": 200 } },
+        { "acao": "criar", "entidade": "produto", "ref": "bolo", "dados": { "nome": "Bolo", "preco": 30, "estoque": 5 } },
+        { "acao": "criar", "entidade": "venda", "ref": "v1", "dados": { "data": "2026-11-02T09:00:00", "forma_pagamento": "fiado", "cliente": "@maria" } },
+        { "acao": "criar", "entidade": "item_venda", "dados": { "venda": "@v1", "produto": "@bolo", "quantidade": 1, "preco_unitario": 30 } },
+        { "acao": "transicao", "entidade": "venda", "transicao": "concluir", "alvo": "@v1" },
+        { "acao": "transicao", "entidade": "venda", "transicao": "cancelar", "alvo": "@v1" }
+      ],
+      "esperado": { "resultado": "sucesso", "verificar": [
+        { "registro": "@maria", "campo": "saldo_fiado", "igual": 0 },
+        { "registro": "@bolo", "campo": "estoque", "igual": 5 } ] } }
+  ],
+
+  "tema": { "nome_sistema": "Padaria da Ana · Controle", "estilo": "claro", "cor_primaria": "#D9581E", "cor_secundaria": "#2B3240", "logo": null }
+}

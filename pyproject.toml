@@ -19,12 +19,18 @@ dev = ["pytest>=8.0"]
 # Métricas estruturais (complexidade e alertas de linter). Sem elas, o instrumento
 # registra explicitamente "indisponível" e não inventa valores.
 estatica = ["ruff>=0.6", "radon>=6.0"]
+# Forja: validação do contrato do mapa do sistema (JSON Schema Draft 2020-12).
+forja = ["jsonschema>=4.18,<5"]
 
 [project.scripts]
 exp = "tcc_exp.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+# O contrato da Forja é um recurso do pacote (lido via importlib.resources).
+"forja.contrato" = ["*.schema.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests", "experiment/base-system/tests"]
