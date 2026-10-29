@@ -8,7 +8,7 @@ Enquanto não for aprovada, o plano v0.1 ([plano-execucao.md](../../docs/plano-e
 
 **Nome de trabalho:** *Forja* (provisório).
 
-**Apresentação:** [`thesis/apresentacao/proposta-v2-forja.pptx`](../../thesis/apresentacao/proposta-v2-forja.pptx).
+**Apresentação:** [`thesis/apresentacao/proposta-nexo.pptx`](../../thesis/apresentacao/proposta-nexo.pptx). A versão da Forja foi apagada e continua no histórico do git.
 
 Convenções usadas no texto:
 - **[PROPOSTA]:** recomendação ainda não aprovada;

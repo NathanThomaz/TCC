@@ -351,3 +351,11 @@ Detalhes em [[004_2026-10-28_Resposta-Claude_registro-apresentacao-github]].
 A `main` não mudou.
 
 **Registro:** [[017_2026-10-29_Resposta-Claude_limpeza-e-push]].
+
+## Sessão 23 — 29/10/2026 · Forja apagada e merge na main
+**Feito:**
+- apagada a `proposta-v2-forja.pptx` (continua no histórico do git);
+- referências do vault apontadas para a `proposta-nexo.pptx`;
+- merge fast-forward da `forja-marco-1` na `main`; push das duas branches.
+
+**Registro:** [[018_2026-10-29_Resposta-Claude_merge-na-main]].

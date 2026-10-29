@@ -27,7 +27,7 @@ tags: [tcc, retomada]
 > - portão offline G1;
 > - isolamento do efeito da IA.
 >
-> **Pendência de arquivo:** substituir `proposta-v2-forja.pptx` (19 slides, antiga) pela rev3 quando o PowerPoint for fechado.
+> **Arquivos da Forja:** `proposta-v2-forja.pptx` e a `rev3` foram apagados (entradas 017 e 018); continuam no histórico do git. A apresentação vigente é `proposta-nexo.pptx`.
 >
 > **Marco 1 (contrato + validação semântica):** plano **aprovado** (P1 a P9 aceitas). Implementação por etapas:
 > - **Etapa 1 concluída:**
@@ -48,17 +48,17 @@ tags: [tcc, retomada]
 > **PRAZO FINAL DE TUDO: 20/11/2026** (informado pelo autor na entrada 014). O cronograma da apresentação vai de 28/10 a 20/11; o tema do TCC aparece em destaque na capa.
 > **Apresentação vigente (entradas 013 e 014):** `thesis/apresentacao/proposta-nexo.pptx`, versão única com 19 slides. Formato pergunta → resposta; fluxo com a padaria da Ana em 4 etapas (atender, transformar, criar, disponibilizar); avaliação em diagrama. A `-v2` foi removida. **Dados de consultas com empresas: nenhum registrado; não afirmar que foram levantados** sem os dados reais.
 > **Versão anterior (entrada 011):** a apresentação vigente é **`thesis/apresentacao/proposta-nexo.pptx`** (19 slides, Nexo, com etiquetas de status e notas). Ela assume as recomendações B1, B2, B3, B6, B7, B8 e B9 do diagnóstico 006. Ainda sem commit.
-> - `proposta-v2-forja.pptx` (Forja, 22 slides) fica como histórico;
+> - `proposta-v2-forja.pptx` foi apagado (entrada 018);
 > - a `rev3` foi apagada (entrada 017);
 > - a proposta escrita e o `roteiro-defesa.md` ainda não acompanham o Nexo (Fase 2 pendente).
-> **Registro de trabalho:** fica **só no vault**, em `09 - Registro de Trabalho/` ([[000 - Índice do Registro de Trabalho]]). SEMPRE: cada mensagem de Nathan → `NNN_data_Pergunta-Nathan_assunto.md` e cada resposta → `NNN_data_Resposta-Claude_assunto.md`, ambas em texto integral. Entradas atuais: 001 a 017.
-> **Commit (29/10, entrada 016):** tudo commitado na `forja-marco-1`, e **enviado ao GitHub** em 29/10 (entrada 017). A `proposta-v2-forja-rev3.pptx` foi apagada. Falta decidir o merge ou PR para a `main`.
+> **Registro de trabalho:** fica **só no vault**, em `09 - Registro de Trabalho/` ([[000 - Índice do Registro de Trabalho]]). SEMPRE: cada mensagem de Nathan → `NNN_data_Pergunta-Nathan_assunto.md` e cada resposta → `NNN_data_Resposta-Claude_assunto.md`, ambas em texto integral. Entradas atuais: 001 a 018.
+> **Commit (29/10, entrada 016):** tudo commitado na `forja-marco-1`, e **enviado ao GitHub** em 29/10 (entrada 017). A `proposta-v2-forja-rev3.pptx` foi apagada. Em 29/10 (entrada 018) a `forja-marco-1` foi levada para a `main` por merge fast-forward, e as duas foram enviadas ao GitHub.
 >
 > **Documentação organizada (28/10, entrada 010):**
 > - os textos da Forja/Nexo e a proposta completa mudaram para o vault (`10 - Nexo - Contrato e Validação/` e `01 - Projeto/`);
 > - no repositório ficaram o código, os testes, o exemplo da padaria (`tests/forja/dados/`) e os documentos do projeto antigo citados pelo código do `tcc_exp` (`docs/`).
 > O plano v0.1 está **suspenso**. **Não configurar o Copilot nem rodar o piloto N-de-1.**
-> **Próximo passo:** levar [[Proposta v2 - Documento Completo]] e `thesis/apresentacao/proposta-v2-forja.pptx` ao orientador e descobrir o prazo. Nada de código da Forja antes do aval.
+> **Próximo passo:** levar [[Proposta v2 - Documento Completo]] e `thesis/apresentacao/proposta-nexo.pptx` ao orientador e descobrir o prazo. Nada de código da Forja antes do aval.
 > *O que vem abaixo descreve o estado do plano v0.1, que continua no repositório.*
 
 ### Onde paramos
