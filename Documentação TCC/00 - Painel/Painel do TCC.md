@@ -26,7 +26,8 @@ Projeto estruturado (v0.2.0), instrumento testado (45 testes passando), piloto p
 ## Mapa do vault
 
 ### 01 – Projeto
-- [[Proposta v2 - Forja]] ← **nova direção proposta (28/10), aguardando orientador**
+- [[Proposta v2 - Forja]] ← **nova direção proposta (28/10), aguardando orientador** (resumo)
+- [[Proposta v2 - Documento Completo]] ← texto integral da proposta
 - [[Tema, Pergunta e Objetivos]] (plano v0.1, suspenso)
 - [[Hipóteses e Variáveis]]
 - [[Plano de Execução]]
@@ -71,6 +72,12 @@ Projeto estruturado (v0.2.0), instrumento testado (45 testes passando), piloto p
 - [[Etapas do Projeto]] (E1–E9)
 - [[Backlog e Pendências]]
 - [[Inconsistências do Repositório]]
+
+### 10 – Nexo: contrato e validação
+- [[Contrato do Mapa do Sistema]] · [[Validação do Mapa]] · [[Plano do Marco 1]]
+
+### 09 – Registro de Trabalho
+- [[000 - Índice do Registro de Trabalho]] ← toda pergunta (Nathan) e toda resposta (Claude), em texto integral
 
 ### Modelos (`_Modelos/`)
 - [[Modelo - Registro de Sessão]]

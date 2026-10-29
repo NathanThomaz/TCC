@@ -1,7 +1,7 @@
 ---
 tipo: projeto
 status: PROPOSTA (aguardando orientador) — revisão 2
-fonte: docs/proposta-v2-gerador-de-sistemas.md; thesis/apresentacao/proposta-v2-forja.pptx
+fonte: "[[Proposta v2 - Documento Completo]]; thesis/apresentacao/proposta-v2-forja.pptx"
 atualizado: 2026-10-28
 tags: [tcc, projeto, proposta-v2, forja]
 ---
@@ -9,9 +9,9 @@ tags: [tcc, projeto, proposta-v2, forja]
 # Proposta v2 — Forja: sistemas sob medida para pequenos negócios
 
 **Fontes:**
-- plano completo: [proposta-v2-gerador-de-sistemas.md](https://github.com/NathanThomaz/TCC/blob/main/docs/proposta-v2-gerador-de-sistemas.md);
+- plano completo: [[Proposta v2 - Documento Completo]] (movido de `docs/` para o vault em 28/10);
 - apresentação: `thesis/apresentacao/proposta-v2-forja-rev3.pptx` (23 slides com notas do apresentador). A versão antiga, de 19 slides, ficou como `proposta-v2-forja.pptx` porque estava aberta no PowerPoint; ela deve ser substituída pela rev3.
-- contrato do mapa: `docs/forja/` (schema, exemplo da padaria, README com a matriz de suporte).
+- contrato do mapa: [[Contrato do Mapa do Sistema]], [[Validação do Mapa]] e [[Plano do Marco 1]]; schema em `src/forja/contrato/`, exemplo da padaria em `tests/forja/dados/`.
 
 *Os arquivos estão no repositório local; o link do GitHub só funciona depois de commit e push.*
 

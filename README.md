@@ -6,6 +6,8 @@ Trabalho de Conclusão de Curso em **Sistemas de Informação**.
 
 **Pergunta de pesquisa:** em tarefas de manutenção e evolução de uma aplicação de pequeno porte em Python e SQL, executadas sob protocolo controlado, como o uso de um assistente de IA generativa altera (a) o tempo até uma entrega aceita, (b) a qualidade funcional da entrega, medida por testes ocultos, e (c) o retrabalho após a devolutiva, em comparação com a execução sem esse assistente?
 
+> **Documentação do TCC:** fica no vault do Obsidian, na pasta [`Documentação TCC/`](Documentação%20TCC/): painel, ponto de retomada, proposta Nexo (antes Forja), contrato e validação do mapa, e o **registro de trabalho** (toda pergunta e resposta). A pasta `docs/` guarda só a documentação do projeto anterior (experimento N-de-1), citada pelo código do `tcc_exp`.
+
 ## Status
 
 | Etapa | Situação |

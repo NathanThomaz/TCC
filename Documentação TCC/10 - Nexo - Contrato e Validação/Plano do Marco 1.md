@@ -1,5 +1,7 @@
 # Forja — Marco 1: plano de contrato e validação semântica
 
+> **Local:** documento movido de `docs/forja/plano-marco-1.md` para o vault em 28/10/2026 (entrada 010 do registro). Caminhos citados no texto que começam com `docs/forja/` são históricos: o exemplo da padaria está em `tests/forja/dados/` e o contrato em `src/forja/contrato/`.
+
 **Data:** 2026-10-28
 **Status:** PLANO. **Nada foi implementado ainda.** Aguarda aprovação, inclusive das decisões pendentes P1 a P9 (seção 10).
 **Escopo:** revisar o contrato do mapa do sistema e preparar uma validação estrutural e semântica que possa ser repetida por qualquer pessoa. **Fora do escopo:** interface, Ollama e motor de geração.

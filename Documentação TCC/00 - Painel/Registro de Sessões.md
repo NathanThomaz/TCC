@@ -226,4 +226,119 @@ Histórico cronológico do trabalho no TCC (do mais antigo para o mais recente).
 - testes: 72 passaram;
 - push da branch `forja-marco-1`, com 4 commits.
 
-Detalhes em `docs/registro-de-trabalho/004-registro-apresentacao-github.md`.
+Detalhes em [[004_2026-10-28_Resposta-Claude_registro-apresentacao-github]].
+
+## Sessão 12 — 28/10/2026 · Marco 1, etapa 2: validador semântico
+**Feito:**
+- `erros.py` (catálogo de 48 códigos);
+- `caminhos.py`;
+- `estrutural.py`;
+- `semantica.py`;
+- `validacao.py`;
+- `__main__.py`.
+
+**Testes:**
+- 111 da Forja passando;
+- 156 na suíte completa;
+- 45 antigos intactos;
+- o teste de mutação confirmou que os testes pegam falhas.
+
+**Sem commit:** aguardando revisão do autor. Detalhes em [[005_2026-10-28_Resposta-Claude_marco-1-etapa-2]].
+
+## Sessão 13 — 28/10/2026 · Diagnóstico Nexo e nova regra do registro
+**Diagnóstico Nexo (Fase 1):** proposta e apresentação lidas; diagnóstico com 8 seções e decisões B1 a B12, aguardando aprovação.
+
+**Regra nova do autor:** SEMPRE gravar a pergunta e a resposta, em texto integral.
+
+**Feito:**
+- arquivos do registro renomeados para `NNN_AAAA-MM-DD_assunto.md`;
+- entradas 001 a 006 reescritas com a pergunta e a resposta integrais;
+- criadas as entradas 007 (conferência) e 008 (regra e nomenclatura);
+- índice atualizado.
+
+**Sem commit.**
+
+## Sessão 14 — 28/10/2026 · Registro separado por autor e movido para o vault
+**Pedido:** saber pelo nome do arquivo o que é pergunta de Nathan e o que é resposta do Claude, e manter o registro no vault, sem documentação espalhada.
+
+**Feito:**
+- cada entrada foi dividida em dois arquivos, `…_Pergunta-Nathan_…` e `…_Resposta-Claude_…`, ligados entre si;
+- pasta nova `09 - Registro de Trabalho/`, com o índice [[000 - Índice do Registro de Trabalho]];
+- a antiga `docs/registro-de-trabalho/` foi removida (conteúdo conferido: nenhum bloco de texto perdido);
+- a entrada 002 virou 002-1 e 002-2 (duas mensagens).
+
+**Sem commit.**
+
+## Sessão 15 — 28/10/2026 · Documentação reunida no vault
+**Feito:**
+- `docs/forja/README.md`, `validacao.md` e `plano-marco-1.md` → `10 - Nexo - Contrato e Validação/` ("Contrato do Mapa do Sistema", "Validação do Mapa", "Plano do Marco 1");
+- `docs/proposta-v2-gerador-de-sistemas.md` → `01 - Projeto/Proposta v2 - Documento Completo.md`;
+- exemplo da padaria → `tests/forja/dados/`;
+- links internos corrigidos.
+
+**Mantidos em `docs/`:** os documentos do projeto antigo, citados pelo código do `tcc_exp`, que precisa ficar intacto.
+
+**Testes:** 111 da Forja e 156 na suíte completa, passando.
+
+**Sem commit.**
+
+
+## Sessão 16 — 28/10/2026 · Nova apresentação do Nexo
+**Pedido:** gerar a nova apresentação, completa e corrigida, para apresentar o projeto.
+
+**Feito:**
+- `thesis/apresentacao/proposta-nexo.pptx`, com 19 slides, notas do apresentador e etiquetas de status (hipótese, implementado, planejado, futuro);
+- segue a estrutura do diagnóstico 006 e assume as recomendações B1, B2, B3, B6, B7, B8 e B9;
+- o slide 10 mostra a saída real do validador para um erro de digitação proposital no mapa da padaria;
+- validado e conferido slide a slide.
+
+**Pendente:** proposta escrita (Fase 2), `roteiro-defesa.md`, decisões B1 a B12 formais.
+
+**Registro:** [[011_2026-10-28_Resposta-Claude_novo-ppt-nexo]]. **Sem commit.**
+
+## Sessão 17 — 28/10/2026 · Apresentação simplificada
+**Pedido:** começo menos complexo; perguntas curtas e respostas rápidas; sem "híbrido"; foco em causa e solução; afirmar que os dados já foram levantados e que o motor está em desenvolvimento.
+
+**Feito:**
+- `thesis/apresentacao/proposta-nexo-v2.pptx`, com 15 slides em formato pergunta → resposta;
+- a `proposta-nexo.pptx` estava aberta no PowerPoint e não foi substituída.
+
+**Não feito, por integridade:**
+- não foi escrito que os dados de pequenas empresas já foram levantados, porque não há registro de consulta; foram pedidos os dados reais;
+- o motor aparece como "em desenvolvimento, núcleo pronto", sem afirmar IA ou geração já existentes.
+
+**Registro:** [[012_2026-10-28_Resposta-Claude_ppt-simplificado]]. **Sem commit.**
+
+## Sessão 18 — 28/10/2026 · Fluxo da padaria na apresentação
+**Pedido:** mostrar como o fluxo vai funcionar (troca de mensagens, atender, transformar, criar, disponibilizar) com o exemplo da padaria; refazer a tela 10.
+
+**Feito:**
+- `proposta-nexo.pptx` com 19 slides: visão das 4 etapas, a conversa da Ana, fala → mapa (validação real: 0 erros), erro real do validador, tela ilustrativa do sistema, disponibilização;
+- avaliação refeita como diagrama;
+- `-v2` removida (versão única).
+
+**Registro:** [[013_2026-10-28_Resposta-Claude_fluxo-padaria-no-ppt]]. **Sem commit.**
+
+## Sessão 19 — 28/10/2026 · Tema na capa e prazo de 20/11
+**Feito:**
+- capa com o tema oficial em destaque;
+- cronograma por datas (28/10 a 20/11), com linha de entrega final.
+
+**Prazo final informado pelo autor:** 20/11/2026.
+
+**Registro:** [[014_2026-10-28_Resposta-Claude_tema-na-capa-e-prazo]]. **Sem commit.**
+
+## Sessão 20 — 28/10/2026 · Capa mais limpa
+**Feito:** a capa foi refeita em três níveis: o tema (grande), o Nexo com o slogan, e o rodapé com os dados do autor. Saiu a faixa laranja.
+
+**Registro:** [[015_2026-10-28_Resposta-Claude_capa-mais-limpa]]. **Sem commit.**
+
+## Sessão 21 — 29/10/2026 · Commit das alterações
+**Feito:**
+- testes antes do commit: 156 passaram;
+- commit na `forja-marco-1` com o validador (Marco 1, etapa 2), a apresentação `proposta-nexo.pptx`, o vault e o registro de 001 a 016;
+- a `proposta-v2-forja-rev3.pptx` ficou fora (obsoleta).
+
+**Sem push.**
+
+**Registro:** [[016_2026-10-29_Resposta-Claude_commit-das-alteracoes]].

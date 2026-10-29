@@ -1,13 +1,16 @@
 # Mapa do sistema — contrato da Forja
 
-**Status:** contrato **v0.2** em implementação (Marco 1 — ver [plano-marco-1.md](plano-marco-1.md)). Parte da [proposta v2](../proposta-v2-gerador-de-sistemas.md), ainda não aprovada pelo orientador.
+> **Local:** documento movido de `docs/forja/README.md` para o vault em 28/10/2026 (entrada 010 do registro). Caminhos citados no texto que começam com `docs/forja/` são históricos: o exemplo da padaria está em `tests/forja/dados/` e o contrato em `src/forja/contrato/`.
 
-> **Atualização em andamento (Marco 1, etapa 1 concluída):**
+**Status:** contrato **v0.2** em implementação (Marco 1 — ver [[Plano do Marco 1]]). Parte da [proposta v2](<../01 - Projeto/Proposta v2 - Documento Completo.md>), ainda não aprovada pelo orientador.
+
+> **Atualização em andamento (Marco 1, etapas 1 e 2 concluídas):**
 > - o contrato oficial mudou para [`src/forja/contrato/mapa-do-sistema.schema.json`](../../src/forja/contrato/mapa-do-sistema.schema.json) (v0.2);
 > - o exemplo da padaria foi migrado para a v0.2;
-> - existem testes estruturais em `tests/forja/`.
+> - **a validação estrutural e semântica está implementada**: `python -m forja validar <mapa.json>`. Detalhes em [[Validação do Mapa]];
+> - testes em `tests/forja/` (111).
 >
-> O restante deste README ainda descreve a v0.1 e será revisado na etapa de documentação do Marco 1.
+> O restante deste README ainda descreve a v0.1 (inclusive as "questões em aberto", já resolvidas pelas decisões do Marco 1). Será revisado na etapa de documentação.
 
 O **mapa do sistema** é a **fonte única da verdade** de cada sistema gerado. Banco de dados, regras em código, telas, permissões, documentação e testes são **todos derivados** dele. Nada é escrito à mão para um negócio específico.
 
@@ -18,7 +21,7 @@ A IA e o modo guiado produzem **o mesmo formato**. A única diferença é quem p
 | Arquivo | Conteúdo |
 |---|---|
 | [../../src/forja/contrato/mapa-do-sistema.schema.json](../../src/forja/contrato/mapa-do-sistema.schema.json) | Contrato formal (JSON Schema 2020-12), v0.2, recurso do pacote `forja` |
-| [exemplo-padaria.mapa.json](exemplo-padaria.mapa.json) | Exemplo completo: cenário de **desenvolvimento** "Padaria da Ana" (fictício, público) |
+| [exemplo-padaria.mapa.json](../../tests/forja/dados/exemplo-padaria.mapa.json) | Exemplo completo: cenário de **desenvolvimento** "Padaria da Ana" (fictício, público) |
 
 ## Seções do mapa
 

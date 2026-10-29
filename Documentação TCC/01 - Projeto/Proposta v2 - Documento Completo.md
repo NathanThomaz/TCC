@@ -1,12 +1,14 @@
 # Proposta v2 — Forja: sistemas de controle sob medida para pequenos negócios
 
+> **Local:** documento movido de `docs/proposta-v2-gerador-de-sistemas.md` para o vault em 28/10/2026 (entrada 010 do registro). Caminhos citados no texto que começam com `docs/forja/` são históricos: o exemplo da padaria está em `tests/forja/dados/` e o contrato em `src/forja/contrato/`.
+
 **Data:** 2026-10-28 (revisão 3, no mesmo dia). **Status:** PROPOSTA. Ainda não adotada nem aprovada pelo orientador.
 
-Enquanto não for aprovada, o plano v0.1 ([plano-execucao.md](plano-execucao.md)) fica registrado, mas **suspenso**: a configuração do Copilot e o piloto N-de-1 estão parados.
+Enquanto não for aprovada, o plano v0.1 ([plano-execucao.md](../../docs/plano-execucao.md)) fica registrado, mas **suspenso**: a configuração do Copilot e o piloto N-de-1 estão parados.
 
 **Nome de trabalho:** *Forja* (provisório).
 
-**Apresentação:** [`thesis/apresentacao/proposta-v2-forja.pptx`](../thesis/apresentacao/proposta-v2-forja.pptx).
+**Apresentação:** [`thesis/apresentacao/proposta-v2-forja.pptx`](../../thesis/apresentacao/proposta-v2-forja.pptx).
 
 Convenções usadas no texto:
 - **[PROPOSTA]:** recomendação ainda não aprovada;
@@ -21,7 +23,7 @@ Convenções usadas no texto:
 > A revisão 1 (gerador avaliado só por configurações de melhorias) foi substituída por esta. Ela não chegou a ser commitada.
 
 > **Revisão 3 (2026-10-28).** Incorpora quatro ajustes recebidos numa revisão crítica:
-> 1. **O mapa do sistema tem contrato formal:** JSON Schema e fonte única da verdade. Rascunho pronto e validado em [forja/](forja/README.md).
+> 1. **O mapa do sistema tem contrato formal:** JSON Schema e fonte única da verdade. Rascunho pronto e validado em [forja/](<../10 - Nexo - Contrato e Validação/Contrato do Mapa do Sistema.md>).
 > 2. **A personalização foi separada da geração livre:** templates + metadados, com uma **matriz de suporte** que declara o que o MVP cobre (seção 4.3).
 > 3. **O funcionamento offline precisa ser comprovado** numa máquina limpa e sem internet, **antes** de construir as partes com IA: portão G1 (seção 4.4).
 > 4. **O experimento isola o efeito da IA:**
@@ -114,7 +116,7 @@ Os **exemplos de confirmação** das regras também são gerados de forma determ
 
 ### 4.0 O mapa do sistema: contrato formal e fonte única da verdade
 
-O mapa é um **JSON validado por um JSON Schema** (rascunho v0.1 em [forja/mapa-do-sistema.schema.json](forja/mapa-do-sistema.schema.json), com o exemplo completo [forja/exemplo-padaria.mapa.json](forja/exemplo-padaria.mapa.json)). Ele contém:
+O mapa é um **JSON validado por um JSON Schema** (rascunho v0.1 em [forja/mapa-do-sistema.schema.json](../../src/forja/contrato/mapa-do-sistema.schema.json), com o exemplo completo [forja/exemplo-padaria.mapa.json](../../tests/forja/dados/exemplo-padaria.mapa.json)). Ele contém:
 - metadados (incluindo o **modo**: `ia` ou `guiado`);
 - negócio e módulos;
 - entidades e campos;
@@ -133,7 +135,7 @@ Regras:
 
 **Verificado em 2026-10-28:**
 - o schema é válido e o exemplo da padaria passa;
-- 8 mapas propositalmente errados foram recusados (detalhes e questões em aberto em [forja/README.md](forja/README.md)).
+- 8 mapas propositalmente errados foram recusados (detalhes e questões em aberto em [forja/README.md](<../10 - Nexo - Contrato e Validação/Contrato do Mapa do Sistema.md>)).
 
 **Por quê:**
 1. **Confiabilidade:** o mesmo mapa gera sempre o mesmo sistema, e o código dos templates é testado uma vez. Isso importa porque o usuário não sabe programar para corrigir defeitos.
@@ -167,7 +169,7 @@ Regras:
 
 A personalização é feita por **templates para os componentes executáveis**, combinados com **metadados e regras configuráveis** do mapa. O usuário pode criar quantas entidades, campos, relacionamentos e regras quiser, **desde que dentro das combinações suportadas**. Os templates cobrem essas combinações sem código novo para cada negócio.
 
-A **matriz de suporte do MVP** está em [forja/README.md](forja/README.md#matriz-de-suporte-do-mvp-o-que-a-personalização-cobre). Em resumo:
+A **matriz de suporte do MVP** está em [forja/README.md](<../10 - Nexo - Contrato e Validação/Contrato do Mapa do Sistema.md#matriz-de-suporte-do-mvp-o-que-a-personalização-cobre>). Em resumo:
 
 | Suportado | Fora do MVP |
 |---|---|

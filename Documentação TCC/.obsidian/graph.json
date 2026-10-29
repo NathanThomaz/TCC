@@ -1,15 +1,86 @@
 {
-  "colorGroups": [
-    {"query": "path:\"00 - Painel\"", "color": {"a": 1, "rgb": 14701138}},
-    {"query": "path:\"01 - Projeto\"", "color": {"a": 1, "rgb": 5431378}},
-    {"query": "path:\"02 - Metodologia\"", "color": {"a": 1, "rgb": 3381759}},
-    {"query": "path:\"03 - Decisões\"", "color": {"a": 1, "rgb": 16750848}},
-    {"query": "path:\"04 - Experimento\"", "color": {"a": 1, "rgb": 10040319}},
-    {"query": "path:\"05 - Instrumento\"", "color": {"a": 1, "rgb": 52428}},
-    {"query": "path:\"06 - Pesquisa\"", "color": {"a": 1, "rgb": 13421619}},
-    {"query": "path:\"07 - Texto do TCC\"", "color": {"a": 1, "rgb": 16737945}},
-    {"query": "path:\"08 - Gestão\"", "color": {"a": 1, "rgb": 10066329}}
-  ],
+  "collapse-filter": true,
+  "search": "",
   "showTags": false,
-  "showOrphans": true
+  "showAttachments": false,
+  "hideUnresolved": false,
+  "showOrphans": true,
+  "collapse-color-groups": true,
+  "colorGroups": [
+    {
+      "query": "path:\"00 - Painel\"",
+      "color": {
+        "a": 1,
+        "rgb": 14701138
+      }
+    },
+    {
+      "query": "path:\"01 - Projeto\"",
+      "color": {
+        "a": 1,
+        "rgb": 5431378
+      }
+    },
+    {
+      "query": "path:\"02 - Metodologia\"",
+      "color": {
+        "a": 1,
+        "rgb": 3381759
+      }
+    },
+    {
+      "query": "path:\"03 - Decisões\"",
+      "color": {
+        "a": 1,
+        "rgb": 16750848
+      }
+    },
+    {
+      "query": "path:\"04 - Experimento\"",
+      "color": {
+        "a": 1,
+        "rgb": 10040319
+      }
+    },
+    {
+      "query": "path:\"05 - Instrumento\"",
+      "color": {
+        "a": 1,
+        "rgb": 52428
+      }
+    },
+    {
+      "query": "path:\"06 - Pesquisa\"",
+      "color": {
+        "a": 1,
+        "rgb": 13421619
+      }
+    },
+    {
+      "query": "path:\"07 - Texto do TCC\"",
+      "color": {
+        "a": 1,
+        "rgb": 16737945
+      }
+    },
+    {
+      "query": "path:\"08 - Gestão\"",
+      "color": {
+        "a": 1,
+        "rgb": 10066329
+      }
+    }
+  ],
+  "collapse-display": true,
+  "showArrow": false,
+  "textFadeMultiplier": 0,
+  "nodeSizeMultiplier": 1,
+  "lineSizeMultiplier": 1,
+  "collapse-forces": true,
+  "centerStrength": 0.518713248970312,
+  "repelStrength": 10,
+  "linkStrength": 1,
+  "linkDistance": 250,
+  "scale": 0.7545958428437225,
+  "close": true
 }
