@@ -52,6 +52,8 @@ NNN_AAAA-MM-DD_Resposta-Claude_assunto.md    → resposta do Claude a essa mensa
 | 016 | Commit das alterações (sem push) | [[016_2026-10-29_Pergunta-Nathan_commit-das-alteracoes\|pergunta]] | [[016_2026-10-29_Resposta-Claude_commit-das-alteracoes\|resposta]] |
 | 017 | Limpeza do obsoleto (rev3) e push | [[017_2026-10-29_Pergunta-Nathan_limpeza-e-push\|pergunta]] | [[017_2026-10-29_Resposta-Claude_limpeza-e-push\|resposta]] |
 | 018 | Apresentação da Forja apagada; merge na main e push | [[018_2026-10-29_Pergunta-Nathan_merge-na-main\|pergunta]] | [[018_2026-10-29_Resposta-Claude_merge-na-main\|resposta]] |
+| 019 | README reescrito para o Nexo (enviado na entrada 020) | [[019_2026-10-29_Pergunta-Nathan_readme-do-nexo\|pergunta]] | [[019_2026-10-29_Resposta-Claude_readme-do-nexo\|resposta]] |
+| 020 | Envio do README e da documentação ao GitHub | [[020_2026-10-29_Pergunta-Nathan_envio-readme-e-documentacao\|pergunta]] | [[020_2026-10-29_Resposta-Claude_envio-readme-e-documentacao\|resposta]] |
 
 ## Observações de controle
 - **002-1:** a resposta original (o plano) foi gravada, a pedido, como [[Plano do Marco 1]] (antes em `docs/forja/plano-marco-1.md`), e não literalmente.

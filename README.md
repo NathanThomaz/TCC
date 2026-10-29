@@ -1,129 +1,112 @@
-# TCC — IA generativa, agilidade e qualidade na manutenção de software
+# Nexo — da necessidade do pequeno negócio à especificação verificada
 
 Trabalho de Conclusão de Curso em **Sistemas de Informação**.
 
-**Título provisório:** *Avaliação experimental do impacto de um assistente de IA generativa no tempo, na qualidade e no retrabalho em tarefas de manutenção de software*
+**Tema:** Impacto da inteligência artificial generativa na agilidade e na qualidade do processo de desenvolvimento de software.
 
-**Pergunta de pesquisa:** em tarefas de manutenção e evolução de uma aplicação de pequeno porte em Python e SQL, executadas sob protocolo controlado, como o uso de um assistente de IA generativa altera (a) o tempo até uma entrega aceita, (b) a qualidade funcional da entrega, medida por testes ocultos, e (c) o retrabalho após a devolutiva, em comparação com a execução sem esse assistente?
+**Título provisório:** *Da linguagem natural à especificação verificável: IA generativa, modelos estruturados e validação determinística para sistemas de pequenos negócios.*
 
-> **Documentação do TCC:** fica no vault do Obsidian, na pasta [`Documentação TCC/`](Documentação%20TCC/): painel, ponto de retomada, proposta Nexo (antes Forja), contrato e validação do mapa, e o **registro de trabalho** (toda pergunta e resposta). A pasta `docs/` guarda só a documentação do projeto anterior (experimento N-de-1), citada pelo código do `tcc_exp`.
+**Pergunta de pesquisa:** o mapa e a validação do Nexo tornam as especificações feitas por IA mais completas, consistentes e rastreáveis do que pedir direto à IA?
+- Quanto a qualidade melhora?
+- Que erros a validação pega, e quais escapam?
+- Quanta correção ainda sobra?
+
+## O que é o Nexo
+
+Pequenos negócios precisam controlar estoque, vendas, clientes e contas. A parte difícil é traduzir o negócio em regras precisas, e é nessa tradução que os erros nascem. A IA entende o pedido, mas pode errar ou inventar.
+
+O Nexo é uma ferramenta que transforma a descrição de um pequeno negócio numa **especificação de sistema verificada**:
+- **A IA interpreta** o que o dono do negócio descreve;
+- **o mapa do sistema estrutura** dados, regras e telas;
+- **a validação verifica** se tudo é consistente.
+
+O fluxo tem quatro etapas:
+
+| Etapa | O que acontece |
+|---|---|
+| 1. Atender | Conversa com o dono do negócio; cada regra é confirmada com um exemplo |
+| 2. Transformar | A IA monta o mapa do sistema e a validação confere |
+| 3. Criar | O motor gera banco de dados, telas, regras, testes e manual a partir do mapa |
+| 4. Disponibilizar | O sistema roda no computador do negócio, sem internet e sem mensalidade |
+
+**Restrições do projeto:** custo zero e execução local (IA com modelo aberto rodando na própria máquina, sem API paga).
 
 ## Status
 
-| Etapa | Situação |
+O motor está **em desenvolvimento**. A proposta aguarda o aval do orientador. Prazo final do TCC: **20/11/2026**.
+
+| Parte | Situação |
 |---|---|
-| Planejamento, protocolo (rascunho), instrumento, piloto preparado | ✔ estruturado (2026-10-27) |
-| Decisões pendentes: executor (D2), ferramenta de IA (D3), instituição (D7) | ⏳ ver [docs/decisoes-metodologicas.md](docs/decisoes-metodologicas.md) |
-| Revisão bibliográfica integral | ⏳ |
-| Piloto, congelamento, coleta, análise | ⏳ |
+| Contrato do mapa do sistema (v0.2, JSON Schema) | ✔ pronto |
+| Validador estrutural e semântico, com 48 tipos de erro | ✔ pronto |
+| Comando `python -m forja validar` | ✔ pronto |
+| Testes automatizados do Nexo | ✔ 111 passando |
+| Contrato v0.3 (requisitos ligados ao mapa) | ⏳ próximo |
+| IA local que preenche o mapa e corrige pelos erros | ⏳ próximo |
+| Geração do sistema a partir do mapa | ⏳ próximo |
+| Avaliação: IA direta × IA + Nexo, com avaliador cego | ⏳ próximo |
 
-> **Nenhum dado experimental foi coletado ainda.** Não há resultados neste repositório.
-> Detalhes em [docs/gestao-projeto.md](docs/gestao-projeto.md).
+> **Nenhum dado da avaliação foi coletado ainda.** Não há resultados neste repositório.
 
-## Estrutura
-
-```
-docs/            planejamento e metodologia
-  plano-execucao.md          diagnóstico, viabilidade, desenho, riscos, cronograma
-  protocolo-experimental.md  protocolo (versionado; congela na Etapa 5)
-  metricas.md                definições operacionais de cada métrica
-  ferramentas-ia.md          categorias de IA, critérios de escolha, registro, ameaças
-  analise-poder.md           poder estatístico do desenho (simulação)
-  perfil-executor.md         formulário de perfil e expectativas prévias
-  guia-sessao.md             roteiro do executor em cada sessão
-  decisoes-metodologicas.md  decisões (pendentes, provisórias, aprovadas)
-  desvios.md                 desvios do protocolo
-  gestao-projeto.md          etapas, tarefas, status, critérios de conclusão
-  uso-de-ia-no-tcc.md        declaração de uso de IA na elaboração do TCC
-pesquisa/        revisão bibliográfica
-  referencias-verificadas.md status de verificação de cada fonte
-  estrategia-busca.md        string, bases, critérios
-  referencias.bib            BibTeX (somente verificadas)
-  fichas/                    fichas de leitura
-experiment/      material do experimento
-  base-system/               aplicação-base "loja" (Python + SQLite)
-  tasks/piloto/              tarefas-piloto P1 e P2 (públicas)
-  tasks/README.md            formato dos pacotes e selagem das tarefas principais
-  randomization/             planos sorteados (+ sha256)
-  config/experimento.toml    parâmetros e ferramenta de IA
-  scripts/                   utilitários
-src/tcc_exp/     instrumento: CLI `exp`, eventos, sessão, avaliação, métricas, análise
-tests/           testes do instrumento (unit + integration; dados sintéticos isolados)
-data/            raw/ (somente-acréscimo) → processed/ (gerado)
-reports/         tabelas, figuras e relatório (gerados por `exp analisar`)
-thesis/          capítulos do TCC, referências ABNT e roteiro da defesa (apresentacao/)
-```
-
-## Instalação
+## Como usar
 
 Requisitos: Python ≥ 3.11 e git.
 
 ```bash
-pip install -e ".[dev,estatica]"   # estatica = ruff + radon (métricas estruturais)
-cp .env.example .env
-exp verificar-ambiente
+pip install -e ".[dev,forja]"
 ```
 
-## Testes
+Validar um mapa do sistema (exemplo: a padaria da Ana, um negócio fictício):
 
 ```bash
-python -m pytest                    # instrumento + aplicação-base
-exp validar-tarefa                  # valida os pacotes de tarefa da fase atual
+python -m forja validar tests/forja/dados/exemplo-padaria.mapa.json
+# VÁLIDO: 0 erro(s), 0 aviso(s).
 ```
 
-## Executar o experimento
+Quando o mapa tem problemas, o validador aponta o código do erro, o caminho no mapa e sugestões de correção.
 
-Roteiro completo em [docs/guia-sessao.md](docs/guia-sessao.md). Em resumo:
+Rodar os testes:
 
 ```bash
-exp abrir X01 --confirmo-sem-ia    # (condição A)  |  exp abrir X01 --modelo "<modelo>"  (condição B)
-exp iniciar X01
-exp testar X01
-exp entregar X01 --confianca 4     # avaliação oculta → aceita ou devolutiva
-exp percepcao X01 <minutos>
-exp questionario X01 --dificuldade 3 --esforco 3
+python -m pytest tests/forja    # só o Nexo
+python -m pytest                # tudo, incluindo o projeto anterior
 ```
 
-## Gerar resultados e o dashboard final
+> O pacote do código ainda se chama `forja`, nome anterior do projeto.
 
-```bash
-exp processar     # data/raw/<fase> → data/processed/<fase>/execucoes.csv
-exp analisar      # → reports/<fase>/ (tabelas, figuras, relatorio-experimento.md)
-exp dashboard     # → reports/<fase>/dashboard.html (apresentação, resumo, gráficos, análises, dados, limitações)
+## Estrutura
+
+```
+src/forja/                 Nexo: contrato do mapa e validador
+  contrato/                  JSON Schema do mapa do sistema (v0.2)
+  estrutural.py              validação da estrutura (schema)
+  semantica.py               validação semântica (referências, regras, transições…)
+  validacao.py, erros.py     orquestração e catálogo de erros
+  __main__.py                comando `python -m forja validar`
+tests/forja/               testes do Nexo; dados/ tem o mapa de exemplo da padaria
+thesis/apresentacao/       apresentação da proposta (proposta-nexo.pptx)
+Documentação TCC/          vault do Obsidian com toda a documentação
 ```
 
-O dashboard é um único arquivo HTML que funciona offline e se adapta aos temas claro e escuro. Ele tem seis seções:
-- **Apresentação:** título, pergunta, hipóteses, desenho e condições;
-- **Resumo:** indicadores e gráfico de efeitos com IC 95%;
-- **Gráficos:** pares A × B de H1–H3, velocidade × qualidade, aprendizagem ao longo da sequência e H4 por tipo;
-- **Análises:** comparações pareadas e descritivas;
-- **Dados:** exclusões e execuções;
-- **Limitações.**
+## Documentação
 
-### Ver como o dashboard ficará (antes da coleta)
+Toda a documentação fica no vault do Obsidian, na pasta [`Documentação TCC/`](Documentação%20TCC/):
+- [`00 - Painel/`](Documentação%20TCC/00%20-%20Painel/): painel e ponto de retomada;
+- [`01 - Projeto/`](Documentação%20TCC/01%20-%20Projeto/): tema, pergunta, objetivos e proposta;
+- [`10 - Nexo - Contrato e Validação/`](Documentação%20TCC/10%20-%20Nexo%20-%20Contrato%20e%20Valida%C3%A7%C3%A3o/): contrato do mapa, validação e plano do Marco 1;
+- [`09 - Registro de Trabalho/`](Documentação%20TCC/09%20-%20Registro%20de%20Trabalho/): registro integral de toda pergunta e resposta do trabalho.
 
-```bash
-exp demo-dashboard --saida ../tcc-demo   # dados SINTÉTICOS com efeito nulo, fora do repositório
-```
+## Projeto anterior (suspenso)
 
-A demonstração exibe uma faixa de aviso e **não pode** ser gravada em `reports/` nem em `data/`. Ela mostra o formato, não resultados.
-
-## Tarefas do piloto
-
-| Par | Tipo | Gêmea a | Gêmea b |
-|---|---|---|---|
-| P1 | T1 correção de defeito | P1a frete grátis indevido com cupom | P1b estoque não volta ao cancelar |
-| P2 | T3 consulta SQL | P2a nº de pedidos inflado por categoria | P2b produtos sem venda incompleto |
-| P3 | T2 nova funcionalidade | P3a produtos abaixo do estoque mínimo | P3b resumo de compras do cliente |
-| P4 | T4 robustez da importação | P4a CSV do Excel (BOM, duplicados, linhas) | P4b formato de preço inválido |
-
-Todas foram validadas com `exp validar-tarefa`: o estado inicial falha em parte dos testes ocultos, e a referência passa em 100%.
+Antes do Nexo, o TCC era um experimento N-de-1 sobre o efeito de um assistente de IA no tempo, na qualidade e no retrabalho em tarefas de manutenção de software. Esse plano está **suspenso**, sem dados coletados. O material continua no repositório para consulta:
+- `docs/`: planejamento e metodologia;
+- `src/tcc_exp/`: instrumento de coleta (CLI `exp`);
+- `experiment/`: aplicação-base `loja` e tarefas-piloto;
+- `pesquisa/`: revisão bibliográfica.
 
 ## Princípios de integridade
 
-- Nenhum resultado é escrito antes da coleta. Os capítulos 5 a 7 estão bloqueados.
-- `data/raw` é somente-acréscimo, com cadeia de hash verificável.
-- Dados sintéticos existem só em `tests/` e não podem gerar relatório em `reports/`.
-- Tarefas e testes ocultos da coleta principal **nunca** entram neste repositório (que é público).
-- O instrumento não chama APIs de IA. Ele apenas registra a ferramenta e o modelo usados.
+- Nenhum resultado é escrito antes da coleta. Resultado positivo, negativo ou inconclusivo é igualmente válido.
+- Nenhum dado, entrevista, fonte ou funcionalidade é apresentado como existente sem que exista.
+- A validação confere a consistência do mapa; ela não garante que a regra de negócio esteja certa.
 - Referências só entram no texto após verificação (ver o status em `pesquisa/`).

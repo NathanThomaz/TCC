@@ -359,3 +359,20 @@ A `main` não mudou.
 - merge fast-forward da `forja-marco-1` na `main`; push das duas branches.
 
 **Registro:** [[018_2026-10-29_Resposta-Claude_merge-na-main]].
+
+## Sessão 24 — 29/10/2026 · README do Nexo
+**Feito:** o `README.md` foi reescrito para o Nexo:
+- tema, título provisório e pergunta de pesquisa;
+- as quatro etapas do fluxo;
+- status real e comandos conferidos;
+- documentação no vault;
+- o projeto anterior marcado como suspenso.
+
+**Registro:** [[019_2026-10-29_Resposta-Claude_readme-do-nexo]]. **Sem commit.**
+
+## Sessão 25 — 29/10/2026 · README e documentação no GitHub
+**Feito:**
+- commit do README novo e da documentação do vault, com o registro de 001 a 020;
+- push da `forja-marco-1`, merge fast-forward na `main` e push da `main`.
+
+**Registro:** [[020_2026-10-29_Resposta-Claude_envio-readme-e-documentacao]].

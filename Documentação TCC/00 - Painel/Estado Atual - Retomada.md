@@ -51,7 +51,8 @@ tags: [tcc, retomada]
 > - `proposta-v2-forja.pptx` foi apagado (entrada 018);
 > - a `rev3` foi apagada (entrada 017);
 > - a proposta escrita e o `roteiro-defesa.md` ainda não acompanham o Nexo (Fase 2 pendente).
-> **Registro de trabalho:** fica **só no vault**, em `09 - Registro de Trabalho/` ([[000 - Índice do Registro de Trabalho]]). SEMPRE: cada mensagem de Nathan → `NNN_data_Pergunta-Nathan_assunto.md` e cada resposta → `NNN_data_Resposta-Claude_assunto.md`, ambas em texto integral. Entradas atuais: 001 a 018.
+> **Registro de trabalho:** fica **só no vault**, em `09 - Registro de Trabalho/` ([[000 - Índice do Registro de Trabalho]]). SEMPRE: cada mensagem de Nathan → `NNN_data_Pergunta-Nathan_assunto.md` e cada resposta → `NNN_data_Resposta-Claude_assunto.md`, ambas em texto integral. Entradas atuais: 001 a 020.
+> **README (29/10, entrada 019):** reescrito para o Nexo e enviado ao GitHub (`main` e `forja-marco-1`) na entrada 020. Repositório local e GitHub iguais.
 > **Commit (29/10, entrada 016):** tudo commitado na `forja-marco-1`, e **enviado ao GitHub** em 29/10 (entrada 017). A `proposta-v2-forja-rev3.pptx` foi apagada. Em 29/10 (entrada 018) a `forja-marco-1` foi levada para a `main` por merge fast-forward, e as duas foram enviadas ao GitHub.
 >
 > **Documentação organizada (28/10, entrada 010):**
