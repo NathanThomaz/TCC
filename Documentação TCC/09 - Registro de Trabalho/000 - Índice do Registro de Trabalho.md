@@ -50,6 +50,7 @@ NNN_AAAA-MM-DD_Resposta-Claude_assunto.md    → resposta do Claude a essa mensa
 | 014 | Tema em destaque na capa; cronograma por datas até 20/11 | [[014_2026-10-28_Pergunta-Nathan_tema-na-capa-e-prazo\|pergunta]] | [[014_2026-10-28_Resposta-Claude_tema-na-capa-e-prazo\|resposta]] |
 | 015 | Capa mais limpa (tema em destaque, Nexo abaixo) | [[015_2026-10-28_Pergunta-Nathan_capa-mais-limpa\|pergunta]] | [[015_2026-10-28_Resposta-Claude_capa-mais-limpa\|resposta]] |
 | 016 | Commit das alterações (sem push) | [[016_2026-10-29_Pergunta-Nathan_commit-das-alteracoes\|pergunta]] | [[016_2026-10-29_Resposta-Claude_commit-das-alteracoes\|resposta]] |
+| 017 | Limpeza do obsoleto (rev3) e push | [[017_2026-10-29_Pergunta-Nathan_limpeza-e-push\|pergunta]] | [[017_2026-10-29_Resposta-Claude_limpeza-e-push\|resposta]] |
 
 ## Observações de controle
 - **002-1:** a resposta original (o plano) foi gravada, a pedido, como [[Plano do Marco 1]] (antes em `docs/forja/plano-marco-1.md`), e não literalmente.

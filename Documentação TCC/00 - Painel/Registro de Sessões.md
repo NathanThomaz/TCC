@@ -342,3 +342,12 @@ Detalhes em [[004_2026-10-28_Resposta-Claude_registro-apresentacao-github]].
 **Sem push.**
 
 **Registro:** [[016_2026-10-29_Resposta-Claude_commit-das-alteracoes]].
+
+## Sessão 22 — 29/10/2026 · Limpeza e push
+**Feito:**
+- apagada a `proposta-v2-forja-rev3.pptx` (obsoleta);
+- push da `forja-marco-1` para o GitHub.
+
+A `main` não mudou.
+
+**Registro:** [[017_2026-10-29_Resposta-Claude_limpeza-e-push]].

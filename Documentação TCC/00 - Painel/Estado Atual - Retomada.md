@@ -35,12 +35,12 @@ tags: [tcc, retomada]
 >   - exemplo da padaria migrado;
 >   - 27 testes estruturais em `tests/forja/`;
 >   - suíte completa com 72 testes passando.
-> - **Etapa 2 concluída** e commitada em 29/10 (entrada 016, sem push):
+> - **Etapa 2 concluída** e commitada em 29/10 (entrada 016) e enviada ao GitHub (entrada 017):
 >   - validador semântico em `src/forja/`, com 48 códigos;
 >   - `python -m forja validar <mapa>`;
 >   - 111 testes da Forja; suíte completa com 156 passando;
 >   - detalhes em [[005_2026-10-28_Resposta-Claude_marco-1-etapa-2]].
-> - **Próximo:** push (aguardando autorização) → etapa de documentação (`ciclo-de-vida.md`, README, proposta §4.0).
+> - **Próximo:** etapa de documentação (`ciclo-de-vida.md`, README, proposta §4.0).
 >
 > **Renomeação e novo foco (28/10):** o projeto passa a se chamar **Nexo**. Foco: especificação verificável; comparação principal: abordagem híbrida × geração direta por IA. O diagnóstico (Fase 1) está em [[006_2026-10-28_Resposta-Claude_diagnostico-proposta-nexo]], **aguardando aprovação das decisões B1 a B12**. A apresentação e a proposta ainda não foram alteradas.
 >
@@ -49,10 +49,10 @@ tags: [tcc, retomada]
 > **Apresentação vigente (entradas 013 e 014):** `thesis/apresentacao/proposta-nexo.pptx`, versão única com 19 slides. Formato pergunta → resposta; fluxo com a padaria da Ana em 4 etapas (atender, transformar, criar, disponibilizar); avaliação em diagrama. A `-v2` foi removida. **Dados de consultas com empresas: nenhum registrado; não afirmar que foram levantados** sem os dados reais.
 > **Versão anterior (entrada 011):** a apresentação vigente é **`thesis/apresentacao/proposta-nexo.pptx`** (19 slides, Nexo, com etiquetas de status e notas). Ela assume as recomendações B1, B2, B3, B6, B7, B8 e B9 do diagnóstico 006. Ainda sem commit.
 > - `proposta-v2-forja.pptx` (Forja, 22 slides) fica como histórico;
-> - a `rev3` local está obsoleta;
+> - a `rev3` foi apagada (entrada 017);
 > - a proposta escrita e o `roteiro-defesa.md` ainda não acompanham o Nexo (Fase 2 pendente).
-> **Registro de trabalho:** fica **só no vault**, em `09 - Registro de Trabalho/` ([[000 - Índice do Registro de Trabalho]]). SEMPRE: cada mensagem de Nathan → `NNN_data_Pergunta-Nathan_assunto.md` e cada resposta → `NNN_data_Resposta-Claude_assunto.md`, ambas em texto integral. Entradas atuais: 001 a 016.
-> **Commit (29/10, entrada 016):** tudo commitado na `forja-marco-1`, **sem push**. Ficou fora só a `proposta-v2-forja-rev3.pptx` (obsoleta; apagar se o autor confirmar).
+> **Registro de trabalho:** fica **só no vault**, em `09 - Registro de Trabalho/` ([[000 - Índice do Registro de Trabalho]]). SEMPRE: cada mensagem de Nathan → `NNN_data_Pergunta-Nathan_assunto.md` e cada resposta → `NNN_data_Resposta-Claude_assunto.md`, ambas em texto integral. Entradas atuais: 001 a 017.
+> **Commit (29/10, entrada 016):** tudo commitado na `forja-marco-1`, e **enviado ao GitHub** em 29/10 (entrada 017). A `proposta-v2-forja-rev3.pptx` foi apagada. Falta decidir o merge ou PR para a `main`.
 >
 > **Documentação organizada (28/10, entrada 010):**
 > - os textos da Forja/Nexo e a proposta completa mudaram para o vault (`10 - Nexo - Contrato e Validação/` e `01 - Projeto/`);
