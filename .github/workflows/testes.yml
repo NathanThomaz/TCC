@@ -1,0 +1,26 @@
+name: Testes
+
+# Roda os testes automáticos a cada envio e pull request.
+# Validado localmente em 2026-10-30 num clone limpo: 156 testes passando.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  pytest:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Instalar o pacote com extras de teste
+        run: python -m pip install -e ".[dev,forja,estatica]"
+      - name: Rodar testes
+        run: python -m pytest -q
