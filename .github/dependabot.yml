@@ -1,11 +1,26 @@
 version: 2
+# Atualizações automáticas e sem trabalho manual (DEC-AMB-037):
+# - um PR agrupado por ecossistema, uma vez por mês (menos execuções de CI);
+# - versões "major" de bibliotecas Python são ignoradas (podem quebrar o projeto);
+# - o workflow dependabot-automerge.yml faz o merge sozinho quando os testes passam.
 updates:
   - package-ecosystem: pip
     directory: /
     schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
+      interval: monthly
+    open-pull-requests-limit: 2
+    groups:
+      dependencias-python:
+        patterns: ["*"]
+        update-types: [minor, patch]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: monthly
+    open-pull-requests-limit: 2
+    groups:
+      acoes-github:
+        patterns: ["*"]
