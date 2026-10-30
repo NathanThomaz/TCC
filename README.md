@@ -85,16 +85,15 @@ src/forja/                 Nexo: contrato do mapa e validador
   __main__.py                comando `python -m forja validar`
 tests/forja/               testes do Nexo; dados/ tem o mapa de exemplo da padaria
 thesis/apresentacao/       apresentação da proposta (proposta-nexo.pptx)
-Documentação TCC/          vault do Obsidian com toda a documentação
 ```
 
 ## Documentação
 
-Toda a documentação fica no vault do Obsidian, na pasta [`Documentação TCC/`](Documentação%20TCC/):
-- [`00 - Painel/`](Documentação%20TCC/00%20-%20Painel/): painel e ponto de retomada;
-- [`01 - Projeto/`](Documentação%20TCC/01%20-%20Projeto/): tema, pergunta, objetivos e proposta;
-- [`10 - Nexo - Contrato e Validação/`](Documentação%20TCC/10%20-%20Nexo%20-%20Contrato%20e%20Valida%C3%A7%C3%A3o/): contrato do mapa, validação e plano do Marco 1;
-- [`09 - Registro de Trabalho/`](Documentação%20TCC/09%20-%20Registro%20de%20Trabalho/): registro integral de toda pergunta e resposta do trabalho.
+Toda a documentação fica no vault central do Obsidian, no repositório [ObisdianDocument](https://github.com/NathanThomaz/ObisdianDocument), pasta [`01 - Projetos/TCC/`](https://github.com/NathanThomaz/ObisdianDocument/tree/main/01%20-%20Projetos/TCC):
+- [`00 - Painel/`](https://github.com/NathanThomaz/ObisdianDocument/tree/main/01%20-%20Projetos/TCC/00%20-%20Painel): painel e ponto de retomada;
+- [`01 - Projeto/`](https://github.com/NathanThomaz/ObisdianDocument/tree/main/01%20-%20Projetos/TCC/01%20-%20Projeto): tema, pergunta, objetivos e proposta;
+- [`10 - Nexo - Contrato e Validação/`](https://github.com/NathanThomaz/ObisdianDocument/tree/main/01%20-%20Projetos/TCC/10%20-%20Nexo%20-%20Contrato%20e%20Valida%C3%A7%C3%A3o): contrato do mapa, validação e plano do Marco 1;
+- [`09 - Registro de Trabalho/`](https://github.com/NathanThomaz/ObisdianDocument/tree/main/01%20-%20Projetos/TCC/09%20-%20Registro%20de%20Trabalho): registro integral de toda pergunta e resposta do trabalho.
 
 ## Projeto anterior (suspenso)
 
