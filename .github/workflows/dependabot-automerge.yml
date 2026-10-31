@@ -13,11 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event.pull_request.user.login == 'dependabot[bot]'
     steps:
-      - name: Ler dados da atualização
-        id: meta
-        uses: dependabot/fetch-metadata@v3
-      - name: Ativar auto-merge (exceto major de bibliotecas Python)
-        if: steps.meta.outputs.update-type != 'version-update:semver-major' || steps.meta.outputs.package-ecosystem == 'github_actions'
+      - name: Ativar auto-merge (entra só com o teste verde)
         run: gh pr merge --auto --squash "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
