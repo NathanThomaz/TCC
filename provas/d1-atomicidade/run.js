@@ -38,3 +38,20 @@ console.log(
     2,
   ),
 );
+
+// Falha (código de saída 1) se qualquer resposta não for 200 ou se um invariante não se confirmar.
+const s = sequencial.body ?? {};
+const falhas = [
+  sequencial.status !== 200 && `sequencial HTTP ${sequencial.status}`,
+  estado.status !== 200 && `estado HTTP ${estado.status}`,
+  results.some((r) => r.status !== 200) && "alguma reserva respondeu fora de 200",
+  s.loteComFalha?.reservasGravadas !== 0 && "lote com falha gravou reservas",
+  s.foraDoLote?.reservasGravadas !== 1 && "contraste fora do lote diferente de 1",
+  s.parDeAgenda?.agendamentos !== 1 && "par de agenda gravou parcialmente",
+  aceitas !== 15 && `aceitas = ${aceitas}, esperado 15`,
+  estado.body?.unidades !== 30 && `unidades reservadas = ${estado.body?.unidades}, esperado 30`,
+].filter(Boolean);
+if (falhas.length) {
+  console.error("PROVA FALHOU:", falhas.join("; "));
+  process.exit(1);
+}

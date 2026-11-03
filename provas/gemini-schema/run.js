@@ -59,21 +59,29 @@ const Proposta = z.object({
 // const vira enum de um valor. A validação no backend usa sempre o schema Zod original.
 const VARIANTE = process.env.PROVA_VARIANTE ?? "zod";
 
-function adaptar(node) {
-  if (Array.isArray(node)) return node.map(adaptar);
+// Variantes controladas (uma mudança por vez): zod | sem_schema | anyof | adaptado (as duas).
+const MUDANCAS = {
+  zod: { tiraSchema: false, anyOf: false },
+  sem_schema: { tiraSchema: true, anyOf: false },
+  anyof: { tiraSchema: false, anyOf: true },
+  adaptado: { tiraSchema: true, anyOf: true },
+}[VARIANTE];
+if (!MUDANCAS) throw new Error(`Variante desconhecida: ${VARIANTE}`);
+
+function adaptar(node, raiz = true) {
+  if (Array.isArray(node)) return node.map((item) => adaptar(item, false));
   if (!node || typeof node !== "object") return node;
   const out = {};
   for (const [key, value] of Object.entries(node)) {
-    if (key === "oneOf") out.anyOf = adaptar(value);
-    else if (key === "const") out.enum = [value];
-    else if (key === "$schema") continue;
-    else out[key] = adaptar(value);
+    if (key === "$schema" && raiz && MUDANCAS.tiraSchema) continue;
+    if (key === "oneOf" && MUDANCAS.anyOf) out.anyOf = adaptar(value, false);
+    else if (key === "const" && MUDANCAS.anyOf) out.enum = [value];
+    else out[key] = adaptar(value, false);
   }
   return out;
 }
 
-const gerado = z.toJSONSchema(Proposta);
-const schema = VARIANTE === "adaptado" ? adaptar(gerado) : gerado;
+const schema = adaptar(z.toJSONSchema(Proposta));
 
 const SISTEMA =
   "Você configura sistemas de gestão a partir de um catálogo fechado. Responda só com JSON no " +
@@ -132,6 +140,7 @@ async function chamar() {
     tokens: { entrada, saida, raciocinio: uso.thoughtsTokenCount ?? 0 },
     custo: { usd, brl: usd * USD_BRL * (1 + IOF) },
     validacao,
+    resposta: texto,
     resumo: proposta && {
       modelo: proposta.modelo,
       modulos: proposta.modulos,
@@ -156,6 +165,8 @@ console.log(
       modelo: MODEL,
       variante: VARIANTE,
       schemaBytes: JSON.stringify(schema).length,
+      schemaEnviado: schema,
+      respostasIguais: new Set(validas.map((e) => e.resposta)).size === 1,
       execucoes,
       media: {
         tokensEntrada: media((e) => e.tokens.entrada),

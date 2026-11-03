@@ -1,0 +1,264 @@
+{
+  "quando": "2026-11-03T19:16:42.238Z",
+  "modelo": "gemini-3.1-flash-lite",
+  "variante": "sem_schema",
+  "schemaBytes": 2066,
+  "schemaEnviado": {
+    "type": "object",
+    "properties": {
+      "modelo": {
+        "type": "string",
+        "enum": ["comercio", "servicos", "comercio_com_servicos"]
+      },
+      "modulos": {
+        "minItems": 1,
+        "type": "array",
+        "items": {
+          "type": "string",
+          "enum": ["clientes", "produtos", "vendas", "estoque", "profissionais", "agenda"]
+        }
+      },
+      "requisitos": {
+        "minItems": 1,
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^REQ-\\d{2}$"
+            },
+            "texto": {
+              "type": "string",
+              "minLength": 5,
+              "maxLength": 300
+            },
+            "status": {
+              "type": "string",
+              "enum": ["pendente", "confirmado"]
+            }
+          },
+          "required": ["id", "texto", "status"],
+          "additionalProperties": false
+        }
+      },
+      "regras": {
+        "type": "array",
+        "items": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "tipo": {
+                  "type": "string",
+                  "const": "limite_atacado"
+                },
+                "valor_centavos": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 100000000
+                },
+                "requisitos": {
+                  "minItems": 1,
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": ["tipo", "valor_centavos", "requisitos"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "tipo": {
+                  "type": "string",
+                  "const": "unidades_por_caixa"
+                },
+                "produto": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "unidades": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 1000
+                },
+                "requisitos": {
+                  "minItems": 1,
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": ["tipo", "produto", "unidades", "requisitos"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "tipo": {
+                  "type": "string",
+                  "const": "prazo_reserva"
+                },
+                "minutos": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 1440
+                },
+                "requisitos": {
+                  "minItems": 1,
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": ["tipo", "minutos", "requisitos"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "tipo": {
+                  "type": "string",
+                  "const": "duracao_atendimento"
+                },
+                "atendimento": {
+                  "type": "string",
+                  "enum": ["instalacao", "retirada", "servico"]
+                },
+                "minutos": {
+                  "type": "integer",
+                  "minimum": 15,
+                  "maximum": 480
+                },
+                "requisitos": {
+                  "minItems": 1,
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": ["tipo", "atendimento", "minutos", "requisitos"],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "perguntas": {
+        "maxItems": 5,
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "required": ["modelo", "modulos", "requisitos", "regras", "perguntas"],
+    "additionalProperties": false
+  },
+  "respostasIguais": true,
+  "execucoes": [
+    {
+      "ok": true,
+      "ms": 1961,
+      "modeloRespondido": "gemini-3.1-flash-lite",
+      "tokens": {
+        "entrada": 156,
+        "saida": 451,
+        "raciocinio": 0
+      },
+      "custo": {
+        "usd": 0.0007155,
+        "brl": 0.0044810334
+      },
+      "validacao": [
+        "regras.0.tipo: Invalid discriminator value. Expected 'limite_atacado' | 'unidades_por_caixa' | 'prazo_reserva' | 'duracao_atendimento'",
+        "regras.1.tipo: Invalid discriminator value. Expected 'limite_atacado' | 'unidades_por_caixa' | 'prazo_reserva' | 'duracao_atendimento'",
+        "regras.2.tipo: Invalid discriminator value. Expected 'limite_atacado' | 'unidades_por_caixa' | 'prazo_reserva' | 'duracao_atendimento'"
+      ],
+      "resposta": "{\n  \"modelo\": \"comercio_com_servicos\",\n  \"modulos\": [\n    \"produtos\",\n    \"vendas\",\n    \"estoque\",\n    \"profissionais\",\n    \"agenda\"\n  ],\n  \"requisitos\": [\n    {\n      \"id\": \"REQ-01\",\n      \"texto\": \"Definir preço de atacado para compras acima de 1000 reais\",\n      \"status\": \"confirmado\"\n    },\n    {\n      \"id\": \"REQ-02\",\n      \"texto\": \"Configurar serviço de instalação e retirada de chopeira com duração de 60 minutos\",\n      \"status\": \"confirmado\"\n    },\n    {\n      \"id\": \"REQ-03\",\n      \"texto\": \"Implementar reserva de estoque temporária durante a criação do pedido\",\n      \"status\": \"pendente\"\n    }\n  ],\n  \"regras\": [\n    {\n      \"tipo\": \"desconto_atacado\",\n      \"valor_centavos\": 100000,\n      \"requisitos\": [\n        \"REQ-01\"\n      ]\n    },\n    {\n      \"tipo\": \"servico_tecnico\",\n      \"atendimento\": \"instalacao\",\n      \"minutos\": 60,\n      \"requisitos\": [\n        \"REQ-02\"\n      ]\n    },\n    {\n      \"tipo\": \"servico_tecnico\",\n      \"atendimento\": \"retirada\",\n      \"minutos\": 60,\n      \"requisitos\": [\n        \"REQ-02\"\n      ]\n    }\n  ],\n  \"perguntas\": [\n    \"Por quanto tempo o estoque deve ficar reservado antes de expirar o pedido?\",\n    \"Qual o valor do desconto aplicado para compras no atacado?\",\n    \"O técnico deve ser vinculado automaticamente a todos os agendamentos de chopeira?\"\n  ]\n}",
+      "resumo": {
+        "modelo": "comercio_com_servicos",
+        "modulos": ["produtos", "vendas", "estoque", "profissionais", "agenda"],
+        "regras": ["desconto_atacado:100000", "servico_tecnico:60", "servico_tecnico:60"],
+        "pendentes": 1,
+        "perguntas": [
+          "Por quanto tempo o estoque deve ficar reservado antes de expirar o pedido?",
+          "Qual o valor do desconto aplicado para compras no atacado?",
+          "O técnico deve ser vinculado automaticamente a todos os agendamentos de chopeira?"
+        ]
+      }
+    },
+    {
+      "ok": true,
+      "ms": 1808,
+      "modeloRespondido": "gemini-3.1-flash-lite",
+      "tokens": {
+        "entrada": 156,
+        "saida": 451,
+        "raciocinio": 0
+      },
+      "custo": {
+        "usd": 0.0007155,
+        "brl": 0.0044810334
+      },
+      "validacao": [
+        "regras.0.tipo: Invalid discriminator value. Expected 'limite_atacado' | 'unidades_por_caixa' | 'prazo_reserva' | 'duracao_atendimento'",
+        "regras.1.tipo: Invalid discriminator value. Expected 'limite_atacado' | 'unidades_por_caixa' | 'prazo_reserva' | 'duracao_atendimento'",
+        "regras.2.tipo: Invalid discriminator value. Expected 'limite_atacado' | 'unidades_por_caixa' | 'prazo_reserva' | 'duracao_atendimento'"
+      ],
+      "resposta": "{\n  \"modelo\": \"comercio_com_servicos\",\n  \"modulos\": [\n    \"produtos\",\n    \"vendas\",\n    \"estoque\",\n    \"profissionais\",\n    \"agenda\"\n  ],\n  \"requisitos\": [\n    {\n      \"id\": \"REQ-01\",\n      \"texto\": \"Definir preço de atacado para compras acima de 1000 reais\",\n      \"status\": \"confirmado\"\n    },\n    {\n      \"id\": \"REQ-02\",\n      \"texto\": \"Configurar serviço de instalação e retirada de chopeira com duração de 60 minutos\",\n      \"status\": \"confirmado\"\n    },\n    {\n      \"id\": \"REQ-03\",\n      \"texto\": \"Implementar reserva de estoque temporária durante a criação do pedido\",\n      \"status\": \"pendente\"\n    }\n  ],\n  \"regras\": [\n    {\n      \"tipo\": \"desconto_atacado\",\n      \"valor_centavos\": 100000,\n      \"requisitos\": [\n        \"REQ-01\"\n      ]\n    },\n    {\n      \"tipo\": \"servico_tecnico\",\n      \"atendimento\": \"instalacao\",\n      \"minutos\": 60,\n      \"requisitos\": [\n        \"REQ-02\"\n      ]\n    },\n    {\n      \"tipo\": \"servico_tecnico\",\n      \"atendimento\": \"retirada\",\n      \"minutos\": 60,\n      \"requisitos\": [\n        \"REQ-02\"\n      ]\n    }\n  ],\n  \"perguntas\": [\n    \"Por quanto tempo o estoque deve ficar reservado antes de expirar o pedido?\",\n    \"Qual o valor do desconto aplicado para compras no atacado?\",\n    \"O técnico deve ser vinculado automaticamente a todos os agendamentos de chopeira?\"\n  ]\n}",
+      "resumo": {
+        "modelo": "comercio_com_servicos",
+        "modulos": ["produtos", "vendas", "estoque", "profissionais", "agenda"],
+        "regras": ["desconto_atacado:100000", "servico_tecnico:60", "servico_tecnico:60"],
+        "pendentes": 1,
+        "perguntas": [
+          "Por quanto tempo o estoque deve ficar reservado antes de expirar o pedido?",
+          "Qual o valor do desconto aplicado para compras no atacado?",
+          "O técnico deve ser vinculado automaticamente a todos os agendamentos de chopeira?"
+        ]
+      }
+    },
+    {
+      "ok": true,
+      "ms": 1810,
+      "modeloRespondido": "gemini-3.1-flash-lite",
+      "tokens": {
+        "entrada": 156,
+        "saida": 451,
+        "raciocinio": 0
+      },
+      "custo": {
+        "usd": 0.0007155,
+        "brl": 0.0044810334
+      },
+      "validacao": [
+        "regras.0.tipo: Invalid discriminator value. Expected 'limite_atacado' | 'unidades_por_caixa' | 'prazo_reserva' | 'duracao_atendimento'",
+        "regras.1.tipo: Invalid discriminator value. Expected 'limite_atacado' | 'unidades_por_caixa' | 'prazo_reserva' | 'duracao_atendimento'",
+        "regras.2.tipo: Invalid discriminator value. Expected 'limite_atacado' | 'unidades_por_caixa' | 'prazo_reserva' | 'duracao_atendimento'"
+      ],
+      "resposta": "{\n  \"modelo\": \"comercio_com_servicos\",\n  \"modulos\": [\n    \"produtos\",\n    \"vendas\",\n    \"estoque\",\n    \"profissionais\",\n    \"agenda\"\n  ],\n  \"requisitos\": [\n    {\n      \"id\": \"REQ-01\",\n      \"texto\": \"Definir preço de atacado para compras acima de 1000 reais\",\n      \"status\": \"confirmado\"\n    },\n    {\n      \"id\": \"REQ-02\",\n      \"texto\": \"Configurar serviço de instalação e retirada de chopeira com duração de 60 minutos\",\n      \"status\": \"confirmado\"\n    },\n    {\n      \"id\": \"REQ-03\",\n      \"texto\": \"Implementar reserva de estoque temporária durante a criação do pedido\",\n      \"status\": \"pendente\"\n    }\n  ],\n  \"regras\": [\n    {\n      \"tipo\": \"desconto_atacado\",\n      \"valor_centavos\": 100000,\n      \"requisitos\": [\n        \"REQ-01\"\n      ]\n    },\n    {\n      \"tipo\": \"servico_tecnico\",\n      \"atendimento\": \"instalacao\",\n      \"minutos\": 60,\n      \"requisitos\": [\n        \"REQ-02\"\n      ]\n    },\n    {\n      \"tipo\": \"servico_tecnico\",\n      \"atendimento\": \"retirada\",\n      \"minutos\": 60,\n      \"requisitos\": [\n        \"REQ-02\"\n      ]\n    }\n  ],\n  \"perguntas\": [\n    \"Por quanto tempo o estoque deve ficar reservado antes de expirar o pedido?\",\n    \"Qual o valor do desconto aplicado para compras no atacado?\",\n    \"O técnico deve ser vinculado automaticamente a todos os agendamentos de chopeira?\"\n  ]\n}",
+      "resumo": {
+        "modelo": "comercio_com_servicos",
+        "modulos": ["produtos", "vendas", "estoque", "profissionais", "agenda"],
+        "regras": ["desconto_atacado:100000", "servico_tecnico:60", "servico_tecnico:60"],
+        "pendentes": 1,
+        "perguntas": [
+          "Por quanto tempo o estoque deve ficar reservado antes de expirar o pedido?",
+          "Qual o valor do desconto aplicado para compras no atacado?",
+          "O técnico deve ser vinculado automaticamente a todos os agendamentos de chopeira?"
+        ]
+      }
+    }
+  ],
+  "media": {
+    "tokensEntrada": 156,
+    "tokensSaida": 451,
+    "custoBrl": 0.0044810334
+  }
+}

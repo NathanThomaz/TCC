@@ -1,0 +1,262 @@
+{
+  "quando": "2026-11-03T19:16:49.362Z",
+  "modelo": "gemini-3.1-flash-lite",
+  "variante": "anyof",
+  "schemaBytes": 2127,
+  "schemaEnviado": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "modelo": {
+        "type": "string",
+        "enum": ["comercio", "servicos", "comercio_com_servicos"]
+      },
+      "modulos": {
+        "minItems": 1,
+        "type": "array",
+        "items": {
+          "type": "string",
+          "enum": ["clientes", "produtos", "vendas", "estoque", "profissionais", "agenda"]
+        }
+      },
+      "requisitos": {
+        "minItems": 1,
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^REQ-\\d{2}$"
+            },
+            "texto": {
+              "type": "string",
+              "minLength": 5,
+              "maxLength": 300
+            },
+            "status": {
+              "type": "string",
+              "enum": ["pendente", "confirmado"]
+            }
+          },
+          "required": ["id", "texto", "status"],
+          "additionalProperties": false
+        }
+      },
+      "regras": {
+        "type": "array",
+        "items": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "tipo": {
+                  "type": "string",
+                  "enum": ["limite_atacado"]
+                },
+                "valor_centavos": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 100000000
+                },
+                "requisitos": {
+                  "minItems": 1,
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": ["tipo", "valor_centavos", "requisitos"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "tipo": {
+                  "type": "string",
+                  "enum": ["unidades_por_caixa"]
+                },
+                "produto": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "unidades": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 1000
+                },
+                "requisitos": {
+                  "minItems": 1,
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": ["tipo", "produto", "unidades", "requisitos"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "tipo": {
+                  "type": "string",
+                  "enum": ["prazo_reserva"]
+                },
+                "minutos": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 1440
+                },
+                "requisitos": {
+                  "minItems": 1,
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": ["tipo", "minutos", "requisitos"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "tipo": {
+                  "type": "string",
+                  "enum": ["duracao_atendimento"]
+                },
+                "atendimento": {
+                  "type": "string",
+                  "enum": ["instalacao", "retirada", "servico"]
+                },
+                "minutos": {
+                  "type": "integer",
+                  "minimum": 15,
+                  "maximum": 480
+                },
+                "requisitos": {
+                  "minItems": 1,
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": ["tipo", "atendimento", "minutos", "requisitos"],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "perguntas": {
+        "maxItems": 5,
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "required": ["modelo", "modulos", "requisitos", "regras", "perguntas"],
+    "additionalProperties": false
+  },
+  "respostasIguais": true,
+  "execucoes": [
+    {
+      "ok": true,
+      "ms": 3042,
+      "modeloRespondido": "gemini-3.1-flash-lite",
+      "tokens": {
+        "entrada": 156,
+        "saida": 531,
+        "raciocinio": 0
+      },
+      "custo": {
+        "usd": 0.0008355,
+        "brl": 0.0052325694
+      },
+      "validacao": "ok",
+      "resposta": "{\n  \"modelo\": \"comercio_com_servicos\",\n  \"modulos\": [\n    \"clientes\",\n    \"produtos\",\n    \"vendas\",\n    \"estoque\",\n    \"profissionais\",\n    \"agenda\"\n  ],\n  \"requisitos\": [\n    {\n      \"id\": \"REQ-01\",\n      \"texto\": \"Configurar preço de atacado para compras a partir de R$ 1.000,00\",\n      \"status\": \"confirmado\"\n    },\n    {\n      \"id\": \"REQ-02\",\n      \"texto\": \"Configurar caixa de cerveja com 12 unidades\",\n      \"status\": \"confirmado\"\n    },\n    {\n      \"id\": \"REQ-03\",\n      \"texto\": \"Configurar duração de 60 minutos para instalação e retirada de chopeira\",\n      \"status\": \"confirmado\"\n    },\n    {\n      \"id\": \"REQ-04\",\n      \"texto\": \"Definir tempo de reserva de estoque para pedidos em aberto\",\n      \"status\": \"pendente\"\n    }\n  ],\n  \"regras\": [\n    {\n      \"tipo\": \"limite_atacado\",\n      \"valor_centavos\": 100000,\n      \"requisitos\": [\n        \"REQ-01\"\n      ]\n    },\n    {\n      \"tipo\": \"unidades_por_caixa\",\n      \"produto\": \"cerveja em lata\",\n      \"unidades\": 12,\n      \"requisitos\": [\n        \"REQ-02\"\n      ]\n    },\n    {\n      \"tipo\": \"duracao_atendimento\",\n      \"atendimento\": \"instalacao\",\n      \"minutos\": 60,\n      \"requisitos\": [\n        \"REQ-03\"\n      ]\n    },\n    {\n      \"tipo\": \"duracao_atendimento\",\n      \"atendimento\": \"retirada\",\n      \"minutos\": 60,\n      \"requisitos\": [\n        \"REQ-03\"\n      ]\n    }\n  ],\n  \"perguntas\": [\n    \"Quantos minutos você deseja que o estoque fique reservado enquanto o pedido está sendo montado?\"\n  ]\n}",
+      "resumo": {
+        "modelo": "comercio_com_servicos",
+        "modulos": ["clientes", "produtos", "vendas", "estoque", "profissionais", "agenda"],
+        "regras": [
+          "limite_atacado:100000",
+          "unidades_por_caixa:12",
+          "duracao_atendimento:60",
+          "duracao_atendimento:60"
+        ],
+        "pendentes": 1,
+        "perguntas": [
+          "Quantos minutos você deseja que o estoque fique reservado enquanto o pedido está sendo montado?"
+        ]
+      }
+    },
+    {
+      "ok": true,
+      "ms": 1735,
+      "modeloRespondido": "gemini-3.1-flash-lite",
+      "tokens": {
+        "entrada": 156,
+        "saida": 531,
+        "raciocinio": 0
+      },
+      "custo": {
+        "usd": 0.0008355,
+        "brl": 0.0052325694
+      },
+      "validacao": "ok",
+      "resposta": "{\n  \"modelo\": \"comercio_com_servicos\",\n  \"modulos\": [\n    \"clientes\",\n    \"produtos\",\n    \"vendas\",\n    \"estoque\",\n    \"profissionais\",\n    \"agenda\"\n  ],\n  \"requisitos\": [\n    {\n      \"id\": \"REQ-01\",\n      \"texto\": \"Configurar preço de atacado para compras a partir de R$ 1.000,00\",\n      \"status\": \"confirmado\"\n    },\n    {\n      \"id\": \"REQ-02\",\n      \"texto\": \"Configurar caixa de cerveja com 12 unidades\",\n      \"status\": \"confirmado\"\n    },\n    {\n      \"id\": \"REQ-03\",\n      \"texto\": \"Configurar duração de 60 minutos para instalação e retirada de chopeira\",\n      \"status\": \"confirmado\"\n    },\n    {\n      \"id\": \"REQ-04\",\n      \"texto\": \"Definir tempo de reserva de estoque para pedidos em aberto\",\n      \"status\": \"pendente\"\n    }\n  ],\n  \"regras\": [\n    {\n      \"tipo\": \"limite_atacado\",\n      \"valor_centavos\": 100000,\n      \"requisitos\": [\n        \"REQ-01\"\n      ]\n    },\n    {\n      \"tipo\": \"unidades_por_caixa\",\n      \"produto\": \"cerveja em lata\",\n      \"unidades\": 12,\n      \"requisitos\": [\n        \"REQ-02\"\n      ]\n    },\n    {\n      \"tipo\": \"duracao_atendimento\",\n      \"atendimento\": \"instalacao\",\n      \"minutos\": 60,\n      \"requisitos\": [\n        \"REQ-03\"\n      ]\n    },\n    {\n      \"tipo\": \"duracao_atendimento\",\n      \"atendimento\": \"retirada\",\n      \"minutos\": 60,\n      \"requisitos\": [\n        \"REQ-03\"\n      ]\n    }\n  ],\n  \"perguntas\": [\n    \"Quantos minutos você deseja que o estoque fique reservado enquanto o pedido está sendo montado?\"\n  ]\n}",
+      "resumo": {
+        "modelo": "comercio_com_servicos",
+        "modulos": ["clientes", "produtos", "vendas", "estoque", "profissionais", "agenda"],
+        "regras": [
+          "limite_atacado:100000",
+          "unidades_por_caixa:12",
+          "duracao_atendimento:60",
+          "duracao_atendimento:60"
+        ],
+        "pendentes": 1,
+        "perguntas": [
+          "Quantos minutos você deseja que o estoque fique reservado enquanto o pedido está sendo montado?"
+        ]
+      }
+    },
+    {
+      "ok": true,
+      "ms": 1862,
+      "modeloRespondido": "gemini-3.1-flash-lite",
+      "tokens": {
+        "entrada": 156,
+        "saida": 531,
+        "raciocinio": 0
+      },
+      "custo": {
+        "usd": 0.0008355,
+        "brl": 0.0052325694
+      },
+      "validacao": "ok",
+      "resposta": "{\n  \"modelo\": \"comercio_com_servicos\",\n  \"modulos\": [\n    \"clientes\",\n    \"produtos\",\n    \"vendas\",\n    \"estoque\",\n    \"profissionais\",\n    \"agenda\"\n  ],\n  \"requisitos\": [\n    {\n      \"id\": \"REQ-01\",\n      \"texto\": \"Configurar preço de atacado para compras a partir de R$ 1.000,00\",\n      \"status\": \"confirmado\"\n    },\n    {\n      \"id\": \"REQ-02\",\n      \"texto\": \"Configurar caixa de cerveja com 12 unidades\",\n      \"status\": \"confirmado\"\n    },\n    {\n      \"id\": \"REQ-03\",\n      \"texto\": \"Configurar duração de 60 minutos para instalação e retirada de chopeira\",\n      \"status\": \"confirmado\"\n    },\n    {\n      \"id\": \"REQ-04\",\n      \"texto\": \"Definir tempo de reserva de estoque para pedidos em aberto\",\n      \"status\": \"pendente\"\n    }\n  ],\n  \"regras\": [\n    {\n      \"tipo\": \"limite_atacado\",\n      \"valor_centavos\": 100000,\n      \"requisitos\": [\n        \"REQ-01\"\n      ]\n    },\n    {\n      \"tipo\": \"unidades_por_caixa\",\n      \"produto\": \"cerveja em lata\",\n      \"unidades\": 12,\n      \"requisitos\": [\n        \"REQ-02\"\n      ]\n    },\n    {\n      \"tipo\": \"duracao_atendimento\",\n      \"atendimento\": \"instalacao\",\n      \"minutos\": 60,\n      \"requisitos\": [\n        \"REQ-03\"\n      ]\n    },\n    {\n      \"tipo\": \"duracao_atendimento\",\n      \"atendimento\": \"retirada\",\n      \"minutos\": 60,\n      \"requisitos\": [\n        \"REQ-03\"\n      ]\n    }\n  ],\n  \"perguntas\": [\n    \"Quantos minutos você deseja que o estoque fique reservado enquanto o pedido está sendo montado?\"\n  ]\n}",
+      "resumo": {
+        "modelo": "comercio_com_servicos",
+        "modulos": ["clientes", "produtos", "vendas", "estoque", "profissionais", "agenda"],
+        "regras": [
+          "limite_atacado:100000",
+          "unidades_por_caixa:12",
+          "duracao_atendimento:60",
+          "duracao_atendimento:60"
+        ],
+        "pendentes": 1,
+        "perguntas": [
+          "Quantos minutos você deseja que o estoque fique reservado enquanto o pedido está sendo montado?"
+        ]
+      }
+    }
+  ],
+  "media": {
+    "tokensEntrada": 156,
+    "tokensSaida": 531,
+    "custoBrl": 0.0052325694
+  }
+}

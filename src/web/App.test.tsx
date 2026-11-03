@@ -24,4 +24,11 @@ describe("App", () => {
 
     expect((await screen.findByRole("alert")).textContent).toContain("API indisponível");
   });
+
+  it("trata resposta de erro da API como indisponibilidade, sem quebrar a tela", async () => {
+    const erro = { error: { code: "internal_error", message: "x", requestId: "r" } };
+    render(<App fetcher={fakeFetch(Promise.resolve(Response.json(erro, { status: 500 })))} />);
+
+    expect((await screen.findByRole("alert")).textContent).toContain("API indisponível");
+  });
 });

@@ -9,9 +9,25 @@ export interface Logger {
 // Chaves cujo valor nunca vai para o log, em qualquer nível de aninhamento.
 const SENSITIVE = /token|secret|password|senha|authorization|cookie|api[_-]?key/i;
 
+// Segredos que podem aparecer dentro de textos livres (mensagens de erro de integrações).
+const SECRET_IN_TEXT: [RegExp, string][] = [
+  [/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [omitido]"],
+  [/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, "[jwt omitido]"],
+  [/AIza[0-9A-Za-z_-]{20,}/g, "[chave omitida]"],
+  [/((?:token|secret|password|senha|api[_-]?key|key)=)[^&\s"']+/gi, "$1[omitido]"],
+];
+
+export function redactText(text: string): string {
+  return SECRET_IN_TEXT.reduce(
+    (out, [pattern, replacement]) => out.replace(pattern, replacement),
+    text,
+  );
+}
+
 export function redact(value: unknown, depth = 0): unknown {
   if (depth > 5) return "[profundo]";
-  if (value instanceof Error) return { name: value.name, message: value.message };
+  if (typeof value === "string") return redactText(value);
+  if (value instanceof Error) return { name: value.name, message: redactText(value.message) };
   if (Array.isArray(value)) return value.map((item) => redact(item, depth + 1));
   if (value && typeof value === "object") {
     return Object.fromEntries(
