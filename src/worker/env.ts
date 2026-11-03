@@ -5,4 +5,6 @@ export interface Env {
   ASSETS: Fetcher;
 
   APP_ENV: string;
+  /** Id do projeto Firebase (audiência do ID token). Ausente = autenticação indisponível. */
+  FIREBASE_PROJECT_ID?: string;
 }
