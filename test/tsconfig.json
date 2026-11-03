@@ -6,6 +6,7 @@
   },
   "include": [
     "./worker/**/*.ts",
+    "../experiments/**/*.json",
     "./env.d.ts",
     "./apply-migrations.ts",
     "../src/worker/**/*.ts",

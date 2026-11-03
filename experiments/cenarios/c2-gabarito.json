@@ -1,0 +1,41 @@
+{
+  "modelo": "servicos",
+  "modulos": ["clientes", "profissionais", "agenda"],
+  "aparencia": {
+    "nome": "Pet Shop Banho e Tosa",
+    "cor_primaria": "#2e7d6b",
+    "cor_destaque": "#f28c28",
+    "titulo": "Pet Shop Banho e Tosa"
+  },
+  "requisitos": [
+    {
+      "id": "REQ-01",
+      "texto": "Agenda por profissional sem sobreposição e cadastro de clientes",
+      "status": "confirmado"
+    },
+    { "id": "REQ-02", "texto": "Banho de 60 minutos", "status": "confirmado" },
+    { "id": "REQ-03", "texto": "Tosa de 90 minutos", "status": "confirmado" },
+    {
+      "id": "REQ-04",
+      "texto": "Porte do animal obrigatório: pequeno, médio ou grande",
+      "status": "confirmado"
+    },
+    { "id": "REQ-05", "texto": "Lembrete pelo WhatsApp um dia antes", "status": "confirmado" }
+  ],
+  "campos": [
+    {
+      "id": "porte",
+      "entidade": "clientes",
+      "rotulo": "Porte do animal",
+      "tipo": "lista",
+      "opcoes": ["Pequeno", "Médio", "Grande"],
+      "obrigatorio": true
+    }
+  ],
+  "tipos_atendimento": [
+    { "id": "banho", "rotulo": "Banho", "duracao_minutos": 60 },
+    { "id": "tosa", "rotulo": "Tosa", "duracao_minutos": 90 }
+  ],
+  "regras": [],
+  "fora_do_catalogo": [{ "texto": "Lembrete pelo WhatsApp", "requisito": "REQ-05" }]
+}
