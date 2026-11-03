@@ -1,4 +1,4 @@
-import { createRemoteJWKSet, errors, jwtVerify, type JWTVerifyGetKey } from "jose";
+import { createRemoteJWKSet, errors, jwtVerify, type JWTPayload, type JWTVerifyGetKey } from "jose";
 
 // Verificação do ID token do Firebase no Worker, sem o SDK Admin para Node (ADR-001, item 6).
 // Requisitos oficiais (firebase.google.com/docs/auth/admin/verify-id-tokens): RS256, kid das
@@ -38,7 +38,7 @@ export async function verifyFirebaseIdToken(
   options: { projectId: string; keys: JWTVerifyGetKey; now: number },
 ): Promise<VerifiedToken> {
   const nowSeconds = Math.floor(options.now / 1000);
-  let payload;
+  let payload: JWTPayload;
   try {
     ({ payload } = await jwtVerify(token, options.keys, {
       algorithms: ["RS256"],
