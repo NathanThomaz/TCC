@@ -1,10 +1,11 @@
 import { z } from "zod";
-import type { SystemDto, VersionDto } from "../../shared/api";
+import type { IssueDto, SystemDto, VersionDto } from "../../shared/api";
 import { CATALOG_VERSION } from "../../shared/contract/catalog";
 import { SCHEMA_VERSION } from "../../shared/contract/schema";
 import { validateDraft } from "../../shared/contract/validate";
 import { authenticate, requireAdmin, requireSystemAccess } from "../auth/session";
 import { readJson } from "../http/body";
+import { beginIdempotent, recordStatement, replayAfterRace } from "../http/idempotency";
 import { AppError, conflict, notFound, validationFailed } from "../http/errors";
 import { json } from "../http/responses";
 import type { Handler, RequestContext } from "../http/router";
@@ -50,6 +51,10 @@ function parse<T>(schema: z.ZodType<T>, body: unknown): T {
   return result.data;
 }
 
+function isUnique(error: unknown): boolean {
+  return error instanceof Error && /UNIQUE|PRIMARY KEY/i.test(error.message);
+}
+
 /** Converte a recusa de um trigger do D1 em conflito com mensagem clara. */
 function triggerConflict(error: unknown, messages: Record<string, string>): never {
   const text = error instanceof Error ? error.message : String(error);
@@ -92,17 +97,40 @@ async function loadSystem(ctx: RequestContext, systemId: string): Promise<System
 export const createSystem: Handler = async (ctx) => {
   const user = await authenticate(ctx, ctx.auth);
   requireAdmin(user);
-  const { nome } = parse(CreateSystemBody, await readJson(ctx.request));
+  const body = parse(CreateSystemBody, await readJson(ctx.request));
+  const cmd = { scope: "global", actorId: user.id, command: "system.create", body };
+  const started = await beginIdempotent(ctx, cmd);
+  if (started.kind === "replay") {
+    return json(
+      { sistema: publicSystem(await loadSystem(ctx, started.resourceId)) },
+      { status: started.statusCode },
+    );
+  }
   const now = ctx.clock.now();
   const id = crypto.randomUUID();
-  await ctx.env.DB.batch([
-    ctx.env.DB.prepare(
-      "INSERT INTO systems (id, owner_id, name, status, created_at, updated_at) VALUES (?, ?, ?, 'draft', ?, ?)",
-    ).bind(id, user.id, nome, now, now),
-    ctx.env.DB.prepare(
-      "INSERT INTO audit_events (system_id, actor_id, action, target_type, target_id, created_at) VALUES (?, ?, 'system.created', 'system', ?, ?)",
-    ).bind(id, user.id, id, now),
-  ]);
+  const db = ctx.env.DB;
+  try {
+    await db.batch([
+      db
+        .prepare(
+          "INSERT INTO systems (id, owner_id, name, status, created_at, updated_at) VALUES (?, ?, ?, 'draft', ?, ?)",
+        )
+        .bind(id, user.id, body.nome, now, now),
+      db
+        .prepare(
+          "INSERT INTO audit_events (system_id, actor_id, action, target_type, target_id, created_at) VALUES (?, ?, 'system.created', 'system', ?, ?)",
+        )
+        .bind(id, user.id, id, now),
+      recordStatement(ctx, cmd, started, id, 201, now),
+    ]);
+  } catch (error) {
+    const replay = isUnique(error) ? await replayAfterRace(ctx, cmd, started) : null;
+    if (replay?.kind !== "replay") throw error;
+    return json(
+      { sistema: publicSystem(await loadSystem(ctx, replay.resourceId)) },
+      { status: replay.statusCode },
+    );
+  }
   return json({ sistema: publicSystem(await loadSystem(ctx, id)) }, { status: 201 });
 };
 
@@ -165,6 +193,11 @@ export const createVersion: Handler = async (ctx) => {
     return json({ versao: null, issues: result.issues }, { status: 422 });
   }
 
+  const cmd = { scope: systemId, actorId: user.id, command: "version.create", body };
+  const started = await beginIdempotent(ctx, cmd);
+  if (started.kind === "replay")
+    return versionResponse(ctx, started.resourceId, started.statusCode);
+
   const configJson = canonicalJson(result.draft);
   const hash = await sha256Hex(configJson);
   const blocking = result.issues.filter((issue) => issue.severity === "bloqueante").length;
@@ -203,22 +236,40 @@ export const createVersion: Handler = async (ctx) => {
           "INSERT INTO audit_events (system_id, actor_id, action, target_type, target_id, created_at) VALUES (?, ?, 'version.created', 'model_version', ?, ?)",
         )
         .bind(systemId, user.id, id, now),
+      recordStatement(ctx, cmd, started, id, 201, now),
     ]);
   } catch (error) {
-    // Duas gravações simultâneas disputando o mesmo número de versão.
-    if (error instanceof Error && /UNIQUE/i.test(error.message)) {
-      throw conflict("Outra versão foi gravada ao mesmo tempo. Tente de novo.");
-    }
-    throw error;
+    if (!isUnique(error)) throw error;
+    const replay = await replayAfterRace(ctx, cmd, started);
+    if (replay?.kind === "replay")
+      return versionResponse(ctx, replay.resourceId, replay.statusCode);
+    // Duas gravações diferentes disputando o mesmo número de versão.
+    throw conflict("Outra versão foi gravada ao mesmo tempo. Tente de novo.");
   }
+  return versionResponse(ctx, id, 201);
+};
 
+/** Versão + o diagnóstico guardado na última validação dela. */
+async function versionResponse(
+  ctx: RequestContext,
+  versionId: string,
+  status: number,
+): Promise<Response> {
+  const db = ctx.env.DB;
   const row = await db
     .prepare("SELECT * FROM model_versions WHERE id = ?")
-    .bind(id)
+    .bind(versionId)
     .first<VersionRow>();
-  if (!row) throw new Error("versão gravada não encontrada");
-  return json({ versao: publicVersion(row), issues: result.issues }, { status: 201 });
-};
+  if (!row) throw notFound();
+  const run = await db
+    .prepare(
+      "SELECT issues_json FROM validation_runs WHERE model_version_id = ? ORDER BY created_at DESC LIMIT 1",
+    )
+    .bind(versionId)
+    .first<{ issues_json: string }>();
+  const issues = run ? (JSON.parse(run.issues_json) as IssueDto[]) : [];
+  return json({ versao: publicVersion(row), issues }, { status });
+}
 
 /** Aprova a versão exata: o hash enviado tem de ser o da versão, e ela não pode ter bloqueios. */
 export const approveVersion: Handler = async (ctx) => {
@@ -250,13 +301,22 @@ export const approveVersion: Handler = async (ctx) => {
       db
         .prepare("UPDATE model_versions SET status = 'approved' WHERE id = ? AND status = 'valid'")
         .bind(versionId),
+      // changes() = linhas da instrução anterior do mesmo batch: só audita transição efetiva.
       db
         .prepare(
-          "INSERT INTO audit_events (system_id, actor_id, action, target_type, target_id, details_json, created_at) VALUES (?, ?, 'version.approved', 'model_version', ?, json_object('hash', ?), ?)",
+          "INSERT INTO audit_events (system_id, actor_id, action, target_type, target_id, details_json, created_at) SELECT ?, ?, 'version.approved', 'model_version', ?, json_object('hash', ?), ? WHERE changes() = 1",
         )
         .bind(systemId, user.id, versionId, hash, now),
     ]);
   } catch (error) {
+    // Aprovação idêntica concorrente: se a outra venceu com o mesmo hash, é repetição.
+    const after = await db
+      .prepare("SELECT * FROM model_versions WHERE id = ? AND system_id = ?")
+      .bind(versionId, systemId)
+      .first<VersionRow>();
+    if (after?.status === "approved" && after.hash === hash) {
+      return json({ versao: publicVersion(after) });
+    }
     triggerConflict(error, {
       aprovacao_invalida:
         "A aprovação não corresponde à versão: o conteúdo mudou ou há erro bloqueante.",
@@ -288,23 +348,31 @@ export const activateSystem: Handler = async (ctx) => {
 
   const now = ctx.clock.now();
   const db = ctx.env.DB;
+  let changed = 0;
   try {
-    await db.batch([
+    const [update] = await db.batch([
       db
         .prepare(
           "UPDATE systems SET active_version_id = ?, status = 'active', updated_at = ? WHERE id = ? AND status = 'draft'",
         )
         .bind(versao, now, systemId),
+      // Só audita se o UPDATE anterior do mesmo batch ativou de fato.
       db
         .prepare(
-          "INSERT INTO audit_events (system_id, actor_id, action, target_type, target_id, created_at) VALUES (?, ?, 'system.activated', 'model_version', ?, ?)",
+          "INSERT INTO audit_events (system_id, actor_id, action, target_type, target_id, created_at) SELECT ?, ?, 'system.activated', 'model_version', ?, ? WHERE changes() = 1",
         )
         .bind(systemId, user.id, versao, now),
     ]);
+    changed = update?.meta.changes ?? 0;
   } catch (error) {
     triggerConflict(error, {
       versao_nao_aprovada: "Só uma versão aprovada deste sistema pode ser ativada.",
     });
   }
-  return json({ sistema: publicSystem(await loadSystem(ctx, systemId)) });
+  const after = await loadSystem(ctx, systemId);
+  if (changed === 0 && !(after.status === "active" && after.active_version_id === versao)) {
+    // Outra ativação concorrente venceu com outra versão: nada foi ativado por esta requisição.
+    throw conflict("O sistema já foi ativado com outra versão.");
+  }
+  return json({ sistema: publicSystem(after) });
 };

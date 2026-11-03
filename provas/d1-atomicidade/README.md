@@ -29,3 +29,7 @@ Saídas completas: [`resultado-remoto.json`](resultado-remoto.json) (40) e [`res
 - **Comprovado:** sob concorrência real, o trigger avaliado na escrita impediu exceder o saldo. Não houve leitura seguida de escrita desprotegida.
 - **Ressalva confirmada:** sem lote, o ABORT desfaz só a própria instrução. Toda operação com vários efeitos (vários itens, par de agenda, baixa + encerramento de reserva) **tem** de ir num único `batch()`.
 - **Limites desta prova:** cobre INSERT. UPDATEs de reserva (editar itens, renovar prazo) e as transições de estado precisam de triggers ou de guardas equivalentes, com testes próprios na implementação. Também não mede latência nem os limites do plano.
+
+## Complemento — `changes()` no D1 remoto (2026-11-03)
+
+A auditoria condicional da ativação e da aprovação usa `INSERT ... WHERE changes() = 1` logo depois do UPDATE, no mesmo lote, para auditar só uma transição que aconteceu de fato. Conferido no D1 remoto (`nexus-prova`) com `wrangler d1 execute --remote --file`: dois UPDATEs iguais em sequência, o segundo sem efeito. Ficou registrada **só** a linha da primeira mudança (`primeira_mudou`), e não a da segunda. Ressalva: essa conferência foi feita pela execução de vários comandos do Wrangler, não por `db.batch()` dentro de um Worker. O mesmo comportamento está coberto no D1 local pelos testes de concorrência de `test/worker/systems.test.ts`.

@@ -58,29 +58,34 @@ function bearer(request: Request): string {
 }
 
 /**
- * Confere a revogação: reconsulta o Firebase quando a última conferência está velha, guarda o
- * maior validSince conhecido e recusa sessão com auth_time anterior. Não escreve nada além do
- * próprio valid_since da conta.
+ * Confere a revogação: reconsulta o Firebase quando a última conferência está velha e guarda o
+ * maior validSince conhecido com um UPDATE atômico (max no próprio SQL, com RETURNING) — uma
+ * consulta antiga terminando depois nunca reduz o valor gravado. Recusa sessão com auth_time
+ * anterior. Devolve a linha com o valid_since efetivo.
  */
 async function checkRevocation(
   ctx: Pick<RequestContext, "env" | "clock" | "log">,
   user: UserRow,
   identity: VerifiedToken,
   lookup: AccountLookup,
-): Promise<void> {
+): Promise<UserRow> {
   const now = ctx.clock.now();
-  let validSince = user.valid_since;
+  let current = user;
   const checkedAt = user.valid_since_checked_at;
   if (checkedAt === null || now - checkedAt > REVOCATION_CHECK_MS) {
     try {
       const state = await lookup(identity.uid);
       if (state.disabled) throw accountDisabled();
-      validSince = Math.max(validSince ?? 0, state.validSince ?? 0) || null;
-      await ctx.env.DB.prepare(
-        "UPDATE users SET valid_since = ?, valid_since_checked_at = ? WHERE id = ?",
+      const stored = await ctx.env.DB.prepare(
+        `UPDATE users
+         SET valid_since = NULLIF(max(COALESCE(valid_since, 0), ?), 0),
+             valid_since_checked_at = max(COALESCE(valid_since_checked_at, 0), ?)
+         WHERE id = ?
+         RETURNING valid_since, valid_since_checked_at`,
       )
-        .bind(validSince, now, user.id)
-        .run();
+        .bind(state.validSince ?? 0, now, user.id)
+        .first<Pick<UserRow, "valid_since" | "valid_since_checked_at">>();
+      if (stored) current = { ...user, ...stored };
     } catch (error) {
       if (!(error instanceof AccountLookupError)) throw error;
       ctx.log.warn("auth.revocation_check_failed", { error });
@@ -91,7 +96,10 @@ async function checkRevocation(
       }
     }
   }
-  if (validSince !== null && identity.authTime < validSince) throw unauthenticated();
+  if (current.valid_since !== null && identity.authTime < current.valid_since) {
+    throw unauthenticated();
+  }
+  return current;
 }
 
 export async function authenticate(
@@ -122,31 +130,40 @@ export async function authenticate(
       .bind(identity.email)
       .first<UserRow>();
     if (!invited) throw accountUnknown();
-    if (invited.firebase_uid !== null) throw unauthenticated();
-    if (invited.status === "disabled") throw accountDisabled();
-    // Revogação conferida ANTES de consumir o convite: sessão recusada não deixa efeito.
-    await checkRevocation(ctx, invited, identity, provider.lookup);
-    const bound = await db
-      .prepare(
-        `UPDATE users SET firebase_uid = ?, status = 'active', updated_at = ?
-         WHERE id = ? AND firebase_uid IS NULL AND status = 'pending'
-           AND (valid_since IS NULL OR valid_since <= ?)`,
-      )
-      .bind(identity.uid, ctx.clock.now(), invited.id, identity.authTime)
-      .run();
-    if (bound.meta.changes !== 1) {
+    if (invited.firebase_uid === identity.uid) {
+      // Outra requisição do mesmo uid vinculou entre as duas leituras.
+      user = invited;
+    } else {
+      if (invited.firebase_uid !== null) throw unauthenticated();
+      if (invited.status === "disabled") throw accountDisabled();
+      // Revogação conferida ANTES de consumir o convite; o UPDATE repete a condição com o valor
+      // gravado no banco, então sessão recusada não deixa efeito.
+      const checked = await checkRevocation(ctx, invited, identity, provider.lookup);
+      const bound = await db
+        .prepare(
+          `UPDATE users SET firebase_uid = ?, status = 'active', updated_at = ?
+           WHERE id = ? AND firebase_uid IS NULL AND status = 'pending'
+             AND (valid_since IS NULL OR valid_since <= ?)`,
+        )
+        .bind(identity.uid, ctx.clock.now(), invited.id, identity.authTime)
+        .run();
+      if (bound.meta.changes === 1) {
+        // Já conferido acima: não consulta o Firebase de novo nesta requisição.
+        return toAuthUser({ ...checked, firebase_uid: identity.uid, status: "active" });
+      }
       // Outra requisição do mesmo uid pode ter vinculado ao mesmo tempo: relê antes de recusar.
       user = await byUid();
       if (!user) throw unauthenticated();
-    } else {
-      user = { ...invited, firebase_uid: identity.uid, status: "active" };
     }
   }
 
   if (user.status === "disabled") throw accountDisabled();
   if (user.status !== "active") throw unauthenticated();
-  await checkRevocation(ctx, user, identity, provider.lookup);
+  return toAuthUser(await checkRevocation(ctx, user, identity, provider.lookup));
+}
 
+function toAuthUser(user: UserRow): AuthUser {
+  if (user.status !== "active") throw unauthenticated();
   return {
     id: user.id,
     email: user.email,

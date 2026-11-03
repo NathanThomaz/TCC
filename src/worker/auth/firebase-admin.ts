@@ -76,7 +76,7 @@ export function createAccountLookup(options: {
     return cached.token;
   }
 
-  return async (uid) => {
+  async function lookup(uid: string): Promise<AccountState> {
     const response = await options.fetch(
       `https://identitytoolkit.googleapis.com/v1/projects/${encodeURIComponent(options.projectId)}/accounts:lookup`,
       {
@@ -100,5 +100,19 @@ export function createAccountLookup(options: {
       validSince: Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : null,
       disabled: user.disabled === true,
     };
+  }
+
+  // Qualquer falha da integração (rede, JSON inválido, chave mal configurada) vira
+  // AccountLookupError, para a sessão aplicar a tolerância em vez de responder 500.
+  return async (uid) => {
+    try {
+      return await lookup(uid);
+    } catch (error) {
+      if (error instanceof AccountLookupError) throw error;
+      keyPromise = undefined;
+      throw new AccountLookupError(
+        `falha na consulta ao Firebase: ${error instanceof Error ? error.name : "erro"}`,
+      );
+    }
   };
 }

@@ -29,6 +29,18 @@ BEGIN
   SELECT RAISE(ABORT, 'versao_imutavel');
 END;
 
+-- Transições de status permitidas: valid -> approved | superseded; approved -> superseded.
+-- invalid é terminal (corrigir = nova versão).
+CREATE TRIGGER model_versions_status_transition
+BEFORE UPDATE OF status ON model_versions
+WHEN NEW.status IS NOT OLD.status AND NOT (
+  (OLD.status = 'valid' AND NEW.status IN ('approved', 'superseded'))
+  OR (OLD.status = 'approved' AND NEW.status = 'superseded')
+)
+BEGIN
+  SELECT RAISE(ABORT, 'transicao_de_status_invalida');
+END;
+
 CREATE TABLE validation_runs (
   id TEXT NOT NULL PRIMARY KEY,
   model_version_id TEXT NOT NULL REFERENCES model_versions (id),
@@ -52,6 +64,13 @@ CREATE TABLE approvals (
 
 CREATE INDEX approvals_version ON approvals (model_version_id, created_at);
 
+-- Aprovação é evidência: não muda depois de gravada.
+CREATE TRIGGER approvals_immutable
+BEFORE UPDATE ON approvals
+BEGIN
+  SELECT RAISE(ABORT, 'aprovacao_imutavel');
+END;
+
 -- A aprovação vale para o conteúdo exato: hash diferente do da versão é recusado; versão com
 -- erro bloqueante não pode ser aprovada; só o dono do sistema aprova.
 CREATE TRIGGER approvals_exact_version
@@ -67,13 +86,19 @@ END;
 
 ALTER TABLE systems ADD COLUMN active_version_id TEXT REFERENCES model_versions (id);
 
--- Só ativa versão aprovada do próprio sistema (seção 8, passo 10).
+-- Só ativa versão do próprio sistema com aprovação registrada para o hash exato (seção 8,
+-- passo 10). O status sozinho não basta: alterar status por SQL não substitui a aprovação.
 CREATE TRIGGER systems_active_version_approved
 BEFORE UPDATE OF active_version_id ON systems
-WHEN NEW.active_version_id IS NOT NULL AND NOT EXISTS (
-  SELECT 1 FROM model_versions v
-  WHERE v.id = NEW.active_version_id AND v.system_id = NEW.id AND v.status = 'approved'
-)
+WHEN NEW.active_version_id IS NOT NULL
+  AND NEW.active_version_id IS NOT OLD.active_version_id
+  AND NOT EXISTS (
+    SELECT 1 FROM model_versions v
+    JOIN approvals a
+      ON a.model_version_id = v.id AND a.system_id = v.system_id
+     AND a.hash = v.hash AND a.decision = 'approved'
+    WHERE v.id = NEW.active_version_id AND v.system_id = NEW.id AND v.status = 'approved'
+  )
 BEGIN
   SELECT RAISE(ABORT, 'versao_nao_aprovada');
 END;

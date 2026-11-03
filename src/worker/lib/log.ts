@@ -15,14 +15,23 @@ const SECRET_IN_TEXT: [RegExp, string][] = [
   [/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, "[jwt omitido]"],
   [/AIza[0-9A-Za-z_-]{20,}/g, "[chave omitida]"],
   [/((?:token|secret|password|senha|api[_-]?key|key)=)[^&\s"']+/gi, "$1[omitido]"],
-  // JSON embutido na mensagem: "password": "..." (valor texto ou não).
+  // JSON embutido no meio de um texto: "password": valor (texto, lista, objeto ou escalar).
   [
-    /("[^"]*(?:token|secret|password|senha|authorization|cookie|api[_-]?key)[^"]*"\s*:\s*)("(?:[^"\\]|\\.)*"|[^,}\s]+)/gi,
+    /("[^"]*(?:token|secret|password|senha|authorization|cookie|api[_-]?key)[^"]*"\s*:\s*)("(?:[^"\\]|\\.)*"|\[[^\]]*\]|\{[^}]*\}|[^,}\s]+)/gi,
     '$1"[omitido]"',
   ],
 ];
 
-export function redactText(text: string): string {
+export function redactText(text: string, depth = 0): string {
+  // Texto que é JSON inteiro: redige a estrutura de verdade (chaves sensíveis em qualquer nível).
+  const trimmed = text.trim();
+  if ((trimmed.startsWith("{") || trimmed.startsWith("[")) && depth < 5) {
+    try {
+      return JSON.stringify(redact(JSON.parse(trimmed) as unknown, depth + 1));
+    } catch {
+      // não é JSON válido: segue com os padrões
+    }
+  }
   return SECRET_IN_TEXT.reduce(
     (out, [pattern, replacement]) => out.replace(pattern, replacement),
     text,
@@ -31,8 +40,10 @@ export function redactText(text: string): string {
 
 export function redact(value: unknown, depth = 0): unknown {
   if (depth > 5) return "[profundo]";
-  if (typeof value === "string") return redactText(value);
-  if (value instanceof Error) return { name: value.name, message: redactText(value.message) };
+  if (typeof value === "string") return redactText(value, depth);
+  if (value instanceof Error) {
+    return { name: value.name, message: redactText(value.message, depth) };
+  }
   if (Array.isArray(value)) return value.map((item) => redact(item, depth + 1));
   if (value && typeof value === "object") {
     return Object.fromEntries(

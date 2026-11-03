@@ -248,6 +248,30 @@ describe("authenticate e requireSystemAccess", () => {
     expect(row).toEqual({ valid_since: NOW - 1000 });
   });
 
+  it("consulta antiga não reduz o valid_since já gravado (máximo atômico)", async () => {
+    await env.DB.prepare("UPDATE users SET valid_since = ? WHERE id = 'admin'")
+      .bind(NOW - 1000)
+      .run();
+    // Consulta concorrente mais antiga respondendo "sem revogação".
+    const stale: LookupFn = () => Promise.resolve({ validSince: null, disabled: false });
+
+    expect(await code(authenticate(ctx(), as({}, stale)))).toBe("unauthenticated");
+    const row = await env.DB.prepare("SELECT valid_since FROM users WHERE id = 'admin'").first();
+    expect(row).toEqual({ valid_since: NOW - 1000 });
+  });
+
+  it("primeiro acesso do convite consulta o Firebase uma única vez", async () => {
+    let calls = 0;
+    const lookup: LookupFn = () => {
+      calls++;
+      return Promise.resolve({ validSince: null, disabled: false });
+    };
+    expect(
+      await code(authenticate(ctx(), as({ uid: "uid-sec", email: "sec@example.com" }, lookup))),
+    ).toBe("ok");
+    expect(calls).toBe(1);
+  });
+
   it("conta desativada ou apagada no Firebase é recusada", async () => {
     const disabled: LookupFn = () => Promise.resolve({ validSince: null, disabled: true });
     expect(await code(authenticate(ctx(), as({}, disabled)))).toBe("conta_desativada");

@@ -104,6 +104,31 @@ describe("createAccountLookup", () => {
   });
 });
 
+describe("falhas de rede e de formato", () => {
+  it("rejeição do fetch e JSON inválido viram AccountLookupError", async () => {
+    const offline = createAccountLookup({
+      projectId: "p",
+      serviceAccount,
+      fetch: () => Promise.reject(new TypeError("rede indisponível")),
+      now: () => NOW,
+    });
+    const garbage = createAccountLookup({
+      projectId: "p",
+      serviceAccount,
+      fetch: (input) =>
+        Promise.resolve(
+          String(input instanceof Request ? input.url : input).includes("oauth2")
+            ? Response.json({ access_token: "a", expires_in: 3600 })
+            : new Response("<html>não é json</html>", { status: 200 }),
+        ),
+      now: () => NOW,
+    });
+
+    await expect(offline("u")).rejects.toBeInstanceOf(AccountLookupError);
+    await expect(garbage("u")).rejects.toBeInstanceOf(AccountLookupError);
+  });
+});
+
 describe("parseServiceAccount", () => {
   it("aceita só JSON com client_email e private_key", () => {
     expect(parseServiceAccount(undefined)).toBeUndefined();

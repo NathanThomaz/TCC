@@ -41,13 +41,15 @@ const app = createApp({
   }),
 });
 
-async function call(method: string, path: string, token: string, body?: unknown) {
+async function call(method: string, path: string, token: string, body?: unknown, key?: string) {
   const response = await app(
     new Request(`https://app.test/api/v1${path}`, {
       method,
       headers: {
         authorization: `Bearer ${token}`,
         ...(body === undefined ? {} : { "content-type": "application/json" }),
+        // Toda criação exige Idempotency-Key (seção 19); por padrão uma nova a cada chamada.
+        ...(method === "POST" ? { "idempotency-key": key ?? crypto.randomUUID() } : {}),
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     }),
@@ -62,6 +64,7 @@ const SEC = "token-sec-00000000000000";
 beforeEach(async () => {
   const T = NOW - 1000;
   await env.DB.batch([
+    env.DB.prepare("DELETE FROM operation_requests"),
     env.DB.prepare("DELETE FROM approvals"),
     env.DB.prepare("DELETE FROM validation_runs"),
     env.DB.prepare("UPDATE systems SET active_version_id = NULL"),
@@ -241,5 +244,115 @@ describe("permissões e isolamento (T01, T02, T04)", () => {
     );
     expect(response.status).toBe(415);
     expect((await call("POST", "/systems", ADMIN, { nome: "" })).status).toBe(422);
+  });
+});
+
+describe("idempotência e concorrência (seção 19, T10, T31)", () => {
+  async function count(sql: string): Promise<number> {
+    return (await env.DB.prepare(sql).first<{ n: number }>())?.n ?? -1;
+  }
+
+  it("mesma chave e mesmo conteúdo devolvem o mesmo sistema; outro conteúdo é conflito", async () => {
+    const first = await call("POST", "/systems", ADMIN, { nome: "Loja" }, "chave-criacao-1");
+    const again = await call("POST", "/systems", ADMIN, { nome: "Loja" }, "chave-criacao-1");
+    const other = await call("POST", "/systems", ADMIN, { nome: "Outra" }, "chave-criacao-1");
+
+    expect(again).toMatchObject({ status: 201, body: { sistema: { id: first.body.sistema!.id } } });
+    expect(other.body.error!.code).toBe("chave_idempotencia_reutilizada");
+    expect(await count("SELECT COUNT(*) AS n FROM systems")).toBe(1);
+  });
+
+  it("exige Idempotency-Key válida nas criações", async () => {
+    const response = await app(
+      new Request("https://app.test/api/v1/systems", {
+        method: "POST",
+        headers: { authorization: `Bearer ${ADMIN}`, "content-type": "application/json" },
+        body: JSON.stringify({ nome: "X" }),
+      }),
+      env,
+    );
+    expect(response.status).toBe(422);
+  });
+
+  it("criações simultâneas com a mesma chave geram um único sistema", async () => {
+    const results = await Promise.all(
+      [1, 2, 3].map(() => call("POST", "/systems", ADMIN, { nome: "Loja" }, "chave-corrida-1")),
+    );
+
+    expect(new Set(results.map((r) => r.body.sistema?.id)).size).toBe(1);
+    expect(results.map((r) => r.status)).toEqual([201, 201, 201]);
+    expect(await count("SELECT COUNT(*) AS n FROM systems")).toBe(1);
+  });
+
+  it("versão repetida com a mesma chave não cria outra versão", async () => {
+    const created = await call("POST", "/systems", ADMIN, { nome: "X" });
+    const id = created.body.sistema!.id;
+    const body = { origem: "formulario", rascunho: c1 };
+    const a = await call("POST", `/systems/${id}/versions`, ADMIN, body, "chave-versao-1");
+    const b = await call("POST", `/systems/${id}/versions`, ADMIN, body, "chave-versao-1");
+
+    expect(b.body.versao!.id).toBe(a.body.versao!.id);
+    expect(b.body.issues).toEqual(a.body.issues);
+    expect(await count("SELECT COUNT(*) AS n FROM model_versions")).toBe(1);
+  });
+
+  it("aprovações idênticas simultâneas: todas 200, uma aprovação e uma auditoria", async () => {
+    const { id, version } = await systemWithValidVersion();
+    const results = await Promise.all(
+      [1, 2, 3].map(() =>
+        call("POST", `/systems/${id}/versions/${version.id}/approve`, ADMIN, {
+          hash: version.hash,
+        }),
+      ),
+    );
+
+    expect(results.map((r) => r.status)).toEqual([200, 200, 200]);
+    expect(await count("SELECT COUNT(*) AS n FROM approvals")).toBe(1);
+    expect(
+      await count("SELECT COUNT(*) AS n FROM audit_events WHERE action = 'version.approved'"),
+    ).toBe(1);
+  });
+
+  it("ativações simultâneas de versões diferentes: uma vence, a outra é conflito e não audita", async () => {
+    const { id, version: v1 } = await systemWithValidVersion();
+    const v2 = (
+      await call("POST", `/systems/${id}/versions`, ADMIN, {
+        origem: "chat",
+        rascunho: { ...c1, aparencia: { ...c1.aparencia, titulo: "Outro título" } },
+      })
+    ).body.versao!;
+    for (const v of [v1, v2]) {
+      await call("POST", `/systems/${id}/versions/${v.id}/approve`, ADMIN, { hash: v.hash });
+    }
+
+    const results = await Promise.all([
+      call("POST", `/systems/${id}/activate`, ADMIN, { versao: v1.id }),
+      call("POST", `/systems/${id}/activate`, ADMIN, { versao: v2.id }),
+    ]);
+
+    expect(results.map((r) => r.status).sort()).toEqual([200, 409]);
+    expect(
+      await count("SELECT COUNT(*) AS n FROM audit_events WHERE action = 'system.activated'"),
+    ).toBe(1);
+  });
+
+  it("status aprovado sem registro de aprovação não ativa; transição inválida é recusada", async () => {
+    const { id, version } = await systemWithValidVersion();
+    await env.DB.prepare("UPDATE model_versions SET status = 'approved' WHERE id = ?")
+      .bind(version.id)
+      .run();
+
+    const activate = await call("POST", `/systems/${id}/activate`, ADMIN, { versao: version.id });
+    expect(activate.body.error!.code).toBe("versao_nao_aprovada");
+
+    const invalid = await call("POST", `/systems/${id}/versions`, ADMIN, {
+      origem: "chat",
+      rascunho: { ...c1, regras: [] },
+    });
+    await expect(
+      env.DB.prepare("UPDATE model_versions SET status = 'approved' WHERE id = ?")
+        .bind(invalid.body.versao!.id)
+        .run(),
+    ).rejects.toThrow(/transicao_de_status_invalida/);
   });
 });
