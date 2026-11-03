@@ -1,0 +1,16 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  // Worker temporário da prova técnica do D1 (ADR-001, item 5). Publicar só durante a prova e
+  // remover em seguida: `wrangler delete -c provas/d1-atomicidade/wrangler.jsonc`.
+  "name": "nexus-prova-d1",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-23",
+  "workers_dev": true,
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "nexus-prova",
+      "database_id": "070b8e46-86aa-4c30-85f4-f86fdef94873",
+    },
+  ],
+}

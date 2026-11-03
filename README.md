@@ -14,9 +14,23 @@ No desenho aprovado, a IA não gera código nem SQL: as regras de negócio serã
 
 ## Status
 
-**Planejamento.** A especificação está consolidada; nenhuma funcionalidade do Nexus foi implementada ainda. Entrega final: 20/11/2026.
+**Em desenvolvimento — fundação.** Já existem a base técnica (Worker único, D1 com a migration 0001 de identidade, sistemas e acessos, CI) e a prova técnica de atomicidade e concorrência no D1 ([`provas/d1-atomicidade`](provas/d1-atomicidade/README.md)). As funcionalidades do Nexus (catálogo, configuração, distribuidora, chat) ainda não foram implementadas. Entrega final: 20/11/2026.
 
 Stack aprovada: React + TypeScript e API em TypeScript num único Cloudflare Worker, banco Cloudflare D1, Firebase Authentication e Gemini.
+
+## Desenvolvimento
+
+Requer Node 22 ou superior e **npm 11**: o npm 10 falha ao resolver as dependências do Vitest 5. Com o Node 22, use `npx npm@11 ...`.
+
+| Para                         | Comando                                                                                |
+| ---------------------------- | -------------------------------------------------------------------------------------- |
+| Instalar                     | `npm ci`                                                                               |
+| Validar tudo (o mesmo do CI) | `npm run check` (formatação, lint, tipos, testes e build)                              |
+| Rodar localmente             | `npm run dev`, com as migrations locais aplicadas antes por `npm run db:migrate:local` |
+
+Os testes do Worker rodam no runtime real do Workers (workerd), com D1 local e as migrations aplicadas.
+
+Estrutura: `src/worker` (API), `src/web` (React), `src/shared` (contratos HTTP), `migrations` (D1), `test`, `provas` (provas técnicas com resultado registrado).
 
 ## Histórico do repositório
 

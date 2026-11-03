@@ -1,0 +1,36 @@
+{
+  "quando": "2026-11-03T18:57:53.810Z",
+  "sequencial": {
+    "loteComFalha": {
+      "erro": "D1_ERROR: estoque_insuficiente: SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_TRIGGER)",
+      "reservasGravadas": 0,
+      "esperado": 0
+    },
+    "foraDoLote": {
+      "erro": "D1_ERROR: estoque_insuficiente: SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_TRIGGER)",
+      "reservasGravadas": 1,
+      "esperado": 1
+    },
+    "parDeAgenda": {
+      "erro": "D1_ERROR: conflito_agenda: SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_TRIGGER)",
+      "agendamentos": 1,
+      "esperado": 1
+    }
+  },
+  "concorrencia": {
+    "requisicoes": 40,
+    "aceitas": 15,
+    "recusadas": 25,
+    "motivosRecusa": [
+      "D1_ERROR: estoque_insuficiente: SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_TRIGGER)"
+    ],
+    "estadoFinal": {
+      "reservas": 15,
+      "unidades": 30
+    },
+    "esperado": {
+      "aceitas": 15,
+      "unidades": 30
+    }
+  }
+}
