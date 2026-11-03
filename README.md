@@ -8,9 +8,9 @@ Trabalho de Conclusão de Curso em Sistemas de Informação.
 
 ## O que é
 
-O Nexus é uma plataforma web conversacional. O dono do negócio descreve o que precisa; a IA faz perguntas, confirma cada regra e propõe uma configuração estruturada usando apenas módulos de um catálogo já implementado e testado (clientes, produtos, vendas, estoque, profissionais e agenda). Um validador determinístico confere a configuração e, depois da aprovação do administrador, o sistema passa a funcionar dentro da própria plataforma.
+O Nexus será uma plataforma web conversacional. O dono do negócio descreve o que precisa; a IA faz perguntas, confirma cada regra e propõe uma configuração estruturada usando apenas módulos de um catálogo implementado e testado previamente (clientes, produtos, vendas, estoque, profissionais e agenda). Um validador determinístico confere a configuração e, depois da aprovação do administrador, o sistema passa a funcionar dentro da própria plataforma.
 
-A IA não gera código nem SQL: as regras de negócio são executadas por código testado e continuam funcionando sem a IA.
+No desenho aprovado, a IA não gera código nem SQL: as regras de negócio serão executadas por código testado e continuarão funcionando sem a IA.
 
 ## Status
 

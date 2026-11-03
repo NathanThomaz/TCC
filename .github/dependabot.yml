@@ -2,8 +2,8 @@ version: 2
 # Atualizações automáticas e sem trabalho manual (DEC-AMB-037):
 # - um PR agrupado por ecossistema, uma vez por mês (menos execuções de CI);
 # - versões "major" vêm em PR separado e só entram se os testes passarem (DEC-AMB-040);
-# - o workflow dependabot-automerge.yml faz o merge sozinho quando os testes passam.
-# O ecossistema npm entra junto com o código do Nexus e o CI em Node.
+# - o auto-merge (workflow dependabot-automerge.yml) volta junto com o CI em Node do Nexus,
+#   para nenhum PR entrar sem teste obrigatório; o ecossistema npm entra no mesmo PR.
 updates:
   - package-ecosystem: github-actions
     directory: /
@@ -13,3 +13,4 @@ updates:
     groups:
       acoes-github:
         patterns: ["*"]
+        update-types: [minor, patch]

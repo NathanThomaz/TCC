@@ -1,5 +1,11 @@
 .env
 .env.*
 !.env.example
+# segredos locais do Cloudflare (wrangler dev)
+.dev.vars*
+# dependências e artefatos de build
+node_modules/
+dist/
+.wrangler/
 # arquivos temporários de bloqueio do Office (criados enquanto um .pptx/.docx está aberto)
 ~$*
