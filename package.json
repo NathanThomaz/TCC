@@ -23,6 +23,7 @@
     "db:migrations:list": "wrangler d1 migrations list DB --local"
   },
   "dependencies": {
+    "jose": "6.2.13",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "zod": "4.6.7"
