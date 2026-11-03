@@ -44,6 +44,12 @@ export interface SystemsApiBody {
   error?: ApiErrorBody["error"];
 }
 
+/** GET /api/v1/config — configuração pública do front. `firebase` nulo = login indisponível. */
+export interface PublicConfig {
+  environment: string;
+  firebase: { apiKey: string; authDomain: string; projectId: string; appId: string } | null;
+}
+
 export interface HealthResponse {
   status: "ok" | "degraded";
   environment: string;
