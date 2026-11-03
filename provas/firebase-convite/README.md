@@ -19,14 +19,25 @@ Prova da ADR-001, item 6 (Vault do TCC), no projeto Firebase `nexus-tcc-2026`. F
 
 ## Resultado (2026-11-03)
 
-| Pergunta                                     | Resultado                                                                                            | Evidência                                      |
-| -------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
-| 1. Criar conta sem senha pelo backend        | **Sim:** HTTP 200, `emailVerified: false`, sem senha                                                 | `resultado-concluir.json` (fase anterior: 200) |
-| 2. Definir senha pelo link confirma o e-mail | **Sim:** `emailVerified: true` logo após `resetPassword`                                             | `resultado-concluir.json`                      |
-| 3. Token real verificado como no Worker      | **Sim:** `kid` presente, `email_verified: true`, `auth_time` numérico; assinatura, aud e iss válidos | `resultado-concluir.json`                      |
-| 4. Revogação externa recusa o token anterior | **Sim:** `validSince` 1793738487 > `auth_time` 1793738483                                            | `resultado-revogar.json`                       |
+| Pergunta                                     | Resultado                                                                                                                                                         | Evidência                                             |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| 1. Criar conta sem senha pelo backend        | **Sim:** HTTP 200, `emailVerified: false`, sem senha                                                                                                              | `resultado-convidar.json`                             |
+| 2. Definir senha pelo link confirma o e-mail | **Sim:** `emailVerified` passou de `false` para `true` logo após `resetPassword`                                                                                  | `resultado-convidar.json` e `resultado-concluir.json` |
+| 3. Token real com as exigências do Worker    | **Sim, nos pontos testados:** assinatura RS256 pelas chaves do `securetoken`, aud e iss do projeto, `kid` presente, `email_verified: true` e `auth_time` numérico | `resultado-concluir.json`                             |
+| 4. Revogação externa                         | **Sim, pela regra do Worker:** `validSince` gravado depois do `auth_time` (1793739673 > 1793739669)                                                               | `resultado-revogar.json`                              |
 
-**Achado da 1ª tentativa de revogação:** gravar `validSince` com o relógio **desta máquina**, 1,5 s depois do login, deu um valor 1 s **anterior** ao `auth_time` (`resultado-concluir.json`). O relógio local estava atrasado em relação ao do Google, e o token não seria recusado. Por isso a referência de tempo tem de ser a do servidor. No Worker isso já acontece: o relógio da Cloudflare é sincronizado, e o Worker só _lê_ o `validSince` gravado pelo Firebase. Se o próprio Nexus revogar uma sessão, vale gravar o instante com folga de alguns segundos.
+**Limites e ressalvas:**
+
+- **Pergunta 3:** a prova não executou o `verifyFirebaseIdToken` do Worker; reproduziu as exigências centrais dele com a mesma biblioteca (`jose`). O verificador do Worker, inclusive `kid` obrigatório e `iat`/`auth_time` no passado, está coberto pelos testes unitários (`test/worker/auth.test.ts`). O `resultado-concluir.json` é da primeira versão do script, com os nomes de campos antigos.
+- **Pergunta 4:** a recusa é concluída aplicando a regra do Worker (`auth_time < valid_since` ⇒ recusa, em `session.ts`) aos valores reais; a prova não observou uma resposta HTTP recusada. O fluxo completo da sessão está nos testes unitários.
+- **Achado:** na primeira tentativa, o `validSince` foi gravado com o relógio desta máquina, que estava atrasado, e ficou **anterior** ao `auth_time`. A referência de tempo tem de ser a do servidor. O Worker usa o relógio da Cloudflare e só _lê_ o `validSince` gravado pelo Firebase.
+- **Segurança do script (depois da revisão do Codex):**
+  - só altera ou apaga contas com a marca da prova (`displayName`), e para se o e-mail já pertence a outra conta;
+  - a conta criada é apagada num `finally`.
+- **Não testado:**
+  - página própria do Nexus para a ação do link (foi usada a padrão do Firebase);
+  - se a redefinição de senha muda o `validSince` sozinha;
+  - links expirados ou já usados.
 
 ## Conclusão
 
@@ -38,8 +49,4 @@ Prova da ADR-001, item 6 (Vault do TCC), no projeto Firebase `nexus-tcc-2026`. F
 
   Não é preciso um e-mail de confirmação separado.
 
-- O ID token real é compatível com a verificação do Worker, e a revogação por `validSince` funciona com o `accounts:lookup`.
-- **Limites desta prova:**
-  - o link usou a página padrão de ação do Firebase (`firebaseapp.com/__/auth/action`), e uma página própria do Nexus fica para depois;
-  - não foi medido se a redefinição de senha altera o `validSince` sozinha;
-  - não foram testados links expirados ou já usados.
+- O `accounts:lookup` devolve o `validSince` usado pela sincronização da revogação no Worker.

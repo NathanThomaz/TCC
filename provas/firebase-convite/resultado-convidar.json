@@ -1,0 +1,12 @@
+{
+  "quando": "2026-11-03T20:36:41.572Z",
+  "projeto": "nexus-tcc-2026",
+  "email": "n***@gmail.com",
+  "fase": "convidar",
+  "criarContaPeloBackend": 200,
+  "contaCriada": {
+    "emailVerified": false,
+    "temSenha": false
+  },
+  "envioDoLinkDefinirSenha": 200
+}

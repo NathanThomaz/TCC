@@ -61,101 +61,125 @@ async function pub(path, body) {
 const lookup = async () => (await admin("accounts:lookup", { email: [EMAIL] })).body.users?.[0];
 const out = { quando: new Date().toISOString(), projeto: PROJECT, email: mask(EMAIL), fase };
 
-if (fase === "convidar") {
-  const antes = await lookup();
-  if (antes) await admin("accounts:delete", { localId: antes.localId }); // recomeça limpo
-  const criada = await admin("accounts", { email: EMAIL, emailVerified: false });
+// Só contas criadas por esta prova (marcadas no displayName) podem ser alteradas ou apagadas.
+// Uma conta já existente sem a marca faz a prova parar: um e-mail errado nunca apaga ninguém.
+const MARCA = "nexus-prova-descartavel";
+async function exigirLivre() {
+  const existente = await lookup();
+  if (!existente) return;
+  if (existente.displayName !== MARCA) {
+    throw new Error("Já existe uma conta com esse e-mail que não é da prova; nada foi alterado.");
+  }
+  await apagar(existente.localId);
+}
+async function contaDaProva() {
   const conta = await lookup();
-  const envio = await pub("accounts:sendOobCode", { requestType: "PASSWORD_RESET", email: EMAIL });
-  Object.assign(out, {
-    criarContaPeloBackend: criada.status,
-    contaCriada: {
-      emailVerified: conta?.emailVerified ?? false,
-      temSenha: Boolean(conta?.passwordHash),
-    },
-    envioDoLinkDefinirSenha: envio.status,
-  });
-} else if (fase === "concluir" && oobCode) {
-  const senha = `Pv-${crypto.randomUUID()}`; // descartada no fim
-  const reset = await pub("accounts:resetPassword", { oobCode, newPassword: senha });
-  const aposReset = await lookup();
-  const login = await pub("accounts:signInWithPassword", {
-    email: EMAIL,
-    password: senha,
-    returnSecureToken: true,
-  });
-  const keys = createRemoteJWKSet(
-    new URL(
-      "https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com",
-    ),
-  );
-  const { payload, protectedHeader } = await jwtVerify(login.body.idToken, keys, {
-    algorithms: ["RS256"],
-    audience: PROJECT,
-    issuer: `https://securetoken.google.com/${PROJECT}`,
-  });
-  // Revogação externa: o backend marca validSince agora; o auth_time do token fica anterior.
-  await new Promise((r) => setTimeout(r, 1500));
-  const revogaEm = Math.floor(Date.now() / 1000);
-  const revoga = await admin("accounts:update", {
-    localId: aposReset.localId,
-    validSince: String(revogaEm),
-  });
-  const aposRevogar = await lookup();
-  const apagada = await admin("accounts:delete", { localId: aposReset.localId });
-  Object.assign(out, {
-    definirSenha: reset.status,
-    emailVerifiedAposDefinirSenha: aposReset?.emailVerified ?? false,
-    login: login.status,
-    tokenVerificadoComoNoWorker: {
-      kid: typeof protectedHeader.kid === "string",
-      email_verified: payload.email_verified === true,
-      auth_time: typeof payload.auth_time === "number",
-    },
-    revogacao: {
-      atualizar: revoga.status,
-      validSinceSegundos: Number(aposRevogar?.validSince),
-      authTimeSegundos: payload.auth_time,
-      tokenAnteriorSeriaRecusado: payload.auth_time * 1000 < Number(aposRevogar?.validSince) * 1000,
-    },
-    contaDeTesteApagada: apagada.status,
-  });
-} else if (fase === "revogar") {
-  // Revogação com o relógio do Google como referência (o desta máquina pode estar atrasado):
-  // login, espera, validSince = horário do servidor do Google, e confere o auth_time do token.
-  const senha = `Pv-${crypto.randomUUID()}`;
-  const antes = await lookup();
-  if (antes) await admin("accounts:delete", { localId: antes.localId });
-  await admin("accounts", { email: EMAIL, password: senha, emailVerified: true });
-  const login = await pub("accounts:signInWithPassword", {
-    email: EMAIL,
-    password: senha,
-    returnSecureToken: true,
-  });
-  const auth_time = JSON.parse(
-    Buffer.from(login.body.idToken.split(".")[1], "base64url").toString(),
-  ).auth_time;
-  await new Promise((r) => setTimeout(r, 4000));
-  const relogio = await fetch("https://identitytoolkit.googleapis.com/", { method: "HEAD" });
-  const agoraGoogle = Math.floor(new Date(relogio.headers.get("date")).getTime() / 1000);
-  const conta = await lookup();
-  const revoga = await admin("accounts:update", {
-    localId: conta.localId,
-    validSince: String(agoraGoogle),
-  });
-  const depois = await lookup();
-  const apagada = await admin("accounts:delete", { localId: conta.localId });
-  Object.assign(out, {
-    login: login.status,
-    revogacao: {
-      atualizar: revoga.status,
-      authTimeSegundos: auth_time,
-      validSinceSegundos: Number(depois?.validSince),
-      tokenAnteriorSeriaRecusado: auth_time * 1000 < Number(depois?.validSince) * 1000,
-    },
-    contaDeTesteApagada: apagada.status,
-  });
-} else {
-  throw new Error("Uso: convidar | concluir <oobCode> | revogar");
+  if (!conta || conta.displayName !== MARCA) {
+    throw new Error("Conta da prova não encontrada (ou sem a marca da prova); nada foi alterado.");
+  }
+  return conta;
+}
+async function apagar(localId) {
+  const r = await admin("accounts:delete", { localId });
+  if (r.status !== 200) throw new Error(`Falha ao apagar a conta de teste (${r.status}).`);
+  return r.status;
+}
+
+let criada; // localId criado nesta execução, apagado no finally (exceto em convidar)
+try {
+  if (fase === "convidar") {
+    await exigirLivre();
+    const r = await admin("accounts", { email: EMAIL, emailVerified: false, displayName: MARCA });
+    const conta = await contaDaProva();
+    const envio = await pub("accounts:sendOobCode", {
+      requestType: "PASSWORD_RESET",
+      email: EMAIL,
+    });
+    Object.assign(out, {
+      criarContaPeloBackend: r.status,
+      contaCriada: {
+        emailVerified: conta.emailVerified ?? false,
+        temSenha: Boolean(conta.passwordHash),
+      },
+      envioDoLinkDefinirSenha: envio.status,
+    });
+  } else if (fase === "concluir" && oobCode) {
+    criada = (await contaDaProva()).localId;
+    const senha = `Pv-${crypto.randomUUID()}`; // descartada no fim
+    const reset = await pub("accounts:resetPassword", { oobCode, newPassword: senha });
+    const aposReset = await contaDaProva();
+    const login = await pub("accounts:signInWithPassword", {
+      email: EMAIL,
+      password: senha,
+      returnSecureToken: true,
+    });
+    const keys = createRemoteJWKSet(
+      new URL(
+        "https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com",
+      ),
+    );
+    // Mesmas exigências centrais do verificador do Worker (RS256, aud, iss); as demais (kid,
+    // auth_time, iat no passado) são conferidas abaixo e testadas no Worker em auth.test.ts.
+    const { payload, protectedHeader } = await jwtVerify(login.body.idToken, keys, {
+      algorithms: ["RS256"],
+      audience: PROJECT,
+      issuer: `https://securetoken.google.com/${PROJECT}`,
+    });
+    const agora = Math.floor(Date.now() / 1000);
+    Object.assign(out, {
+      definirSenha: reset.status,
+      emailVerifiedAposDefinirSenha: aposReset.emailVerified ?? false,
+      login: login.status,
+      tokenComAsExigenciasDoWorker: {
+        kid: typeof protectedHeader.kid === "string" && protectedHeader.kid.length > 0,
+        email_verified: payload.email_verified === true,
+        auth_time_no_passado:
+          typeof payload.auth_time === "number" && payload.auth_time <= agora + 5,
+        iat_no_passado: typeof payload.iat === "number" && payload.iat <= agora + 5,
+      },
+    });
+  } else if (fase === "revogar") {
+    // Revogação com o relógio do Google como referência (o desta máquina pode estar atrasado):
+    // login, espera, validSince = horário do servidor do Google, e confere o auth_time do token.
+    await exigirLivre();
+    const senha = `Pv-${crypto.randomUUID()}`;
+    await admin("accounts", {
+      email: EMAIL,
+      password: senha,
+      emailVerified: true,
+      displayName: MARCA,
+    });
+    criada = (await contaDaProva()).localId;
+    const login = await pub("accounts:signInWithPassword", {
+      email: EMAIL,
+      password: senha,
+      returnSecureToken: true,
+    });
+    const auth_time = JSON.parse(
+      Buffer.from(login.body.idToken.split(".")[1], "base64url").toString(),
+    ).auth_time;
+    await new Promise((r) => setTimeout(r, 4000));
+    const relogio = await fetch("https://identitytoolkit.googleapis.com/", { method: "HEAD" });
+    const agoraGoogle = Math.floor(new Date(relogio.headers.get("date")).getTime() / 1000);
+    const revoga = await admin("accounts:update", {
+      localId: criada,
+      validSince: String(agoraGoogle),
+    });
+    const depois = await contaDaProva();
+    Object.assign(out, {
+      login: login.status,
+      revogacao: {
+        atualizar: revoga.status,
+        authTimeSegundos: auth_time,
+        validSinceSegundos: Number(depois.validSince),
+        // Regra do Worker (session.ts): auth_time < valid_since => sessão recusada.
+        pelaRegraDoWorkerSeriaRecusado: auth_time * 1000 < Number(depois.validSince) * 1000,
+      },
+    });
+  } else {
+    throw new Error("Uso: convidar | concluir <oobCode> | revogar");
+  }
+} finally {
+  if (criada) out.contaDeTesteApagada = await apagar(criada);
 }
 console.log(JSON.stringify(out, null, 2));
