@@ -120,7 +120,42 @@ if (fase === "convidar") {
     },
     contaDeTesteApagada: apagada.status,
   });
+} else if (fase === "revogar") {
+  // Revogação com o relógio do Google como referência (o desta máquina pode estar atrasado):
+  // login, espera, validSince = horário do servidor do Google, e confere o auth_time do token.
+  const senha = `Pv-${crypto.randomUUID()}`;
+  const antes = await lookup();
+  if (antes) await admin("accounts:delete", { localId: antes.localId });
+  await admin("accounts", { email: EMAIL, password: senha, emailVerified: true });
+  const login = await pub("accounts:signInWithPassword", {
+    email: EMAIL,
+    password: senha,
+    returnSecureToken: true,
+  });
+  const auth_time = JSON.parse(
+    Buffer.from(login.body.idToken.split(".")[1], "base64url").toString(),
+  ).auth_time;
+  await new Promise((r) => setTimeout(r, 4000));
+  const relogio = await fetch("https://identitytoolkit.googleapis.com/", { method: "HEAD" });
+  const agoraGoogle = Math.floor(new Date(relogio.headers.get("date")).getTime() / 1000);
+  const conta = await lookup();
+  const revoga = await admin("accounts:update", {
+    localId: conta.localId,
+    validSince: String(agoraGoogle),
+  });
+  const depois = await lookup();
+  const apagada = await admin("accounts:delete", { localId: conta.localId });
+  Object.assign(out, {
+    login: login.status,
+    revogacao: {
+      atualizar: revoga.status,
+      authTimeSegundos: auth_time,
+      validSinceSegundos: Number(depois?.validSince),
+      tokenAnteriorSeriaRecusado: auth_time * 1000 < Number(depois?.validSince) * 1000,
+    },
+    contaDeTesteApagada: apagada.status,
+  });
 } else {
-  throw new Error("Uso: convidar | concluir <oobCode>");
+  throw new Error("Uso: convidar | concluir <oobCode> | revogar");
 }
 console.log(JSON.stringify(out, null, 2));
