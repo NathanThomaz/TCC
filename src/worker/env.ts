@@ -7,4 +7,6 @@ export interface Env {
   APP_ENV: string;
   /** Id do projeto Firebase (audiência do ID token). Ausente = autenticação indisponível. */
   FIREBASE_PROJECT_ID?: string;
+  /** Segredo: JSON da conta de serviço (client_email, private_key), só para accounts:lookup. */
+  FIREBASE_SERVICE_ACCOUNT?: string;
 }

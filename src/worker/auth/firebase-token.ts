@@ -39,8 +39,10 @@ export async function verifyFirebaseIdToken(
 ): Promise<VerifiedToken> {
   const nowSeconds = Math.floor(options.now / 1000);
   let payload: JWTPayload;
+  let kid: unknown;
   try {
-    ({ payload } = await jwtVerify(token, options.keys, {
+    let protectedHeader;
+    ({ payload, protectedHeader } = await jwtVerify(token, options.keys, {
       algorithms: ["RS256"],
       audience: options.projectId,
       issuer: `https://securetoken.google.com/${options.projectId}`,
@@ -49,12 +51,15 @@ export async function verifyFirebaseIdToken(
       // Sem tolerância extra: o relógio de referência é o do backend.
       clockTolerance: 0,
     }));
+    kid = protectedHeader.kid;
   } catch (error) {
     if (error instanceof errors.JWTExpired) throw new InvalidTokenError("expirado");
     if (error instanceof errors.JOSEError) throw new InvalidTokenError(error.code);
     throw error;
   }
 
+  // O Firebase sempre informa o kid; token sem ele é recusado mesmo com uma só chave no conjunto.
+  if (typeof kid !== "string" || kid.length === 0) throw new InvalidTokenError("kid");
   const sub = payload.sub;
   const iat = payload.iat;
   const authTime = payload.auth_time;

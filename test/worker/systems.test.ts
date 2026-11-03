@@ -32,10 +32,13 @@ const IDENTITIES: Record<string, VerifiedToken> = {
 };
 const app = createApp({
   clock: fixedClock(NOW),
-  verifier: () => (token) => {
-    const identity = IDENTITIES[token];
-    return identity ? Promise.resolve(identity) : Promise.reject(new InvalidTokenError("x"));
-  },
+  auth: () => ({
+    verify: (token) => {
+      const identity = IDENTITIES[token];
+      return identity ? Promise.resolve(identity) : Promise.reject(new InvalidTokenError("x"));
+    },
+    lookup: () => Promise.resolve({ validSince: null, disabled: false }),
+  }),
 });
 
 async function call(method: string, path: string, token: string, body?: unknown) {

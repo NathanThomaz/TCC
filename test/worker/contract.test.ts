@@ -92,6 +92,19 @@ describe("validateDraft — erros bloqueantes (T07)", () => {
     expect(codes(draft)).toContain("estrutura_invalida");
   });
 
+  it("recusa parâmetro desconhecido em qualquer nível, em vez de descartá-lo", () => {
+    const naRegra = distribuidora() as unknown as { regras: Record<string, unknown>[] };
+    naRegra.regras[0] = { ...naRegra.regras[0], desconto_percentual: 99 };
+    const naRaiz = { ...distribuidora(), modo_turbo: true };
+    const naAparencia = distribuidora() as unknown as { aparencia: Record<string, unknown> };
+    naAparencia.aparencia.fonte = "Comic Sans";
+
+    for (const draft of [naRegra, naRaiz, naAparencia]) {
+      expect(validateDraft(draft).ok).toBe(false);
+      expect(codes(draft)).toContain("estrutura_invalida");
+    }
+  });
+
   it("exige o conjunto exato de módulos do modelo e as dependências", () => {
     const draft = distribuidora();
     draft.modelo = "comercio";

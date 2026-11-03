@@ -2,9 +2,17 @@ import { env } from "cloudflare:workers";
 import { SignJWT, createLocalJWKSet, exportJWK, generateKeyPair, type JWK } from "jose";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { verifyFirebaseIdToken, type VerifiedToken } from "../../src/worker/auth/firebase-token";
-import { authenticate, requireSystemAccess } from "../../src/worker/auth/session";
+import { AccountLookupError } from "../../src/worker/auth/firebase-admin";
+import {
+  REVOCATION_CHECK_MS,
+  REVOCATION_GRACE_MS,
+  authenticate,
+  requireSystemAccess,
+  type AuthProvider,
+} from "../../src/worker/auth/session";
 import { AppError } from "../../src/worker/http/errors";
 import { fixedClock } from "../../src/worker/lib/clock";
+import { createLogger } from "../../src/worker/lib/log";
 
 const PROJECT = "nexus-teste";
 const NOW = Date.UTC(2026, 10, 4, 12, 0, 0);
@@ -65,6 +73,22 @@ describe("verifyFirebaseIdToken", () => {
     await expect(verify(await make())).rejects.toThrow(/token inválido/);
   });
 
+  it("recusa token sem kid no cabeçalho, mesmo com uma só chave no conjunto", async () => {
+    const semKid = await new SignJWT({
+      email: "a@example.com",
+      email_verified: true,
+      auth_time: s(NOW) - 60,
+    })
+      .setProtectedHeader({ alg: "RS256" })
+      .setSubject("uid-1")
+      .setAudience(PROJECT)
+      .setIssuer(`https://securetoken.google.com/${PROJECT}`)
+      .setIssuedAt(s(NOW) - 30)
+      .setExpirationTime(s(NOW) + 3600)
+      .sign(privateKey);
+    await expect(verify(semKid)).rejects.toThrow(/token inválido/);
+  });
+
   it("recusa algoritmo diferente de RS256", async () => {
     const hs = await new SignJWT({ email: "a@example.com", auth_time: s(NOW) })
       .setProtectedHeader({ alg: "HS256", kid: "k1" })
@@ -78,25 +102,31 @@ describe("verifyFirebaseIdToken", () => {
   });
 });
 
-// Sessão: o verificador é substituído por uma função que devolve a identidade desejada.
+// Sessão: o provedor é substituído por funções que devolvem a identidade e o estado desejados.
 const BEARER = "Bearer " + "x".repeat(40);
-function ctx() {
+function ctx(now = NOW) {
   return {
     request: new Request("https://app.test/api/v1/x", { headers: { authorization: BEARER } }),
     env,
-    clock: fixedClock(NOW),
+    clock: fixedClock(now),
+    log: createLogger(),
   };
 }
-const as =
-  (identity: Partial<VerifiedToken> = {}) =>
-  () =>
-    Promise.resolve<VerifiedToken>({
-      uid: "uid-admin",
-      email: "admin@example.com",
-      emailVerified: true,
-      authTime: NOW - 60_000,
-      ...identity,
-    });
+type LookupFn = AuthProvider["lookup"];
+const notRevoked: LookupFn = () => Promise.resolve({ validSince: null, disabled: false });
+function as(identity: Partial<VerifiedToken> = {}, lookup: LookupFn = notRevoked): AuthProvider {
+  return {
+    verify: () =>
+      Promise.resolve<VerifiedToken>({
+        uid: "uid-admin",
+        email: "admin@example.com",
+        emailVerified: true,
+        authTime: NOW - 60_000,
+        ...identity,
+      }),
+    lookup,
+  };
+}
 
 async function code(promise: Promise<unknown>): Promise<string> {
   try {
@@ -140,7 +170,7 @@ describe("authenticate e requireSystemAccess", () => {
     await expect(authenticate(ctx(), as())).resolves.toMatchObject({ id: "admin", role: "admin" });
   });
 
-  it("exige Bearer e verificador configurado (T01)", async () => {
+  it("exige Bearer e provedor configurado (T01)", async () => {
     const semToken = { ...ctx(), request: new Request("https://app.test/") };
     expect(await code(authenticate(semToken, as()))).toBe("unauthenticated");
     expect(await code(authenticate(ctx(), undefined))).toBe("unavailable");
@@ -172,13 +202,68 @@ describe("authenticate e requireSystemAccess", () => {
     ).toBe("unauthenticated");
   });
 
-  it("recusa sessão anterior à revogação (valid_since)", async () => {
-    await env.DB.prepare("UPDATE users SET valid_since = ? WHERE id = 'admin'")
-      .bind(NOW - 1000)
-      .run();
+  it("primeiro acesso simultâneo do mesmo uid: as requisições entram", async () => {
+    const provider = as({ uid: "uid-sec", email: "sec@example.com" });
+    const results = await Promise.all([
+      code(authenticate(ctx(), provider)),
+      code(authenticate(ctx(), provider)),
+      code(authenticate(ctx(), provider)),
+    ]);
 
-    expect(await code(authenticate(ctx(), as({ authTime: NOW - 60_000 })))).toBe("unauthenticated");
-    expect(await code(authenticate(ctx(), as({ authTime: NOW })))).toBe("ok");
+    expect(results).toEqual(["ok", "ok", "ok"]);
+  });
+
+  it("convite com sessão revogada é recusado sem consumir o convite", async () => {
+    const revoked: LookupFn = () => Promise.resolve({ validSince: NOW - 1000, disabled: false });
+    const result = await code(
+      authenticate(ctx(), as({ uid: "uid-sec", email: "sec@example.com" }, revoked)),
+    );
+    const row = await env.DB.prepare(
+      "SELECT firebase_uid, status FROM users WHERE id = 'sec'",
+    ).first();
+
+    expect(result).toBe("unauthenticated");
+    expect(row).toEqual({ firebase_uid: null, status: "pending" });
+  });
+
+  it("sincroniza a revogação feita no Firebase e recusa a sessão anterior", async () => {
+    let calls = 0;
+    let validSince: number | null = null;
+    const lookup: LookupFn = () => {
+      calls++;
+      return Promise.resolve({ validSince, disabled: false });
+    };
+
+    expect(await code(authenticate(ctx(), as({}, lookup)))).toBe("ok");
+    // Redefinição de senha no Firebase depois do login; dentro de 5 min não reconsulta.
+    validSince = NOW - 1000;
+    expect(await code(authenticate(ctx(NOW + 60_000), as({}, lookup)))).toBe("ok");
+    expect(calls).toBe(1);
+    // Passados os 5 minutos, reconsulta e recusa a sessão antiga; login novo entra.
+    const later = NOW + REVOCATION_CHECK_MS + 1;
+    expect(await code(authenticate(ctx(later), as({}, lookup)))).toBe("unauthenticated");
+    expect(await code(authenticate(ctx(later), as({ authTime: NOW }, lookup)))).toBe("ok");
+    expect(calls).toBe(2);
+    const row = await env.DB.prepare("SELECT valid_since FROM users WHERE id = 'admin'").first();
+    expect(row).toEqual({ valid_since: NOW - 1000 });
+  });
+
+  it("conta desativada ou apagada no Firebase é recusada", async () => {
+    const disabled: LookupFn = () => Promise.resolve({ validSince: null, disabled: true });
+    expect(await code(authenticate(ctx(), as({}, disabled)))).toBe("conta_desativada");
+  });
+
+  it("falha na consulta: recusa sem conferência recente, aceita dentro da tolerância", async () => {
+    const down: LookupFn = () => Promise.reject(new AccountLookupError("fora do ar"));
+    expect(await code(authenticate(ctx(), as({}, down)))).toBe("unavailable");
+
+    await env.DB.prepare("UPDATE users SET valid_since_checked_at = ? WHERE id = 'admin'")
+      .bind(NOW - REVOCATION_CHECK_MS - 1)
+      .run();
+    expect(await code(authenticate(ctx(), as({}, down)))).toBe("ok");
+    expect(await code(authenticate(ctx(NOW + REVOCATION_GRACE_MS), as({}, down)))).toBe(
+      "unavailable",
+    );
   });
 
   it("isola sistemas por administrador e por vínculo (T02, T03, T04)", async () => {

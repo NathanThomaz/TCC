@@ -146,5 +146,16 @@ describe("migration 0001", () => {
     await expect(grant("sec1", "s1", "sec1")).rejects.toThrow(/acesso_incoerente/);
     await expect(grant("admin2", "s1", "admin1")).rejects.toThrow(/acesso_incoerente/);
     await expect(grant("sec1", "s1", "admin1")).resolves.toBeTruthy();
+
+    // Depois do vínculo, trocar o dono da conta ou do sistema é recusado (não fica incoerente).
+    await expect(
+      env.DB.prepare("UPDATE users SET owner_id = 'admin2' WHERE id = 'sec1'").run(),
+    ).rejects.toThrow(/papel_e_dono_imutaveis/);
+    await expect(
+      env.DB.prepare("UPDATE users SET role = 'admin', owner_id = NULL WHERE id = 'sec1'").run(),
+    ).rejects.toThrow(/papel_e_dono_imutaveis/);
+    await expect(
+      env.DB.prepare("UPDATE systems SET owner_id = 'sec1' WHERE id = 's1'").run(),
+    ).rejects.toThrow(/dono_do_sistema_imutavel/);
   });
 });

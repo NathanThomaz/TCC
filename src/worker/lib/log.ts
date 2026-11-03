@@ -15,6 +15,11 @@ const SECRET_IN_TEXT: [RegExp, string][] = [
   [/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, "[jwt omitido]"],
   [/AIza[0-9A-Za-z_-]{20,}/g, "[chave omitida]"],
   [/((?:token|secret|password|senha|api[_-]?key|key)=)[^&\s"']+/gi, "$1[omitido]"],
+  // JSON embutido na mensagem: "password": "..." (valor texto ou não).
+  [
+    /("[^"]*(?:token|secret|password|senha|authorization|cookie|api[_-]?key)[^"]*"\s*:\s*)("(?:[^"\\]|\\.)*"|[^,}\s]+)/gi,
+    '$1"[omitido]"',
+  ],
 ];
 
 export function redactText(text: string): string {

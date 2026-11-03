@@ -33,4 +33,12 @@ describe("redact", () => {
     expect(out).toContain("[omitido]");
     expect(out).toContain("x=1");
   });
+
+  it("remove segredos de JSON embutido na mensagem do erro", () => {
+    const error = new Error('{"user":"a","password":"senha-ficticia","apiKey":12345,"ok":true}');
+    const out = JSON.stringify(redact({ error }));
+
+    expect(out).not.toMatch(/senha-ficticia|12345/);
+    expect(out).toContain("ok");
+  });
 });

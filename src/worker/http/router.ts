@@ -1,4 +1,4 @@
-import type { TokenVerifier } from "../auth/session";
+import type { AuthProvider } from "../auth/session";
 import type { Env } from "../env";
 import type { Clock } from "../lib/clock";
 import { systemClock } from "../lib/clock";
@@ -16,8 +16,8 @@ export interface RequestContext {
   clock: Clock;
   log: Logger;
   requestId: string;
-  /** Verificador do ID token; `undefined` quando a autenticação não está configurada. */
-  verifyToken: TokenVerifier | undefined;
+  /** Provedor de identidade; `undefined` quando a autenticação não está configurada. */
+  auth: AuthProvider | undefined;
 }
 
 export type Handler = (ctx: RequestContext) => Promise<Response> | Response;
@@ -31,8 +31,8 @@ export interface Route {
 
 export interface RouterDeps {
   clock: Clock;
-  /** Monta o verificador de token para o ambiente (injetável nos testes). */
-  verifier?: (env: Env, clock: Clock) => TokenVerifier | undefined;
+  /** Monta o provedor de identidade para o ambiente (injetável nos testes). */
+  auth?: (env: Env, clock: Clock) => AuthProvider | undefined;
 }
 
 const defaultDeps: RouterDeps = { clock: systemClock };
@@ -84,7 +84,7 @@ export function createRouter(routes: Route[], deps: RouterDeps = defaultDeps) {
           clock: deps.clock,
           log,
           requestId,
-          verifyToken: deps.verifier?.(env, deps.clock),
+          auth: deps.auth?.(env, deps.clock),
         });
       } else if (candidates.length > 0) {
         const allow = [...new Set(candidates.map((candidate) => candidate.route.method))].join(

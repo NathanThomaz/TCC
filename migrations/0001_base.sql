@@ -15,6 +15,8 @@ CREATE TABLE users (
   owner_id TEXT REFERENCES users (id),
   -- tokensValidAfterTime do Firebase (ms): sessões com auth_time anterior são recusadas.
   valid_since INTEGER CHECK (valid_since IS NULL OR (typeof(valid_since) = 'integer' AND valid_since > 0)),
+  -- Última consulta do validSince no Firebase (ms); a sessão reconsulta quando fica velha.
+  valid_since_checked_at INTEGER CHECK (valid_since_checked_at IS NULL OR valid_since_checked_at > 0),
   created_at INTEGER NOT NULL CHECK (typeof(created_at) = 'integer' AND created_at > 0),
   updated_at INTEGER NOT NULL CHECK (typeof(updated_at) = 'integer' AND updated_at >= created_at),
   -- Administrador não tem dono; secundário sempre tem.
@@ -32,12 +34,13 @@ BEGIN
   SELECT RAISE(ABORT, 'dono_nao_e_administrador');
 END;
 
-CREATE TRIGGER users_owner_is_admin_update
+-- Papel e dono não mudam depois de criados: mudar quebraria a coerência dos vínculos já
+-- concedidos (system_access) e a autoria. Trocar de administrador = nova conta.
+CREATE TRIGGER users_role_owner_immutable
 BEFORE UPDATE OF owner_id, role ON users
-WHEN NEW.owner_id IS NOT NULL
-  AND (SELECT role FROM users WHERE id = NEW.owner_id) IS NOT 'admin'
+WHEN NEW.owner_id IS NOT OLD.owner_id OR NEW.role IS NOT OLD.role
 BEGIN
-  SELECT RAISE(ABORT, 'dono_nao_e_administrador');
+  SELECT RAISE(ABORT, 'papel_e_dono_imutaveis');
 END;
 
 CREATE TABLE systems (
@@ -56,6 +59,13 @@ BEFORE INSERT ON systems
 WHEN (SELECT role FROM users WHERE id = NEW.owner_id) IS NOT 'admin'
 BEGIN
   SELECT RAISE(ABORT, 'dono_nao_e_administrador');
+END;
+
+CREATE TRIGGER systems_owner_immutable
+BEFORE UPDATE OF owner_id ON systems
+WHEN NEW.owner_id IS NOT OLD.owner_id
+BEGIN
+  SELECT RAISE(ABORT, 'dono_do_sistema_imutavel');
 END;
 
 -- Vínculo de conta secundária a um sistema (permissão inicial por sistema, seção 7).

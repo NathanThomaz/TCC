@@ -1,5 +1,6 @@
 import { AppError, forbidden, notFound, unauthenticated, unavailable } from "../http/errors";
 import type { RequestContext } from "../http/router";
+import { AccountLookupError, type AccountLookup } from "./firebase-admin";
 import { InvalidTokenError, type VerifiedToken } from "./firebase-token";
 
 // Sessão validada no backend (seção 7): identidade e privilégios vêm do token verificado e do
@@ -22,9 +23,21 @@ interface UserRow {
   status: "pending" | "active" | "disabled";
   owner_id: string | null;
   valid_since: number | null;
+  valid_since_checked_at: number | null;
 }
 
 export type TokenVerifier = (token: string) => Promise<VerifiedToken>;
+
+/** O que a sessão precisa do provedor de identidade. Os dois são obrigatórios (fail closed). */
+export interface AuthProvider {
+  verify: TokenVerifier;
+  lookup: AccountLookup;
+}
+
+/** Idade máxima da última conferência de revogação no Firebase antes de consultar de novo. */
+export const REVOCATION_CHECK_MS = 5 * 60_000;
+/** Se o Firebase não responder, aceita a última conferência até esta idade; depois, recusa. */
+export const REVOCATION_GRACE_MS = 60 * 60_000;
 
 const emailNotVerified = () =>
   new AppError(
@@ -44,16 +57,53 @@ function bearer(request: Request): string {
   return match[1];
 }
 
+/**
+ * Confere a revogação: reconsulta o Firebase quando a última conferência está velha, guarda o
+ * maior validSince conhecido e recusa sessão com auth_time anterior. Não escreve nada além do
+ * próprio valid_since da conta.
+ */
+async function checkRevocation(
+  ctx: Pick<RequestContext, "env" | "clock" | "log">,
+  user: UserRow,
+  identity: VerifiedToken,
+  lookup: AccountLookup,
+): Promise<void> {
+  const now = ctx.clock.now();
+  let validSince = user.valid_since;
+  const checkedAt = user.valid_since_checked_at;
+  if (checkedAt === null || now - checkedAt > REVOCATION_CHECK_MS) {
+    try {
+      const state = await lookup(identity.uid);
+      if (state.disabled) throw accountDisabled();
+      validSince = Math.max(validSince ?? 0, state.validSince ?? 0) || null;
+      await ctx.env.DB.prepare(
+        "UPDATE users SET valid_since = ?, valid_since_checked_at = ? WHERE id = ?",
+      )
+        .bind(validSince, now, user.id)
+        .run();
+    } catch (error) {
+      if (!(error instanceof AccountLookupError)) throw error;
+      ctx.log.warn("auth.revocation_check_failed", { error });
+      if (checkedAt === null || now - checkedAt > REVOCATION_GRACE_MS) {
+        throw unavailable(
+          "Não foi possível confirmar sua sessão agora. Tente de novo em instantes.",
+        );
+      }
+    }
+  }
+  if (validSince !== null && identity.authTime < validSince) throw unauthenticated();
+}
+
 export async function authenticate(
-  ctx: Pick<RequestContext, "request" | "env" | "clock">,
-  verify: TokenVerifier | undefined,
+  ctx: Pick<RequestContext, "request" | "env" | "clock" | "log">,
+  provider: AuthProvider | undefined,
 ): Promise<AuthUser> {
-  if (!verify) throw unavailable("Autenticação não configurada neste ambiente.");
+  if (!provider) throw unavailable("Autenticação não configurada neste ambiente.");
   const token = bearer(ctx.request);
 
   let identity: VerifiedToken;
   try {
-    identity = await verify(token);
+    identity = await provider.verify(token);
   } catch (error) {
     if (error instanceof InvalidTokenError) throw unauthenticated();
     throw error;
@@ -61,10 +111,9 @@ export async function authenticate(
   if (!identity.emailVerified) throw emailNotVerified();
 
   const db = ctx.env.DB;
-  let user = await db
-    .prepare("SELECT * FROM users WHERE firebase_uid = ?")
-    .bind(identity.uid)
-    .first<UserRow>();
+  const byUid = () =>
+    db.prepare("SELECT * FROM users WHERE firebase_uid = ?").bind(identity.uid).first<UserRow>();
+  let user = await byUid();
 
   if (!user) {
     // Primeiro acesso após o convite: vincula o uid à conta pendente com o mesmo e-mail.
@@ -75,20 +124,28 @@ export async function authenticate(
     if (!invited) throw accountUnknown();
     if (invited.firebase_uid !== null) throw unauthenticated();
     if (invited.status === "disabled") throw accountDisabled();
-    const now = ctx.clock.now();
+    // Revogação conferida ANTES de consumir o convite: sessão recusada não deixa efeito.
+    await checkRevocation(ctx, invited, identity, provider.lookup);
     const bound = await db
       .prepare(
-        "UPDATE users SET firebase_uid = ?, status = 'active', updated_at = ? WHERE id = ? AND firebase_uid IS NULL AND status = 'pending'",
+        `UPDATE users SET firebase_uid = ?, status = 'active', updated_at = ?
+         WHERE id = ? AND firebase_uid IS NULL AND status = 'pending'
+           AND (valid_since IS NULL OR valid_since <= ?)`,
       )
-      .bind(identity.uid, now, invited.id)
+      .bind(identity.uid, ctx.clock.now(), invited.id, identity.authTime)
       .run();
-    if (bound.meta.changes !== 1) throw unauthenticated();
-    user = { ...invited, firebase_uid: identity.uid, status: "active" };
+    if (bound.meta.changes !== 1) {
+      // Outra requisição do mesmo uid pode ter vinculado ao mesmo tempo: relê antes de recusar.
+      user = await byUid();
+      if (!user) throw unauthenticated();
+    } else {
+      user = { ...invited, firebase_uid: identity.uid, status: "active" };
+    }
   }
 
   if (user.status === "disabled") throw accountDisabled();
   if (user.status !== "active") throw unauthenticated();
-  if (user.valid_since !== null && identity.authTime < user.valid_since) throw unauthenticated();
+  await checkRevocation(ctx, user, identity, provider.lookup);
 
   return {
     id: user.id,

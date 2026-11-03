@@ -90,7 +90,7 @@ async function loadSystem(ctx: RequestContext, systemId: string): Promise<System
 }
 
 export const createSystem: Handler = async (ctx) => {
-  const user = await authenticate(ctx, ctx.verifyToken);
+  const user = await authenticate(ctx, ctx.auth);
   requireAdmin(user);
   const { nome } = parse(CreateSystemBody, await readJson(ctx.request));
   const now = ctx.clock.now();
@@ -107,7 +107,7 @@ export const createSystem: Handler = async (ctx) => {
 };
 
 export const listSystems: Handler = async (ctx) => {
-  const user = await authenticate(ctx, ctx.verifyToken);
+  const user = await authenticate(ctx, ctx.auth);
   const db = ctx.env.DB;
   const { results } =
     user.role === "admin"
@@ -127,7 +127,7 @@ export const listSystems: Handler = async (ctx) => {
 };
 
 export const getSystem: Handler = async (ctx) => {
-  const user = await authenticate(ctx, ctx.verifyToken);
+  const user = await authenticate(ctx, ctx.auth);
   const systemId = ctx.params.systemId ?? "";
   await requireSystemAccess(ctx.env.DB, user, systemId);
   const system = await loadSystem(ctx, systemId);
@@ -145,7 +145,7 @@ export const getSystem: Handler = async (ctx) => {
 
 /** Grava uma nova versão a partir do rascunho (formulário ou chat), com o diagnóstico. */
 export const createVersion: Handler = async (ctx) => {
-  const user = await authenticate(ctx, ctx.verifyToken);
+  const user = await authenticate(ctx, ctx.auth);
   requireAdmin(user);
   const systemId = ctx.params.systemId ?? "";
   const system = await requireSystemAccess(ctx.env.DB, user, systemId);
@@ -222,7 +222,7 @@ export const createVersion: Handler = async (ctx) => {
 
 /** Aprova a versão exata: o hash enviado tem de ser o da versão, e ela não pode ter bloqueios. */
 export const approveVersion: Handler = async (ctx) => {
-  const user = await authenticate(ctx, ctx.verifyToken);
+  const user = await authenticate(ctx, ctx.auth);
   requireAdmin(user);
   const systemId = ctx.params.systemId ?? "";
   const versionId = ctx.params.versionId ?? "";
@@ -272,7 +272,7 @@ export const approveVersion: Handler = async (ctx) => {
 
 /** Ativa a versão aprovada; repetir a mesma ativação não duplica efeitos (T10). */
 export const activateSystem: Handler = async (ctx) => {
-  const user = await authenticate(ctx, ctx.verifyToken);
+  const user = await authenticate(ctx, ctx.auth);
   requireAdmin(user);
   const systemId = ctx.params.systemId ?? "";
   const system = await requireSystemAccess(ctx.env.DB, user, systemId);
