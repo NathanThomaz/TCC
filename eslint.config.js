@@ -24,7 +24,7 @@ export default tseslint.config(
     ...reactHooks.configs.flat.recommended,
   },
   {
-    files: ["*.{js,ts}", "provas/**/*.js"],
+    files: ["*.{js,ts}", "provas/**/*.js", "experiments/**/*.js"],
     languageOptions: { globals: globals.node },
   },
   {

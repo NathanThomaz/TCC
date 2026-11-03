@@ -1,6 +1,6 @@
 # Cenários do experimento (chat com IA × formulário manual)
 
-**Estado: rascunho para revisão do autor. Ainda NÃO está congelado.** Ao aprovar, registrar o SHA-256 de cada arquivo (seção "Congelamento") antes de começar o chat de criação. Depois de congelado, nenhum enunciado, ficha ou gabarito muda (seção 25 e ADR-002 do TCC).
+**Estado: CONGELADO em 2026-11-03, com aprovação do autor.** Os SHA-256 estão em [`congelamento.json`](congelamento.json) e são conferidos pela `check` do CI (`npm run cenarios:verificar`). Nenhum enunciado, ficha ou gabarito muda depois disso. Uma mudança exige nova decisão do autor e nova versão do protocolo (seção 25 e ADR-002 do TCC).
 
 ## Como usar em cada execução
 
@@ -36,6 +36,4 @@ Os gabaritos são configurações completas, verificadas pelo mesmo validador do
 
 ## Congelamento
 
-| Arquivo                  | SHA-256 | Data |
-| ------------------------ | ------- | ---- |
-| (preencher na aprovação) |         |      |
+SHA-256 de cada arquivo em [`congelamento.json`](congelamento.json), conferido a cada execução do CI.
