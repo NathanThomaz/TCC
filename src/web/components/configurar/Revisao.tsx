@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@/lib/rotas";
 import { CheckCircle2, Loader2, Power, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
+import { novaChave } from "@/api/cliente";
 import { aprovarVersao, ativarSistema, salvarVersao } from "@/api/sistemas";
 import type { ConfigDraft, Issue, Versao } from "@/types/nexus";
 import { centavosParaReais, ROTULO_MODULO } from "@/lib/nexus";
@@ -32,6 +33,8 @@ const MODELO = {
 export interface Resultado {
   versao: Versao | null;
   issues: Issue[];
+  /** Rascunho exato que gerou este diagnóstico (JSON); outro conteúdo = diagnóstico vencido. */
+  conteudo: string;
 }
 
 export function Revisao({
@@ -53,13 +56,33 @@ export function Revisao({
   const [aceite, setAceite] = useState(false);
   const [dlgAtivar, setDlgAtivar] = useState(false);
 
+  const conteudoAtual = JSON.stringify(draft);
+  const atualRef = useRef(conteudoAtual);
+  useEffect(() => {
+    atualRef.current = conteudoAtual;
+  }, [conteudoAtual]);
+  // Mesma chave de idempotência enquanto o conteúdo for o mesmo: um retry (ou um clique repetido
+  // após resposta perdida) não cria outra versão; conteúdo novo, chave nova.
+  const chaveRef = useRef<{ conteudo: string; chave: string } | null>(null);
+
   const salvar = useMutation({
-    mutationFn: () => salvarVersao(sistemaId, draft),
+    mutationFn: async (conteudo: string) => {
+      if (chaveRef.current?.conteudo !== conteudo)
+        chaveRef.current = { conteudo, chave: novaChave() };
+      const r = await salvarVersao(
+        sistemaId,
+        JSON.parse(conteudo) as ConfigDraft,
+        chaveRef.current.chave,
+      );
+      return { ...r, conteudo };
+    },
     onSuccess: (r) => {
-      setResultado(r);
       void qc.invalidateQueries({ queryKey: ["sistema", sistemaId] });
+      // Resposta de um rascunho que já mudou é descartada (não pode virar aprovação).
+      if (r.conteudo === atualRef.current) setResultado(r);
     },
   });
+  const vigente = resultado && resultado.conteudo === conteudoAtual ? resultado : null;
   const aprovar = useMutation({
     mutationFn: (v: Versao) => aprovarVersao(sistemaId, v.id, v.hash),
     onSuccess: (v) => {
@@ -77,9 +100,9 @@ export function Revisao({
     },
   });
 
-  const bloq = resultado?.issues.filter((i) => i.severity === "bloqueante").length ?? 0;
-  const avisos = (resultado?.issues.length ?? 0) - bloq;
-  const v = resultado?.versao;
+  const bloq = vigente?.issues.filter((i) => i.severity === "bloqueante").length ?? 0;
+  const avisos = (vigente?.issues.length ?? 0) - bloq;
+  const v = vigente?.versao;
 
   const resumo: [string, string][] = [
     ["Modelo", MODELO[draft.modelo]],
@@ -123,7 +146,7 @@ export function Revisao({
       </dl>
 
       <div className="flex flex-wrap items-center gap-3">
-        <Button onClick={() => salvar.mutate()} disabled={salvar.isPending}>
+        <Button onClick={() => salvar.mutate(conteudoAtual)} disabled={salvar.isPending}>
           {salvar.isPending ? (
             <Loader2 className="animate-spin" aria-hidden />
           ) : (
@@ -139,7 +162,18 @@ export function Revisao({
       </div>
 
       <section aria-labelledby="diag" aria-live="polite">
-        {resultado && v && (
+        {vigente && !v && (
+          <>
+            <h3 id="diag" className="mb-1 text-lg font-semibold">
+              Diagnóstico (versão não gravada)
+            </h3>
+            <p className="mb-3 text-sm text-muted-foreground">
+              A estrutura do rascunho tem erros; corrija os itens abaixo e valide de novo.
+            </p>
+            <IssueList issues={vigente.issues} onIr={irPara} />
+          </>
+        )}
+        {vigente && v && (
           <>
             <div className="mb-3 flex flex-wrap items-center gap-3">
               <h3 id="diag" className="text-lg font-semibold">
@@ -151,8 +185,8 @@ export function Revisao({
             <p className="mb-3 text-sm text-muted-foreground tabular-nums">
               {bloq} bloqueante(s) · {avisos} aviso(s)
             </p>
-            {resultado.issues.length > 0 ? (
-              <IssueList issues={resultado.issues} onIr={irPara} />
+            {vigente.issues.length > 0 ? (
+              <IssueList issues={vigente.issues} onIr={irPara} />
             ) : (
               <p className="rounded-lg border border-success/30 bg-success-soft p-3 text-sm">
                 Nenhum problema encontrado.

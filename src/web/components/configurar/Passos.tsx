@@ -94,7 +94,22 @@ export function PassoModelo({ draft, set }: PassoProps) {
         O modelo define quais módulos o sistema terá. Os módulos não podem ser editados
         individualmente nesta versão.
       </Explicacao>
-      <div role="radiogroup" aria-label="Modelo" className="grid gap-4 md:grid-cols-3">
+      <div
+        role="radiogroup"
+        aria-label="Modelo"
+        className="grid gap-4 md:grid-cols-3"
+        onKeyDown={(e) => {
+          // Setas movem a seleção e o foco, como num grupo de rádios (uma só parada de Tab).
+          const passo = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+          if (!passo) return;
+          e.preventDefault();
+          const i = MODELOS.findIndex((m) => m.id === draft.modelo);
+          const prox = MODELOS[(i + passo + MODELOS.length) % MODELOS.length];
+          if (!prox) return;
+          set((d) => ({ ...d, modelo: prox.id, modulos: [...MODULOS_POR_MODELO[prox.id]] }));
+          e.currentTarget.querySelector<HTMLButtonElement>(`[data-modelo="${prox.id}"]`)?.focus();
+        }}
+      >
         {MODELOS.map(({ id, nome, desc, Icone }) => {
           const sel = draft.modelo === id;
           return (
@@ -103,6 +118,8 @@ export function PassoModelo({ draft, set }: PassoProps) {
               type="button"
               role="radio"
               aria-checked={sel}
+              data-modelo={id}
+              tabIndex={sel ? 0 : -1}
               onClick={() =>
                 set((d) => ({ ...d, modelo: id, modulos: [...MODULOS_POR_MODELO[id]] }))
               }

@@ -1,5 +1,14 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { onIdTokenChanged } from "firebase/auth";
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { obterSessao, sairDoFirebase, type Usuario } from "@/api/auth";
 import { ApiError, quandoSessaoExpirar } from "@/api/cliente";
 import { obterAuth } from "@/lib/firebase";
@@ -17,10 +26,31 @@ interface AuthValor {
 
 const Ctx = createContext<AuthValor | null>(null);
 
+/** Rascunhos do assistente ficam no sessionStorage; saem junto com a conta. */
+function apagarRascunhos() {
+  try {
+    for (const k of Object.keys(window.sessionStorage)) {
+      if (k.startsWith("nexus:rascunho:")) window.sessionStorage.removeItem(k);
+    }
+  } catch {
+    // armazenamento indisponível: nada a apagar
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const qc = useQueryClient();
   const [pronto, setPronto] = useState(false);
   const [usuario, setUsuario] = useState<Usuario | null>(null);
   const [expirada, setExpirada] = useState(false);
+  // Geração da sessão: respostas atrasadas de uma sessão anterior são ignoradas.
+  const geracao = useRef(0);
+  const uidAtual = useRef<string | null>(null);
+
+  /** Troca de identidade (logout, outra conta): nenhum dado da anterior pode aparecer. */
+  const limparDados = useCallback(() => {
+    qc.clear();
+    apagarRascunhos();
+  }, [qc]);
 
   useEffect(() => {
     let cancelado = false;
@@ -32,6 +62,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
       desligar = onIdTokenChanged(auth, (fb) => {
+        const minha = ++geracao.current;
+        const uid = fb?.uid ?? null;
+        if (uid !== uidAtual.current) {
+          if (uidAtual.current !== null) limparDados();
+          uidAtual.current = uid;
+        }
         if (!fb) {
           setUsuario(null);
           setPronto(true);
@@ -39,30 +75,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
         obterSessao()
           .then((u) => {
+            if (minha !== geracao.current || auth.currentUser?.uid !== fb.uid) return;
             setUsuario(u);
             setExpirada(false);
           })
           .catch((error: unknown) => {
+            if (minha !== geracao.current) return;
             setUsuario(null);
             // Só encerra o login se o backend recusou a conta (403); queda de rede não desloga.
             if (error instanceof ApiError && error.status === 403) void sairDoFirebase();
           })
-          .finally(() => setPronto(true));
+          .finally(() => {
+            if (minha === geracao.current) setPronto(true);
+          });
       });
     });
     return () => {
       cancelado = true;
       desligar?.();
     };
-  }, []);
+  }, [limparDados]);
 
   useEffect(() => {
     quandoSessaoExpirar(() => {
+      geracao.current++;
       setExpirada(true);
       setUsuario(null);
+      limparDados();
     });
     return () => quandoSessaoExpirar(undefined);
-  }, []);
+  }, [limparDados]);
 
   const iniciar = useCallback((u: Usuario) => {
     setUsuario(u);
@@ -70,9 +112,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const sair = useCallback(() => {
+    geracao.current++;
     setUsuario(null);
+    limparDados();
     void sairDoFirebase();
-  }, []);
+  }, [limparDados]);
 
   return (
     <Ctx.Provider value={{ pronto, usuario, expirada, iniciar, sair }}>{children}</Ctx.Provider>

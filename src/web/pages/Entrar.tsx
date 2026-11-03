@@ -230,17 +230,6 @@ export function Entrar() {
           <p className="mt-8 border-t pt-4 text-sm text-muted-foreground">
             O acesso é criado pelo administrador.
           </p>
-          <details className="mt-3 text-xs text-muted-foreground">
-            <summary className="cursor-pointer rounded">Contas de demonstração</summary>
-            <ul className="mt-2 space-y-1 font-mono">
-              <li>admin@exemplo.com — sucesso</li>
-              <li>secundario@exemplo.com — papel secundário</li>
-              <li>pendente@exemplo.com — e-mail não confirmado</li>
-              <li>desativada@exemplo.com — conta desativada</li>
-              <li>indisponivel@exemplo.com — serviço indisponível</li>
-              <li>Qualquer senha com 6+ caracteres</li>
-            </ul>
-          </details>
         </div>
       </section>
     </main>

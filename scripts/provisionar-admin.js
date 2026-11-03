@@ -124,3 +124,5 @@ const envio = await fetch(
 resultado.linkDefinirSenha = envio.ok ? "enviado" : `falhou (${envio.status})`;
 
 console.log(JSON.stringify(resultado, null, 2));
+// Sem o link, o acesso não foi entregue: falha visível (repetir o script é seguro).
+if (!envio.ok) process.exitCode = 1;

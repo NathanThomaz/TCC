@@ -1,5 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useRef } from "react";
+import { novaChave } from "@/api/cliente";
 import { useNavigate } from "@/lib/rotas";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -23,11 +25,16 @@ export function CriarSistemaDialog({ gatilho }: { gatilho: ReactNode }) {
   const [nome, setNome] = useState("");
   const [tocado, setTocado] = useState(false);
   const qc = useQueryClient();
+  // Mesma chave enquanto o nome não mudar: retry ou clique repetido não cria outro sistema.
+  const chaveRef = useRef<{ nome: string; chave: string } | null>(null);
   const navigate = useNavigate();
   const erro = validarNomeSistema(nome);
 
   const m = useMutation({
-    mutationFn: (nome: string) => criarSistema(nome),
+    mutationFn: (nome: string) => {
+      if (chaveRef.current?.nome !== nome) chaveRef.current = { nome, chave: novaChave() };
+      return criarSistema(nome, chaveRef.current.chave);
+    },
     onSuccess: (s) => {
       void qc.invalidateQueries({ queryKey: ["sistemas"] });
       toast.success(`Sistema "${s.nome}" criado.`);
