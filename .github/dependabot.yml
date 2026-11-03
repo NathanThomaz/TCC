@@ -3,16 +3,8 @@ version: 2
 # - um PR agrupado por ecossistema, uma vez por mês (menos execuções de CI);
 # - versões "major" vêm em PR separado e só entram se os testes passarem (DEC-AMB-040);
 # - o workflow dependabot-automerge.yml faz o merge sozinho quando os testes passam.
+# O ecossistema npm entra junto com o código do Nexus e o CI em Node.
 updates:
-  - package-ecosystem: pip
-    directory: /
-    schedule:
-      interval: monthly
-    open-pull-requests-limit: 2
-    groups:
-      dependencias-python:
-        patterns: ["*"]
-        update-types: [minor, patch]
   - package-ecosystem: github-actions
     directory: /
     schedule:
