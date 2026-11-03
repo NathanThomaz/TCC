@@ -6,7 +6,7 @@
   "type": "module",
   "packageManager": "npm@11.21.1",
   "engines": {
-    "node": ">=22"
+    "node": ">=24.12.0"
   },
   "scripts": {
     "dev": "vite",
@@ -24,6 +24,7 @@
     "db:migrations:list": "wrangler d1 migrations list DB --local"
   },
   "dependencies": {
+    "firebase": "13.1.0",
     "jose": "6.2.14",
     "react": "19.3.1",
     "react-dom": "19.3.1",

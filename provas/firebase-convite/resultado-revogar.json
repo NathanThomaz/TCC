@@ -1,0 +1,14 @@
+{
+  "quando": "2026-11-03T21:01:04.174Z",
+  "projeto": "nexus-tcc-2026",
+  "email": "n***@gmail.com",
+  "fase": "revogar",
+  "login": 200,
+  "revogacao": {
+    "atualizar": 200,
+    "authTimeSegundos": 1793739669,
+    "validSinceSegundos": 1793739673,
+    "pelaRegraDoWorkerSeriaRecusado": true
+  },
+  "contaDeTesteApagada": 200
+}

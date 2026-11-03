@@ -25,4 +25,26 @@
       "migrations_dir": "migrations",
     },
   ],
+
+  // Produção (DEC do TCC: deploy e migrations autorizados após merge com CI verde): workers.dev,
+  // D1 nexus-prod, projeto Firebase nexus-tcc-2026. Segredos via `wrangler secret put --env
+  // production`: FIREBASE_SERVICE_ACCOUNT e FIREBASE_WEB_API_KEY (pública, mas fora do Git).
+  "env": {
+    "production": {
+      "vars": {
+        "APP_ENV": "production",
+        "FIREBASE_PROJECT_ID": "nexus-tcc-2026",
+        "FIREBASE_AUTH_DOMAIN": "nexus-tcc-2026.firebaseapp.com",
+        "FIREBASE_APP_ID": "1:208631748107:web:fbe678ca6f6762b898190e",
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "nexus-prod",
+          "database_id": "79c154c6-4370-4833-ae68-029e05f39eef",
+          "migrations_dir": "migrations",
+        },
+      ],
+    },
+  },
 }
