@@ -1,0 +1,100 @@
+{
+  "quando": "2026-11-03T19:02:50.243Z",
+  "modelo": "gemini-3.1-flash-lite",
+  "variante": "adaptado",
+  "schemaBytes": 2070,
+  "execucoes": [
+    {
+      "ok": true,
+      "ms": 2265,
+      "modeloRespondido": "gemini-3.1-flash-lite",
+      "tokens": {
+        "entrada": 156,
+        "saida": 531,
+        "raciocinio": 0
+      },
+      "custo": {
+        "usd": 0.0008355,
+        "brl": 0.0052325694
+      },
+      "validacao": "ok",
+      "resumo": {
+        "modelo": "comercio_com_servicos",
+        "modulos": ["clientes", "produtos", "vendas", "estoque", "profissionais", "agenda"],
+        "regras": [
+          "limite_atacado:100000",
+          "unidades_por_caixa:12",
+          "duracao_atendimento:60",
+          "duracao_atendimento:60"
+        ],
+        "pendentes": 1,
+        "perguntas": [
+          "Quantos minutos você deseja que o estoque fique reservado enquanto o pedido está sendo montado?"
+        ]
+      }
+    },
+    {
+      "ok": true,
+      "ms": 2076,
+      "modeloRespondido": "gemini-3.1-flash-lite",
+      "tokens": {
+        "entrada": 156,
+        "saida": 531,
+        "raciocinio": 0
+      },
+      "custo": {
+        "usd": 0.0008355,
+        "brl": 0.0052325694
+      },
+      "validacao": "ok",
+      "resumo": {
+        "modelo": "comercio_com_servicos",
+        "modulos": ["clientes", "produtos", "vendas", "estoque", "profissionais", "agenda"],
+        "regras": [
+          "limite_atacado:100000",
+          "unidades_por_caixa:12",
+          "duracao_atendimento:60",
+          "duracao_atendimento:60"
+        ],
+        "pendentes": 1,
+        "perguntas": [
+          "Quantos minutos você deseja que o estoque fique reservado enquanto o pedido está sendo montado?"
+        ]
+      }
+    },
+    {
+      "ok": true,
+      "ms": 2014,
+      "modeloRespondido": "gemini-3.1-flash-lite",
+      "tokens": {
+        "entrada": 156,
+        "saida": 531,
+        "raciocinio": 0
+      },
+      "custo": {
+        "usd": 0.0008355,
+        "brl": 0.0052325694
+      },
+      "validacao": "ok",
+      "resumo": {
+        "modelo": "comercio_com_servicos",
+        "modulos": ["clientes", "produtos", "vendas", "estoque", "profissionais", "agenda"],
+        "regras": [
+          "limite_atacado:100000",
+          "unidades_por_caixa:12",
+          "duracao_atendimento:60",
+          "duracao_atendimento:60"
+        ],
+        "pendentes": 1,
+        "perguntas": [
+          "Quantos minutos você deseja que o estoque fique reservado enquanto o pedido está sendo montado?"
+        ]
+      }
+    }
+  ],
+  "media": {
+    "tokensEntrada": 156,
+    "tokensSaida": 531,
+    "custoBrl": 0.0052325694
+  }
+}

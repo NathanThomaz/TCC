@@ -1,0 +1,102 @@
+{
+  "quando": "2026-11-03T19:02:18.163Z",
+  "modelo": "gemini-3.1-flash-lite",
+  "schemaBytes": 2123,
+  "execucoes": [
+    {
+      "ok": true,
+      "ms": 2385,
+      "modeloRespondido": "gemini-3.1-flash-lite",
+      "tokens": {
+        "entrada": 156,
+        "saida": 451,
+        "raciocinio": 0
+      },
+      "custo": {
+        "usd": 0.0007155,
+        "brl": 0.0044810334
+      },
+      "validacao": [
+        "regras.0.tipo: Invalid discriminator value. Expected 'limite_atacado' | 'unidades_por_caixa' | 'prazo_reserva' | 'duracao_atendimento'",
+        "regras.1.tipo: Invalid discriminator value. Expected 'limite_atacado' | 'unidades_por_caixa' | 'prazo_reserva' | 'duracao_atendimento'",
+        "regras.2.tipo: Invalid discriminator value. Expected 'limite_atacado' | 'unidades_por_caixa' | 'prazo_reserva' | 'duracao_atendimento'"
+      ],
+      "resumo": {
+        "modelo": "comercio_com_servicos",
+        "modulos": ["produtos", "vendas", "estoque", "profissionais", "agenda"],
+        "regras": ["desconto_atacado:100000", "servico_tecnico:60", "servico_tecnico:60"],
+        "pendentes": 1,
+        "perguntas": [
+          "Por quanto tempo o estoque deve ficar reservado antes de expirar o pedido?",
+          "Qual o valor do desconto aplicado para compras no atacado?",
+          "O técnico deve ser vinculado automaticamente a todos os agendamentos de chopeira?"
+        ]
+      }
+    },
+    {
+      "ok": true,
+      "ms": 1682,
+      "modeloRespondido": "gemini-3.1-flash-lite",
+      "tokens": {
+        "entrada": 156,
+        "saida": 451,
+        "raciocinio": 0
+      },
+      "custo": {
+        "usd": 0.0007155,
+        "brl": 0.0044810334
+      },
+      "validacao": [
+        "regras.0.tipo: Invalid discriminator value. Expected 'limite_atacado' | 'unidades_por_caixa' | 'prazo_reserva' | 'duracao_atendimento'",
+        "regras.1.tipo: Invalid discriminator value. Expected 'limite_atacado' | 'unidades_por_caixa' | 'prazo_reserva' | 'duracao_atendimento'",
+        "regras.2.tipo: Invalid discriminator value. Expected 'limite_atacado' | 'unidades_por_caixa' | 'prazo_reserva' | 'duracao_atendimento'"
+      ],
+      "resumo": {
+        "modelo": "comercio_com_servicos",
+        "modulos": ["produtos", "vendas", "estoque", "profissionais", "agenda"],
+        "regras": ["desconto_atacado:100000", "servico_tecnico:60", "servico_tecnico:60"],
+        "pendentes": 1,
+        "perguntas": [
+          "Por quanto tempo o estoque deve ficar reservado antes de expirar o pedido?",
+          "Qual o valor do desconto aplicado para compras no atacado?",
+          "O técnico deve ser vinculado automaticamente a todos os agendamentos de chopeira?"
+        ]
+      }
+    },
+    {
+      "ok": true,
+      "ms": 1916,
+      "modeloRespondido": "gemini-3.1-flash-lite",
+      "tokens": {
+        "entrada": 156,
+        "saida": 451,
+        "raciocinio": 0
+      },
+      "custo": {
+        "usd": 0.0007155,
+        "brl": 0.0044810334
+      },
+      "validacao": [
+        "regras.0.tipo: Invalid discriminator value. Expected 'limite_atacado' | 'unidades_por_caixa' | 'prazo_reserva' | 'duracao_atendimento'",
+        "regras.1.tipo: Invalid discriminator value. Expected 'limite_atacado' | 'unidades_por_caixa' | 'prazo_reserva' | 'duracao_atendimento'",
+        "regras.2.tipo: Invalid discriminator value. Expected 'limite_atacado' | 'unidades_por_caixa' | 'prazo_reserva' | 'duracao_atendimento'"
+      ],
+      "resumo": {
+        "modelo": "comercio_com_servicos",
+        "modulos": ["produtos", "vendas", "estoque", "profissionais", "agenda"],
+        "regras": ["desconto_atacado:100000", "servico_tecnico:60", "servico_tecnico:60"],
+        "pendentes": 1,
+        "perguntas": [
+          "Por quanto tempo o estoque deve ficar reservado antes de expirar o pedido?",
+          "Qual o valor do desconto aplicado para compras no atacado?",
+          "O técnico deve ser vinculado automaticamente a todos os agendamentos de chopeira?"
+        ]
+      }
+    }
+  ],
+  "media": {
+    "tokensEntrada": 156,
+    "tokensSaida": 451,
+    "custoBrl": 0.0044810334
+  }
+}
