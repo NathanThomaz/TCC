@@ -104,7 +104,17 @@ try {
       envioDoLinkDefinirSenha: envio.status,
     });
   } else if (fase === "concluir" && oobCode) {
-    criada = (await contaDaProva()).localId;
+    const conta = await contaDaProva();
+    criada = conta.localId;
+    // Confere o código SEM trocar senha: só segue se ele pertence à conta marcada da prova.
+    const inspecao = await pub("accounts:resetPassword", { oobCode });
+    if (
+      inspecao.status !== 200 ||
+      inspecao.body.requestType !== "PASSWORD_RESET" ||
+      String(inspecao.body.email).toLowerCase() !== String(conta.email).toLowerCase()
+    ) {
+      throw new Error("O código do link não é da conta de teste; nenhuma senha foi alterada.");
+    }
     const senha = `Pv-${crypto.randomUUID()}`; // descartada no fim
     const reset = await pub("accounts:resetPassword", { oobCode, newPassword: senha });
     const aposReset = await contaDaProva();
