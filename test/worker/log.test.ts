@@ -36,10 +36,12 @@ describe("redact", () => {
 
   it("remove segredos em listas e objetos de JSON, inteiro ou embutido", () => {
     const inteiro = new Error('{"token":["primeiro","ficticio"],"dados":{"senha":{"x":"y"}}}');
-    const embutido = new Error('falhou: {"apiKey":["k1","k2"],"ok":1} fim');
+    const embutido = new Error(
+      'falhou: {"apiKey":["k1","k2"],"ok":1} e {"token":[["a"],"segredo"]} fim',
+    );
     const out = JSON.stringify(redact({ inteiro, embutido }));
 
-    expect(out).not.toMatch(/primeiro|ficticio|"y"|k1|k2/);
+    expect(out).not.toMatch(/primeiro|ficticio|"y"|k1|k2|segredo/);
     expect(out).toContain("fim");
   });
 

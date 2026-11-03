@@ -296,6 +296,19 @@ describe("idempotência e concorrência (seção 19, T10, T31)", () => {
     expect(await count("SELECT COUNT(*) AS n FROM model_versions")).toBe(1);
   });
 
+  it("repetir a criação de versão depois da ativação devolve a resposta original (201)", async () => {
+    const created = await call("POST", "/systems", ADMIN, { nome: "X" });
+    const id = created.body.sistema!.id;
+    const body = { origem: "formulario", rascunho: c1 };
+    const first = await call("POST", `/systems/${id}/versions`, ADMIN, body, "chave-versao-2");
+    const v = first.body.versao!;
+    await call("POST", `/systems/${id}/versions/${v.id}/approve`, ADMIN, { hash: v.hash });
+    await call("POST", `/systems/${id}/activate`, ADMIN, { versao: v.id });
+
+    const again = await call("POST", `/systems/${id}/versions`, ADMIN, body, "chave-versao-2");
+    expect(again).toMatchObject({ status: 201, body: { versao: { id: v.id } } });
+  });
+
   it("aprovações idênticas simultâneas: todas 200, uma aprovação e uma auditoria", async () => {
     const { id, version } = await systemWithValidVersion();
     const results = await Promise.all(

@@ -177,6 +177,14 @@ export const createVersion: Handler = async (ctx) => {
   requireAdmin(user);
   const systemId = ctx.params.systemId ?? "";
   const system = await requireSystemAccess(ctx.env.DB, user, systemId);
+  const body = parse(CreateVersionBody, await readJson(ctx.request));
+  // Repetição consultada antes dos bloqueios de estado: uma operação já feita devolve a mesma
+  // resposta mesmo que o sistema tenha sido ativado depois.
+  const cmd = { scope: systemId, actorId: user.id, command: "version.create", body };
+  const started = await beginIdempotent(ctx, cmd);
+  if (started.kind === "replay") {
+    return versionResponse(ctx, started.resourceId, started.statusCode);
+  }
   if (system.status === "archived") throw conflict("Sistema arquivado não recebe novas versões.");
   if (system.status === "active") {
     // Personalização após ativação é P2 (ADR-002): bloqueada até existir com as regras da seção 9.
@@ -186,17 +194,11 @@ export const createVersion: Handler = async (ctx) => {
       "Alterar a configuração de um sistema ativo ainda não está disponível nesta versão.",
     );
   }
-  const body = parse(CreateVersionBody, await readJson(ctx.request));
   const result = validateDraft(body.rascunho);
   if (!result.draft) {
     // Estrutura inválida não vira versão: devolve o diagnóstico para correção.
     return json({ versao: null, issues: result.issues }, { status: 422 });
   }
-
-  const cmd = { scope: systemId, actorId: user.id, command: "version.create", body };
-  const started = await beginIdempotent(ctx, cmd);
-  if (started.kind === "replay")
-    return versionResponse(ctx, started.resourceId, started.statusCode);
 
   const configJson = canonicalJson(result.draft);
   const hash = await sha256Hex(configJson);

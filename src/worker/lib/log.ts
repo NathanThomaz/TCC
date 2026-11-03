@@ -22,6 +22,50 @@ const SECRET_IN_TEXT: [RegExp, string][] = [
   ],
 ];
 
+/** Fim do valor JSON que começa em `start` ('{' ou '['), contando aninhamento e strings. */
+function jsonEnd(text: string, start: number): number {
+  let level = 0;
+  let inString = false;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (ch === "\\") i++;
+      else if (ch === '"') inString = false;
+    } else if (ch === '"') inString = true;
+    else if (ch === "{" || ch === "[") level++;
+    else if (ch === "}" || ch === "]") {
+      level--;
+      if (level === 0) return i;
+    }
+  }
+  return -1;
+}
+
+/** Redige trechos JSON válidos embutidos num texto livre, em qualquer nível de aninhamento. */
+function redactEmbeddedJson(text: string, depth: number): string {
+  let out = "";
+  let i = 0;
+  while (i < text.length) {
+    const ch = text[i];
+    if (ch === "{" || ch === "[") {
+      const end = jsonEnd(text, i);
+      if (end > i) {
+        try {
+          const parsed = JSON.parse(text.slice(i, end + 1)) as unknown;
+          out += JSON.stringify(redact(parsed, depth + 1));
+          i = end + 1;
+          continue;
+        } catch {
+          // não é JSON: segue caractere a caractere
+        }
+      }
+    }
+    out += ch;
+    i++;
+  }
+  return out;
+}
+
 export function redactText(text: string, depth = 0): string {
   // Texto que é JSON inteiro: redige a estrutura de verdade (chaves sensíveis em qualquer nível).
   const trimmed = text.trim();
@@ -32,9 +76,10 @@ export function redactText(text: string, depth = 0): string {
       // não é JSON válido: segue com os padrões
     }
   }
+  const embedded = depth < 5 ? redactEmbeddedJson(text, depth) : text;
   return SECRET_IN_TEXT.reduce(
     (out, [pattern, replacement]) => out.replace(pattern, replacement),
-    text,
+    embedded,
   );
 }
 
