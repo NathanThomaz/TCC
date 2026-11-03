@@ -164,10 +164,13 @@ export const getSystem: Handler = async (ctx) => {
   )
     .bind(systemId)
     .all<VersionRow>();
+  const ultima = results[0];
   return json({
     sistema: publicSystem(system),
-    // Histórico de versões é da configuração: só o administrador vê.
+    // Histórico e configuração são do administrador; o secundário só opera o sistema.
     versoes: user.role === "admin" ? results.map(publicVersion) : [],
+    ultimaConfig:
+      user.role === "admin" && ultima ? (JSON.parse(ultima.config_json) as unknown) : null,
   });
 };
 

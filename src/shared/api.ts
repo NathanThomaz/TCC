@@ -1,4 +1,5 @@
 // Contratos HTTP compartilhados entre o Worker e o front.
+import type { ConfigDraft } from "./contract/schema";
 
 /** Corpo de erro padronizado (seção 20 da especificação): sem detalhes internos nem segredos. */
 export interface ApiErrorBody {
@@ -40,6 +41,8 @@ export interface SystemsApiBody {
   sistemas?: SystemDto[];
   versao?: VersionDto | null;
   versoes?: VersionDto[];
+  /** Configuração da versão mais recente (só para o administrador), ponto de partida do assistente. */
+  ultimaConfig?: ConfigDraft | null;
   issues?: IssueDto[];
   error?: ApiErrorBody["error"];
 }
@@ -48,6 +51,11 @@ export interface SystemsApiBody {
 export interface PublicConfig {
   environment: string;
   firebase: { apiKey: string; authDomain: string; projectId: string; appId: string } | null;
+}
+
+/** GET /api/v1/session — quem está logado, segundo o backend (nunca segundo o navegador). */
+export interface SessionResponse {
+  usuario: { id: string; email: string; papel: "admin" | "secondary" };
 }
 
 export interface HealthResponse {

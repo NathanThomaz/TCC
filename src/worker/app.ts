@@ -9,6 +9,7 @@ import { createRouter } from "./http/router";
 import { systemClock } from "./lib/clock";
 import { getPublicConfig } from "./modules/config";
 import { getHealth } from "./modules/health";
+import { getSession } from "./modules/session";
 import {
   activateSystem,
   approveVersion,
@@ -58,6 +59,7 @@ export function createApp(deps: RouterDeps = { clock: systemClock, auth: firebas
     [
       { method: "GET", path: `${API_BASE}/health`, handler: getHealth },
       { method: "GET", path: `${API_BASE}/config`, handler: getPublicConfig },
+      { method: "GET", path: `${API_BASE}/session`, handler: getSession },
       { method: "GET", path: S, handler: listSystems },
       { method: "POST", path: S, handler: createSystem },
       { method: "GET", path: `${S}/:systemId`, handler: getSystem },

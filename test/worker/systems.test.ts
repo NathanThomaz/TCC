@@ -200,6 +200,30 @@ describe("ciclo de configuração pela API", () => {
   });
 });
 
+describe("sessão e configuração para o assistente", () => {
+  it("GET /session devolve a identidade do backend; sem token, 401", async () => {
+    expect(await call("GET", "/session", ADMIN)).toMatchObject({
+      status: 200,
+      body: { usuario: { id: "a", email: "a@example.com", papel: "admin" } },
+    });
+    expect((await call("GET", "/session", "token-qualquer-000000000")).status).toBe(401);
+  });
+
+  it("o detalhe traz a configuração da última versão só para o administrador", async () => {
+    const { id } = await systemWithValidVersion();
+    const admin = await call("GET", `/systems/${id}`, ADMIN);
+    await env.DB.prepare(
+      "INSERT INTO system_access (user_id, system_id, granted_by, created_at, updated_at) VALUES ('s', ?, 'a', ?, ?)",
+    )
+      .bind(id, NOW, NOW)
+      .run();
+    const sec = await call("GET", `/systems/${id}`, SEC);
+
+    expect(admin.body.ultimaConfig).toMatchObject({ modelo: "comercio", regras: c1.regras });
+    expect(sec.body.ultimaConfig).toBeNull();
+  });
+});
+
 describe("permissões e isolamento (T01, T02, T04)", () => {
   it("token inválido não acessa; secundário não cria sistema nem configura", async () => {
     expect((await call("GET", "/systems", "token-qualquer-000000000")).status).toBe(401);
