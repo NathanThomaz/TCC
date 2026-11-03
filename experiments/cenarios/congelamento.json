@@ -1,0 +1,12 @@
+{
+  "congelado_em": "2026-11-03",
+  "aprovado_por": "autor (dono do projeto), na conversa de 2026-11-03",
+  "sha256": {
+    "c1-comercio.md": "e6f41d74f2a5f268012c35d37b8a76ca05ff7f6ccbf322a974beb18c7fb6bd66",
+    "c1-gabarito.json": "e936bf3cc542067061f714ed9b9171609d6fb0c3eaa934665827739593180769",
+    "c2-servicos.md": "8d45a672a9e4cdd7656c5d8623c97da2c187f998bbbd5ba697a540856d37112e",
+    "c2-gabarito.json": "8aa3c87509a08106b2b49c18af79ee4eb418ef25120f0a6c4fcc52c5c9f1efe1",
+    "c3-comercio-servicos.md": "b20e3000cc9e9fe07d4b355e1de642b4a5dfb75d498545b568577412dd31c9f6",
+    "c3-gabarito.json": "363b78e7a7c07bb7144a03960af90efdd1794b7c6461d2dfdc57234dea2a92b9"
+  }
+}

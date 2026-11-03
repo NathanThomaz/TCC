@@ -1,0 +1,28 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "nexus",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2026-10-23",
+  "observability": { "enabled": true },
+
+  // Um único Worker (ADR-001 do TCC): o React é servido como Static Assets e só /api/* executa o
+  // Worker. Rotas da SPA (deep links) caem no index.html; /api/* nunca.
+  "assets": {
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"],
+  },
+
+  // Ambiente padrão = desenvolvimento local, só com dados fictícios.
+  "vars": {
+    "APP_ENV": "development",
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "nexus-dev",
+      // Local: qualquer UUID serve. Remoto: id de `wrangler d1 create`.
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations",
+    },
+  ],
+}

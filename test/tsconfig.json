@@ -1,0 +1,16 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023"],
+    "types": ["@cloudflare/workers-types", "@cloudflare/vitest-plugin/types"]
+  },
+  "include": [
+    "./worker/**/*.ts",
+    "../experiments/**/*.json",
+    "./env.d.ts",
+    "./apply-migrations.ts",
+    "../src/worker/**/*.ts",
+    "../src/shared/**/*.ts",
+    "../provas/**/src/**/*.ts"
+  ]
+}

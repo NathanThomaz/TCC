@@ -1,0 +1,51 @@
+{
+  "modelo": "comercio",
+  "modulos": ["clientes", "produtos", "vendas", "estoque"],
+  "aparencia": {
+    "nome": "Loja de Materiais",
+    "cor_primaria": "#8a4b08",
+    "cor_destaque": "#f2a900",
+    "titulo": "Loja de Materiais"
+  },
+  "requisitos": [
+    {
+      "id": "REQ-01",
+      "texto": "Controlar clientes, produtos, estoque e vendas",
+      "status": "confirmado"
+    },
+    { "id": "REQ-02", "texto": "Atacado a partir de R$ 500 em produtos", "status": "confirmado" },
+    {
+      "id": "REQ-03",
+      "texto": "Tijolo vendido solto ou no milheiro de 1000",
+      "status": "confirmado"
+    },
+    {
+      "id": "REQ-04",
+      "texto": "Material separado por 20 minutos durante o pedido",
+      "status": "confirmado"
+    },
+    {
+      "id": "REQ-05",
+      "texto": "Tipo de cliente: pedreiro, construtora ou pessoa física (opcional)",
+      "status": "confirmado"
+    },
+    { "id": "REQ-06", "texto": "Emitir nota fiscal", "status": "confirmado" }
+  ],
+  "campos": [
+    {
+      "id": "tipo_cliente",
+      "entidade": "clientes",
+      "rotulo": "Tipo de cliente",
+      "tipo": "lista",
+      "opcoes": ["Pedreiro", "Construtora", "Pessoa física"],
+      "obrigatorio": false
+    }
+  ],
+  "tipos_atendimento": [],
+  "regras": [
+    { "tipo": "limite_atacado", "valor_centavos": 50000, "requisitos": ["REQ-02"] },
+    { "tipo": "unidades_por_caixa", "unidades": 1000, "requisitos": ["REQ-03"] },
+    { "tipo": "prazo_reserva", "minutos": 20, "requisitos": ["REQ-04"] }
+  ],
+  "fora_do_catalogo": [{ "texto": "Emissão de nota fiscal", "requisito": "REQ-06" }]
+}

@@ -1,0 +1,58 @@
+{
+  "modelo": "comercio_com_servicos",
+  "modulos": ["clientes", "produtos", "vendas", "estoque", "profissionais", "agenda"],
+  "aparencia": {
+    "nome": "Bike Oficina",
+    "cor_primaria": "#1f4e79",
+    "cor_destaque": "#d64545",
+    "titulo": "Bike Oficina"
+  },
+  "requisitos": [
+    {
+      "id": "REQ-01",
+      "texto": "Venda de peças com estoque, clientes e agenda de mecânicos",
+      "status": "confirmado"
+    },
+    { "id": "REQ-02", "texto": "Câmara de ar avulsa ou na caixa com 10", "status": "confirmado" },
+    {
+      "id": "REQ-03",
+      "texto": "Peças seguras por 30 minutos com o pedido aberto",
+      "status": "confirmado"
+    },
+    { "id": "REQ-04", "texto": "Busca e devolução de 40 minutos cada", "status": "confirmado" },
+    {
+      "id": "REQ-05",
+      "texto": "Busca e devolução pelo mesmo mecânico, devolução após a busca",
+      "status": "confirmado"
+    },
+    {
+      "id": "REQ-06",
+      "texto": "Número do quadro anotado no atendimento (opcional)",
+      "status": "confirmado"
+    }
+  ],
+  "campos": [
+    {
+      "id": "numero_quadro",
+      "entidade": "agendamentos",
+      "rotulo": "Número do quadro",
+      "tipo": "texto",
+      "obrigatorio": false
+    }
+  ],
+  "tipos_atendimento": [
+    { "id": "busca", "rotulo": "Busca da bicicleta", "duracao_minutos": 40 },
+    { "id": "devolucao", "rotulo": "Devolução da bicicleta", "duracao_minutos": 40 }
+  ],
+  "regras": [
+    { "tipo": "unidades_por_caixa", "unidades": 10, "requisitos": ["REQ-02"] },
+    { "tipo": "prazo_reserva", "minutos": 30, "requisitos": ["REQ-03"] },
+    {
+      "tipo": "par_atendimento",
+      "primeiro": "busca",
+      "segundo": "devolucao",
+      "requisitos": ["REQ-05"]
+    }
+  ],
+  "fora_do_catalogo": []
+}

@@ -1,0 +1,117 @@
+export type LogLevel = "info" | "warn" | "error";
+
+export interface Logger {
+  info(event: string, data?: Record<string, unknown>): void;
+  warn(event: string, data?: Record<string, unknown>): void;
+  error(event: string, data?: Record<string, unknown>): void;
+}
+
+// Chaves cujo valor nunca vai para o log, em qualquer nível de aninhamento.
+const SENSITIVE = /token|secret|password|senha|authorization|cookie|api[_-]?key/i;
+
+// Segredos que podem aparecer dentro de textos livres (mensagens de erro de integrações).
+const SECRET_IN_TEXT: [RegExp, string][] = [
+  [/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [omitido]"],
+  [/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, "[jwt omitido]"],
+  [/AIza[0-9A-Za-z_-]{20,}/g, "[chave omitida]"],
+  [/((?:token|secret|password|senha|api[_-]?key|key)=)[^&\s"']+/gi, "$1[omitido]"],
+  // JSON embutido no meio de um texto: "password": valor (texto, lista, objeto ou escalar).
+  [
+    /("[^"]*(?:token|secret|password|senha|authorization|cookie|api[_-]?key)[^"]*"\s*:\s*)("(?:[^"\\]|\\.)*"|\[[^\]]*\]|\{[^}]*\}|[^,}\s]+)/gi,
+    '$1"[omitido]"',
+  ],
+];
+
+/** Fim do valor JSON que começa em `start` ('{' ou '['), contando aninhamento e strings. */
+function jsonEnd(text: string, start: number): number {
+  let level = 0;
+  let inString = false;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (ch === "\\") i++;
+      else if (ch === '"') inString = false;
+    } else if (ch === '"') inString = true;
+    else if (ch === "{" || ch === "[") level++;
+    else if (ch === "}" || ch === "]") {
+      level--;
+      if (level === 0) return i;
+    }
+  }
+  return -1;
+}
+
+/** Redige trechos JSON válidos embutidos num texto livre, em qualquer nível de aninhamento. */
+function redactEmbeddedJson(text: string, depth: number): string {
+  let out = "";
+  let i = 0;
+  while (i < text.length) {
+    const ch = text[i];
+    if (ch === "{" || ch === "[") {
+      const end = jsonEnd(text, i);
+      if (end > i) {
+        try {
+          const parsed = JSON.parse(text.slice(i, end + 1)) as unknown;
+          out += JSON.stringify(redact(parsed, depth + 1));
+          i = end + 1;
+          continue;
+        } catch {
+          // não é JSON: segue caractere a caractere
+        }
+      }
+    }
+    out += ch;
+    i++;
+  }
+  return out;
+}
+
+export function redactText(text: string, depth = 0): string {
+  // Texto que é JSON inteiro: redige a estrutura de verdade (chaves sensíveis em qualquer nível).
+  const trimmed = text.trim();
+  if ((trimmed.startsWith("{") || trimmed.startsWith("[")) && depth < 5) {
+    try {
+      return JSON.stringify(redact(JSON.parse(trimmed) as unknown, depth + 1));
+    } catch {
+      // não é JSON válido: segue com os padrões
+    }
+  }
+  const embedded = depth < 5 ? redactEmbeddedJson(text, depth) : text;
+  return SECRET_IN_TEXT.reduce(
+    (out, [pattern, replacement]) => out.replace(pattern, replacement),
+    embedded,
+  );
+}
+
+export function redact(value: unknown, depth = 0): unknown {
+  if (depth > 5) return "[profundo]";
+  if (typeof value === "string") return redactText(value, depth);
+  if (value instanceof Error) {
+    return { name: value.name, message: redactText(value.message, depth) };
+  }
+  if (Array.isArray(value)) return value.map((item) => redact(item, depth + 1));
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [
+        key,
+        SENSITIVE.test(key) ? "[omitido]" : redact(item, depth + 1),
+      ]),
+    );
+  }
+  return value;
+}
+
+/** Log estruturado em JSON (Workers Observability), com redação de campos sensíveis. */
+export function createLogger(base: Record<string, unknown> = {}): Logger {
+  const write = (level: LogLevel, event: string, data: Record<string, unknown> = {}) => {
+    const line = JSON.stringify({ level, event, ...(redact({ ...base, ...data }) as object) });
+    if (level === "error") console.error(line);
+    else if (level === "warn") console.warn(line);
+    else console.log(line);
+  };
+  return {
+    info: (event, data) => write("info", event, data),
+    warn: (event, data) => write("warn", event, data),
+    error: (event, data) => write("error", event, data),
+  };
+}
