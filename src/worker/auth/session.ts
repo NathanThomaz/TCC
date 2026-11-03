@@ -75,7 +75,21 @@ async function checkRevocation(
   if (checkedAt === null || now - checkedAt > REVOCATION_CHECK_MS) {
     try {
       const state = await lookup(identity.uid);
-      if (state.disabled) throw accountDisabled();
+      if (state.disabled) {
+        // Desativação observada no Firebase é gravada: uma falha de consulta depois (tolerância)
+        // não pode devolver o acesso. Reativar é decisão do administrador (seção 7).
+        await ctx.env.DB.batch([
+          ctx.env.DB.prepare(
+            `UPDATE users SET status = 'disabled',
+               valid_since = max(COALESCE(valid_since, 0), ?), valid_since_checked_at = ?, updated_at = ?
+             WHERE id = ?`,
+          ).bind(now, now, now, user.id),
+          ctx.env.DB.prepare(
+            "INSERT INTO audit_events (actor_id, action, target_type, target_id, created_at) SELECT NULL, 'user.disabled_by_provider', 'user', ?, ? WHERE changes() = 1",
+          ).bind(user.id, now),
+        ]);
+        throw accountDisabled();
+      }
       const stored = await ctx.env.DB.prepare(
         `UPDATE users
          SET valid_since = NULLIF(max(COALESCE(valid_since, 0), ?), 0),

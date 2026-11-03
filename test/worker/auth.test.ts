@@ -142,6 +142,7 @@ describe("authenticate e requireSystemAccess", () => {
   beforeEach(async () => {
     const T = NOW - 86_400_000;
     await env.DB.batch([
+      env.DB.prepare("DELETE FROM audit_events"),
       env.DB.prepare("DELETE FROM system_access"),
       env.DB.prepare("DELETE FROM systems"),
       env.DB.prepare("DELETE FROM users WHERE owner_id IS NOT NULL"),
@@ -275,6 +276,17 @@ describe("authenticate e requireSystemAccess", () => {
   it("conta desativada ou apagada no Firebase é recusada", async () => {
     const disabled: LookupFn = () => Promise.resolve({ validSince: null, disabled: true });
     expect(await code(authenticate(ctx(), as({}, disabled)))).toBe("conta_desativada");
+
+    // A desativação fica gravada: queda do Firebase dentro da tolerância não devolve o acesso.
+    const down: LookupFn = () => Promise.reject(new AccountLookupError("fora do ar"));
+    const later = NOW + REVOCATION_CHECK_MS + 1;
+    expect(await code(authenticate(ctx(later), as({}, down)))).toBe("conta_desativada");
+    const row = await env.DB.prepare("SELECT status FROM users WHERE id = 'admin'").first();
+    const audit = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM audit_events WHERE action = 'user.disabled_by_provider'",
+    ).first<{ n: number }>();
+    expect(row).toEqual({ status: "disabled" });
+    expect(audit?.n).toBe(1);
   });
 
   it("falha na consulta: recusa sem conferência recente, aceita dentro da tolerância", async () => {
