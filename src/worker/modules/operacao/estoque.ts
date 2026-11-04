@@ -209,6 +209,12 @@ export const corrigirSaldo: Handler = async (ctx) => {
     });
   }
   if (changed === 0) {
+    // Mesma chave em paralelo: se a outra requisição já aplicou esta correção, devolve a dela.
+    const replay = await replayAfterRace(ctx, cmd, started);
+    if (replay?.kind === "replay") {
+      const row = await carregarMovimento(ctx, op.systemId, replay.resourceId);
+      return json({ movimento: publicMovimento(row) }, { status: replay.statusCode });
+    }
     throw conflict("O saldo mudou desde a consulta. Confira o valor atual e tente de novo.");
   }
   return json(

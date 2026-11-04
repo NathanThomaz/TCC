@@ -13,7 +13,7 @@ import {
 } from "../../http/idempotency";
 import { json } from "../../http/responses";
 import type { Handler, RequestContext } from "../../http/router";
-import { isUnique, parse, triggerCode, triggerConflict } from "../comum";
+import { parse, triggerCode, triggerConflict } from "../comum";
 import { atendimentosDaVenda } from "./agenda";
 import {
   abrirOperacao,
@@ -350,10 +350,10 @@ async function executarGravacao(
   try {
     await ctx.env.DB.batch(statements);
   } catch (error) {
-    if (isUnique(error)) {
-      const replay = await replayAfterRace(ctx, cmd, started);
-      if (replay?.kind === "replay") return respostaRepetida(ctx, op, replay);
-    }
+    // Mesma chave em paralelo: a outra requisição pode ter vencido (UNIQUE da chave, falta de
+    // estoque ou revisão já avançada por ela). Se o pedido já foi atendido, devolve o resultado.
+    const replay = await replayAfterRace(ctx, cmd, started);
+    if (replay?.kind === "replay") return respostaRepetida(ctx, op, replay);
     if (triggerCode(error, ["estoque_insuficiente"])) {
       return conflitoComDados(
         ctx,

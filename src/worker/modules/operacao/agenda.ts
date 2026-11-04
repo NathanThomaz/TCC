@@ -6,7 +6,7 @@ import { AppError, conflict, notFound, validationFailed } from "../../http/error
 import { beginIdempotent, recordStatement, replayAfterRace } from "../../http/idempotency";
 import { json } from "../../http/responses";
 import type { Handler, RequestContext } from "../../http/router";
-import { isUnique, parse, triggerConflict } from "../comum";
+import { parse, triggerConflict } from "../comum";
 import { abrirOperacao, camposValidos, lerCampos } from "./contexto";
 
 // Agenda (seção 13 e ADR-002, item 3). Sobreposição por profissional, par coerente e transições
@@ -78,6 +78,7 @@ const MENSAGENS = {
   retirada_preservada:
     "O primeiro atendimento do par já foi iniciado: o segundo é preservado e não pode ser cancelado (AGE-09).",
   transicao_de_status_invalida: "Este atendimento não está no estado que permite essa ação.",
+  venda_indisponivel: "A venda vinculada não está mais em rascunho nem concluída.",
 };
 
 async function carregarAtendimento(ctx: RequestContext, systemId: string, id: string) {
@@ -217,11 +218,11 @@ export const agendar: Handler = async (ctx) => {
       recordStatement(ctx, cmd, started, firstId, 201, now),
     ]);
   } catch (error) {
-    if (isUnique(error)) {
-      const replay = await replayAfterRace(ctx, cmd, started);
-      if (replay?.kind === "replay") {
-        return respostaAtendimento(ctx, op.systemId, replay.resourceId, replay.statusCode);
-      }
+    // Mesma chave em paralelo: a outra requisição pode ter vencido e feito o conflito de agenda
+    // ou o UNIQUE; antes de recusar, confere se o pedido já foi atendido.
+    const replay = await replayAfterRace(ctx, cmd, started);
+    if (replay?.kind === "replay") {
+      return respostaAtendimento(ctx, op.systemId, replay.resourceId, replay.statusCode);
     }
     if (error instanceof Error && /FOREIGN KEY/i.test(error.message)) {
       throw validationFailed("Cliente ou profissional não encontrado neste sistema.");
@@ -230,6 +231,27 @@ export const agendar: Handler = async (ctx) => {
   }
   return respostaAtendimento(ctx, op.systemId, firstId, 201);
 };
+
+/**
+ * Instruções da remarcação. Sem filtro de status de propósito: se um dos atendimentos foi
+ * iniciado depois da leitura, o trigger appointments_reschedule_only_scheduled desfaz o lote
+ * inteiro, em vez de remarcar só parte do par.
+ */
+export function remarcacoes(
+  db: D1Database,
+  systemId: string,
+  mudancas: { id: string; inicio: number; fim: number }[],
+  now: number,
+): D1PreparedStatement[] {
+  return mudancas.map((m) =>
+    db
+      .prepare(
+        `UPDATE appointments SET start_at = ?, end_at = ?, updated_at = max(updated_at, ?)
+         WHERE id = ? AND system_id = ?`,
+      )
+      .bind(m.inicio, m.fim, now, m.id, systemId),
+  );
+}
 
 /**
  * AGE-07: remarcar revalida os horários; conflito preserva os anteriores (lote único). No par
@@ -241,6 +263,10 @@ export const remarcar: Handler = async (ctx) => {
   const op = await abrirOperacao(ctx, "agenda");
   const id = ctx.params.id ?? "";
   const body = parse(RemarcarBody, await readJson(ctx.request));
+  // Idempotente: repetir uma remarcação antiga (mesma chave) não desfaz uma remarcação posterior.
+  const cmd = { scope: op.systemId, actorId: op.user.id, command: `agenda.reschedule:${id}`, body };
+  const started = await beginIdempotent(ctx, cmd);
+  if (started.kind === "replay") return respostaAtendimento(ctx, op.systemId, id);
   const alvo = await carregarAtendimento(ctx, op.systemId, id);
   if (alvo.status !== "scheduled") throw conflict(MENSAGENS.atendimento_iniciado);
   const now = ctx.clock.now();
@@ -299,14 +325,7 @@ export const remarcar: Handler = async (ctx) => {
   const db = ctx.env.DB;
   try {
     await db.batch([
-      ...mudancas.map((m) =>
-        db
-          .prepare(
-            `UPDATE appointments SET start_at = ?, end_at = ?, updated_at = max(updated_at, ?)
-             WHERE id = ? AND system_id = ? AND status = 'scheduled'`,
-          )
-          .bind(m.inicio, m.fim, now, m.id, op.systemId),
-      ),
+      ...remarcacoes(db, op.systemId, mudancas, now),
       db
         .prepare(
           "INSERT INTO audit_events (system_id, actor_id, action, target_type, target_id, details_json, created_at) VALUES (?, ?, 'agenda.rescheduled', 'atendimento', ?, ?, ?)",
@@ -318,8 +337,11 @@ export const remarcar: Handler = async (ctx) => {
           JSON.stringify({ antes: alvo.start_at, depois: body.inicio }),
           now,
         ),
+      recordStatement(ctx, cmd, started, id, 200, now),
     ]);
   } catch (error) {
+    const replay = await replayAfterRace(ctx, cmd, started);
+    if (replay?.kind === "replay") return respostaAtendimento(ctx, op.systemId, id);
     triggerConflict(error, MENSAGENS);
   }
   return respostaAtendimento(ctx, op.systemId, id);

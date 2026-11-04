@@ -6,6 +6,7 @@ import { calcularTotais } from "../../src/shared/dominio/precos";
 import type { VerifiedToken } from "../../src/worker/auth/firebase-token";
 import { InvalidTokenError } from "../../src/worker/auth/firebase-token";
 import { createApp } from "../../src/worker/app";
+import { remarcacoes } from "../../src/worker/modules/operacao/agenda";
 import { DISTRIBUIDORA } from "../fixtures/distribuidora";
 import { limparBanco } from "../limpar-banco";
 
@@ -724,5 +725,147 @@ describe("T31: concorrência", () => {
       ),
     );
     expect(respostas.filter((r) => r.status === 201)).toHaveLength(1);
+  });
+});
+
+describe("revisão cruzada: guardas no banco e idempotência", () => {
+  const AMANHA = NOW + 24 * H;
+  async function parAgendado(extra: Record<string, unknown> = {}) {
+    const c = await cliente();
+    const t = (await call("POST", p("/profissionais"), ADMIN, { nome: "Técnico" })).body
+      .profissional!.id;
+    const r = await call("POST", p("/agenda"), ADMIN, {
+      cliente: c,
+      profissional: t,
+      tipo: "instalacao",
+      inicio: AMANHA,
+      inicioSegundo: AMANHA + 3 * H,
+      campos: { endereco: "Rua C" },
+      ...extra,
+    });
+    return { c, t, par: r.body.atendimentos! };
+  }
+
+  it("revisão: segunda gravação com a mesma revisão esperada é desfeita pelo trigger", async () => {
+    const c = await cliente();
+    const prod = await produto();
+    await entrada(prod, 10);
+    const v = (await venda(c, [{ produto: prod, unidades: 1 }])).body.venda!;
+    const grava = () =>
+      env.DB.prepare("UPDATE sales SET revision = ?, updated_at = ? WHERE id = ?")
+        .bind(v.revisao + 1, NOW + 1, v.id)
+        .run();
+    await grava(); // a primeira tela salvou
+    await expect(grava()).rejects.toThrow(/venda_alterada/); // a segunda, com a revisão antiga
+  });
+
+  it("revisão: gravações simultâneas pela API deixam uma vencedora e reservas coerentes", async () => {
+    const c = await cliente();
+    const prod = await produto();
+    await entrada(prod, 20);
+    const v = (await venda(c, [{ produto: prod, unidades: 1 }])).body.venda!;
+    const respostas = await Promise.all(
+      [2, 3, 4, 5].map((unidades) =>
+        call("POST", p(`/vendas/${v.id}/itens`), ADMIN, {
+          revisao: v.revisao,
+          itens: [{ produto: prod, unidades }],
+        }),
+      ),
+    );
+    const ok = respostas.filter((r) => r.status === 200);
+    expect(ok).toHaveLength(1);
+    const final = (await call("GET", p(`/vendas/${v.id}`), ADMIN)).body.venda!;
+    expect(final.revisao).toBe(v.revisao + 1);
+    expect((await estoqueDe(prod)).reservado).toBe(final.itens[0]!.unidades);
+  });
+
+  it("remarcação: se um atendimento do par já começou, o lote inteiro é desfeito", async () => {
+    const { par } = await parAgendado();
+    const [inst, ret] = par;
+    await call("POST", p(`/agenda/${inst!.id}/iniciar`), ADMIN, {});
+    // O mesmo lote que o handler monta, como se a leitura tivesse sido anterior ao início.
+    await expect(
+      env.DB.batch(
+        remarcacoes(
+          env.DB,
+          S,
+          [
+            { id: inst!.id, inicio: AMANHA + 2 * H, fim: AMANHA + 3 * H },
+            { id: ret!.id, inicio: AMANHA + 3 * H + 30 * MIN, fim: AMANHA + 4 * H + 30 * MIN },
+          ],
+          NOW,
+        ),
+      ),
+    ).rejects.toThrow(/atendimento_iniciado/);
+    const agenda = (await call("GET", p("/agenda"), ADMIN)).body.atendimentos!;
+    expect(agenda.find((a) => a.id === ret!.id)!.inicio).toBe(AMANHA + 3 * H);
+  });
+
+  it("vínculo: atendimento não é gravado para venda cancelada", async () => {
+    const { c, t } = await parAgendado();
+    const prod = await produto();
+    await entrada(prod, 5);
+    const v = (await venda(c, [{ produto: prod, unidades: 1 }])).body.venda!;
+    await call("POST", p(`/vendas/${v.id}/concluir`), ADMIN, { revisao: v.revisao });
+    await call("POST", p(`/vendas/${v.id}/cancelar`), ADMIN, { motivo: "Desistiu" });
+    // INSERT direto, como se a venda tivesse sido cancelada depois da leitura do handler.
+    await expect(
+      env.DB.prepare(
+        `INSERT INTO appointments (id, system_id, customer_id, professional_id, service_type, start_at, end_at,
+           sale_id, created_by, created_at, updated_at) VALUES ('x', ?, ?, ?, 'instalacao', ?, ?, ?, 'a', ?, ?)`,
+      )
+        .bind(S, c, t, AMANHA + 10 * H, AMANHA + 11 * H, v.id, NOW, NOW)
+        .run(),
+    ).rejects.toThrow(/venda_indisponivel/);
+  });
+
+  it("remarcação idempotente: repetir a chave antiga não desfaz a remarcação posterior", async () => {
+    const { par } = await parAgendado();
+    const inst = par[0]!;
+    const k = { inicio: AMANHA + H, inicioSegundo: AMANHA + 4 * H };
+    const l = { inicio: AMANHA + 2 * H, inicioSegundo: AMANHA + 5 * H };
+    await call("POST", p(`/agenda/${inst.id}/remarcar`), ADMIN, k, "chave-remarcar-k");
+    await call("POST", p(`/agenda/${inst.id}/remarcar`), ADMIN, l, "chave-remarcar-l");
+    await call("POST", p(`/agenda/${inst.id}/remarcar`), ADMIN, k, "chave-remarcar-k");
+    const agenda = (await call("GET", p("/agenda"), ADMIN)).body.atendimentos!;
+    expect(agenda.find((a) => a.id === inst.id)!.inicio).toBe(AMANHA + 2 * H);
+    const reuso = await call(
+      "POST",
+      p(`/agenda/${inst.id}/remarcar`),
+      ADMIN,
+      l,
+      "chave-remarcar-k",
+    );
+    expect(reuso.body.error!.code).toBe("chave_idempotencia_reutilizada");
+  });
+
+  it("mesma chave em paralelo devolve o resultado vencedor, não um conflito", async () => {
+    const c = await cliente();
+    const t = (await call("POST", p("/profissionais"), ADMIN, { nome: "Técnico" })).body
+      .profissional!.id;
+    const corpo = {
+      cliente: c,
+      profissional: t,
+      tipo: "instalacao",
+      inicio: AMANHA,
+      inicioSegundo: AMANHA + 2 * H,
+      campos: { endereco: "Rua D" },
+    };
+    const agendas = await Promise.all(
+      Array.from({ length: 3 }, () => call("POST", p("/agenda"), ADMIN, corpo, "chave-agenda-par")),
+    );
+    expect(agendas.map((r) => r.status)).toEqual([201, 201, 201]);
+    expect(new Set(agendas.map((r) => r.body.atendimentos![0]!.id)).size).toBe(1);
+
+    const prod = await produto();
+    await entrada(prod, 10);
+    const correcao = { produto: prod, fisicoEsperado: 10, novoFisico: 8, motivo: "Contagem" };
+    const correcoes = await Promise.all(
+      Array.from({ length: 3 }, () =>
+        call("POST", p("/estoque/correcoes"), ADMIN, correcao, "chave-correcao-1"),
+      ),
+    );
+    expect(correcoes.map((r) => r.status)).toEqual([201, 201, 201]);
+    expect((await estoqueDe(prod)).fisico).toBe(8);
   });
 });

@@ -256,14 +256,16 @@ END;
 -- Só rascunho é regravado, e cada gravação parte da revisão que o usuário viu (edição concorrente).
 CREATE TRIGGER sales_revision_only_draft
 BEFORE UPDATE OF revision ON sales
-WHEN NEW.revision IS NOT OLD.revision AND OLD.status <> 'draft'
+WHEN OLD.status <> 'draft'
 BEGIN
   SELECT RAISE(ABORT, 'venda_nao_editavel');
 END;
 
+-- Quem grava envia revisão esperada + 1: se outra gravação passou na frente, OLD já avançou e o
+-- valor enviado não é mais OLD + 1 (inclusive quando coincide com OLD), então o lote é desfeito.
 CREATE TRIGGER sales_revision_check
 BEFORE UPDATE OF revision ON sales
-WHEN NEW.revision IS NOT OLD.revision AND NEW.revision <> OLD.revision + 1
+WHEN NEW.revision <> OLD.revision + 1
 BEGIN
   SELECT RAISE(ABORT, 'venda_alterada');
 END;
@@ -411,6 +413,16 @@ WHEN NEW.pair_position = 2 AND NOT EXISTS (
     AND f.professional_id = NEW.professional_id AND f.end_at <= NEW.start_at)
 BEGIN
   SELECT RAISE(ABORT, 'par_incoerente');
+END;
+
+-- CAN-07: o vínculo é com venda em rascunho ou concluída, conferido na própria gravação (uma
+-- venda cancelada entre a consulta e o INSERT é recusada aqui).
+CREATE TRIGGER appointments_sale_open
+BEFORE INSERT ON appointments
+WHEN NEW.sale_id IS NOT NULL
+  AND (SELECT status FROM sales WHERE id = NEW.sale_id) NOT IN ('draft', 'completed')
+BEGIN
+  SELECT RAISE(ABORT, 'venda_indisponivel');
 END;
 
 CREATE TRIGGER appointments_active_refs
