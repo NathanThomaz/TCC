@@ -104,8 +104,8 @@ CREATE TABLE ai_usage (
   model TEXT NOT NULL,
   state TEXT NOT NULL DEFAULT 'reservado'
     CHECK (state IN ('reservado', 'concluido', 'falhou', 'incerto')),
-  -- Idempotency-Key do pedido: enquanto a reserva está aberta, a mesma chave não chama a IA de
-  -- novo (duas requisições iguais em paralelo não pagam duas vezes).
+  -- Idempotency-Key do pedido: enquanto a chamada está aberta ou concluída sem resultado gravado,
+  -- a mesma chave não chama a IA de novo (duas requisições iguais em paralelo não pagam duas vezes).
   idempotency_key TEXT,
   reserved_micro_brl INTEGER NOT NULL CHECK (reserved_micro_brl >= 0),
   input_tokens INTEGER CHECK (input_tokens IS NULL OR input_tokens >= 0),
@@ -117,5 +117,7 @@ CREATE TABLE ai_usage (
 );
 
 CREATE INDEX ai_usage_month ON ai_usage (created_at, state);
+-- A chave fica travada da reserva até o resultado ser gravado (a chamada concluída continua
+-- travando até o handler gravar ou soltar): uma repetição em paralelo não paga a IA de novo.
 CREATE UNIQUE INDEX ai_usage_open_key ON ai_usage (user_id, purpose, idempotency_key)
-  WHERE state = 'reservado' AND idempotency_key IS NOT NULL;
+  WHERE state IN ('reservado', 'concluido') AND idempotency_key IS NOT NULL;

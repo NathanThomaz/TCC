@@ -32,6 +32,7 @@ import {
   statusProduto,
   statusProfissional,
 } from "./modules/operacao/cadastros";
+import { obterConsulta, perguntar } from "./modules/operacao/consulta";
 import { obterApp } from "./modules/operacao/contexto";
 import {
   corrigirSaldo,
@@ -165,6 +166,8 @@ export function createApp(
       { method: "POST", path: `${O}/criacao/corrigir`, handler: corrigirConfiguracao },
       // Operação do sistema ativo (seções 10 a 14).
       { method: "GET", path: `${O}/app`, handler: obterApp },
+      { method: "GET", path: `${O}/consulta`, handler: obterConsulta },
+      { method: "POST", path: `${O}/consulta/mensagens`, handler: perguntar },
       { method: "GET", path: `${O}/clientes`, handler: listarClientes },
       { method: "POST", path: `${O}/clientes`, handler: criarCliente },
       { method: "PATCH", path: `${O}/clientes/:id`, handler: editarCliente },

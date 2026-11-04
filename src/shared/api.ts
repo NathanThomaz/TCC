@@ -187,6 +187,25 @@ export interface OperacaoApiBody {
   error?: ApiErrorBody["error"];
 }
 
+// ---- Chat de consulta, somente leitura (/api/v1/systems/:id/consulta, seção 15) ----
+
+export interface MensagemConsultaDto {
+  id: string;
+  papel: "usuario" | "assistente";
+  texto: string;
+  /** Na resposta: o que foi consultado, com quais filtros e de onde vieram os números. */
+  intencao: string | null;
+  filtros: string[];
+  origem: string | null;
+  criadoEm: number;
+}
+
+export interface ConsultaApiBody {
+  mensagens?: MensagemConsultaDto[];
+  iaDisponivel?: boolean;
+  error?: ApiErrorBody["error"];
+}
+
 // ---- Contas secundárias (/api/v1/contas), só do administrador (seção 7) ----
 
 export interface ContaDto {
@@ -236,6 +255,8 @@ export interface CriacaoApiBody {
   /** Última versão gravada (formulário ou conversa) e o diagnóstico dela. */
   versao?: VersionDto | null;
   issues?: IssueDto[];
+  /** Configuração exata dessa versão (a prévia mostra o que será aprovado). */
+  config?: ConfigDraft | null;
   error?: ApiErrorBody["error"];
 }
 

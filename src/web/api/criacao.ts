@@ -1,5 +1,5 @@
 import type { CriacaoApiBody } from "../../shared/api";
-import { chamar, novaChave } from "./cliente";
+import { chamar } from "./cliente";
 
 // Criação por conversa (/api/v1/systems/:id/criacao). Toda rota devolve o estado completo da
 // conversa: mensagens, requisitos vivos, disponibilidade da IA e a última versão com diagnóstico.
@@ -18,6 +18,7 @@ function estado(r: CriacaoApiBody): EstadoCriacao {
     iaDisponivel: r.iaDisponivel ?? false,
     versao: r.versao ?? null,
     issues: r.issues ?? [],
+    config: r.config ?? null,
   };
 }
 
@@ -45,7 +46,8 @@ export async function acaoRequisito(
   codigo: string,
   acao: "confirmar" | "editar" | "descartar",
   revisao: number,
-  texto?: string,
+  texto: string | undefined,
+  chave: string,
 ) {
   return estado(
     await chamar<CriacaoApiBody>(
@@ -53,7 +55,7 @@ export async function acaoRequisito(
       {
         method: "POST",
         body: texto === undefined ? { revisao } : { texto, revisao },
-        chave: novaChave(),
+        chave,
       },
     ),
   );

@@ -23,7 +23,7 @@ import {
 import { json } from "../http/responses";
 import type { Handler, RequestContext } from "../http/router";
 import type { PedidoIa } from "../ia/gemini";
-import { chamarComOrcamento, iaNaoConfigurada } from "../ia/orcamento";
+import { aposIa, chamarComOrcamento, iaNaoConfigurada, liberarChave } from "../ia/orcamento";
 import {
   instrucoesCorrecao,
   instrucoesLevantamento,
@@ -230,7 +230,7 @@ async function falhaDoLote(
 
 async function estado(ctx: RequestContext, c: Contexto, status = 200): Promise<Response> {
   const conversaId = await conversa(ctx, c);
-  const { versao, issues } = await ultimaVersao(ctx, c.systemId);
+  const { versao, issues, draft } = await ultimaVersao(ctx, c.systemId);
   const body: CriacaoApiBody = {
     revisao: await revisaoAtual(ctx, c.systemId),
     mensagens: await mensagens(ctx, conversaId),
@@ -238,6 +238,7 @@ async function estado(ctx: RequestContext, c: Contexto, status = 200): Promise<R
     iaDisponivel: ctx.ia !== undefined,
     versao,
     issues,
+    config: draft,
   };
   return json(body, { status });
 }
@@ -439,61 +440,64 @@ export const enviarMensagem: Handler = async (ctx) => {
     },
     pedido,
   );
-  const ia = lerJsonDaIa(resposta.texto, LevantamentoSchema);
-  // Calculada sobre o estado da revisão lida; a guarda garante que é o mesmo na gravação.
-  const mescla = mesclarRequisitos(vivos, ia.requisitos, maior);
+  // Daqui em diante, se o resultado não for gravado, a chave é solta para a repetição tentar de novo.
+  return aposIa(ctx, resposta.usoId, async () => {
+    const ia = lerJsonDaIa(resposta.texto, LevantamentoSchema);
+    // Calculada sobre o estado da revisão lida; a guarda garante que é o mesmo na gravação.
+    const mescla = mesclarRequisitos(vivos, ia.requisitos, maior);
 
-  const db = ctx.env.DB;
-  const now = ctx.clock.now();
-  const idUsuario = crypto.randomUUID();
-  const idIa = crypto.randomUUID();
-  const inserirMensagem = (id: string, papel: string, texto: string, dados: object) =>
-    db
-      .prepare(
-        `INSERT INTO messages (id, conversation_id, seq, role, content, data_json, created_at)
+    const db = ctx.env.DB;
+    const now = ctx.clock.now();
+    const idUsuario = crypto.randomUUID();
+    const idIa = crypto.randomUUID();
+    const inserirMensagem = (id: string, papel: string, texto: string, dados: object) =>
+      db
+        .prepare(
+          `INSERT INTO messages (id, conversation_id, seq, role, content, data_json, created_at)
          SELECT ?, ?, COALESCE(MAX(seq), 0) + 1, ?, ?, ?, ? FROM messages WHERE conversation_id = ?`,
-      )
-      .bind(id, conversaId, papel, texto, JSON.stringify(dados), now, conversaId);
-  const algumConfirmadoMudou = mescla.reescritos.some((r) => r.eraConfirmado);
-  try {
-    await db.batch([
-      guarda(db, c.systemId, body.revisao),
-      inserirMensagem(idUsuario, "usuario", body.texto, {}),
-      inserirMensagem(idIa, "assistente", ia.resposta, {
-        perguntas: ia.perguntas,
-        foraDoCatalogo: ia.fora_do_catalogo,
-      }),
-      ...mescla.reescritos.flatMap((r) => [
-        substituir(db, c.systemId, r.codigo, now),
-        inserirRequisito(db, {
-          systemId: c.systemId,
-          codigo: r.codigo,
-          texto: r.texto,
-          origem: "ia",
-          mensagem: idIa,
-          confirmadoPor: null,
-          now,
+        )
+        .bind(id, conversaId, papel, texto, JSON.stringify(dados), now, conversaId);
+    const algumConfirmadoMudou = mescla.reescritos.some((r) => r.eraConfirmado);
+    try {
+      await db.batch([
+        guarda(db, c.systemId, body.revisao),
+        inserirMensagem(idUsuario, "usuario", body.texto, {}),
+        inserirMensagem(idIa, "assistente", ia.resposta, {
+          perguntas: ia.perguntas,
+          foraDoCatalogo: ia.fora_do_catalogo,
         }),
-      ]),
-      ...mescla.novos.map((r) =>
-        inserirRequisito(db, {
-          systemId: c.systemId,
-          codigo: r.codigo,
-          texto: r.texto,
-          origem: "ia",
-          mensagem: idIa,
-          confirmadoPor: null,
-          now,
-        }),
-      ),
-      ...(algumConfirmadoMudou ? [invalidarVersoesDaConversa(db, c.systemId)] : []),
-      auditar(db, c, "criacao.mensagem", idIa, now),
-      recordStatement(ctx, cmd, started, idIa, 201, now),
-    ]);
-  } catch (error) {
-    return falhaDoLote(ctx, c, error, { cmd, started });
-  }
-  return estado(ctx, c, 201);
+        ...mescla.reescritos.flatMap((r) => [
+          substituir(db, c.systemId, r.codigo, now),
+          inserirRequisito(db, {
+            systemId: c.systemId,
+            codigo: r.codigo,
+            texto: r.texto,
+            origem: "ia",
+            mensagem: idIa,
+            confirmadoPor: null,
+            now,
+          }),
+        ]),
+        ...mescla.novos.map((r) =>
+          inserirRequisito(db, {
+            systemId: c.systemId,
+            codigo: r.codigo,
+            texto: r.texto,
+            origem: "ia",
+            mensagem: idIa,
+            confirmadoPor: null,
+            now,
+          }),
+        ),
+        ...(algumConfirmadoMudou ? [invalidarVersoesDaConversa(db, c.systemId)] : []),
+        auditar(db, c, "criacao.mensagem", idIa, now),
+        recordStatement(ctx, cmd, started, idIa, 201, now),
+      ]);
+    } catch (error) {
+      return falhaDoLote(ctx, c, error, { cmd, started });
+    }
+    return estado(ctx, c, 201);
+  });
 };
 
 // ---- Atos do usuário sobre os requisitos ----
@@ -510,88 +514,130 @@ async function requisitoVivo(ctx: RequestContext, c: Contexto, codigo: string) {
   return row;
 }
 
-/** Ato do usuário sobre o estado da revisão enviada (lote único com a guarda). */
+/**
+ * Ato do usuário sobre o estado da revisão enviada: guarda, efeitos e registro da chave no mesmo
+ * lote. Repetir o mesmo pedido (mesma chave e conteúdo) devolve o estado em vez de recusar.
+ */
 async function atoDoUsuario(
   ctx: RequestContext,
   c: Contexto,
   esperada: number,
   instrucoes: (db: D1Database, now: number) => D1PreparedStatement[],
-  idem?: { cmd: IdempotentCommand; started: Extract<IdempotencyOutcome, { kind: "new" }> },
+  idem: { cmd: IdempotentCommand; started: Extract<IdempotencyOutcome, { kind: "new" }> },
+  status = 200,
 ): Promise<Response> {
   const db = ctx.env.DB;
   const now = ctx.clock.now();
   try {
-    await db.batch([guarda(db, c.systemId, esperada), ...instrucoes(db, now)]);
+    await db.batch([
+      guarda(db, c.systemId, esperada),
+      ...instrucoes(db, now),
+      recordStatement(ctx, idem.cmd, idem.started, c.systemId, status, now),
+    ]);
   } catch (error) {
     return falhaDoLote(ctx, c, error, idem);
   }
-  return estado(ctx, c, idem ? 201 : 200);
+  return estado(ctx, c, status);
+}
+
+/** Abre um ato do usuário com idempotência; devolve null quando é repetição já atendida. */
+async function iniciarAto(ctx: RequestContext, c: Contexto, command: string, body: unknown) {
+  const cmd = { scope: c.systemId, actorId: c.user.id, command, body };
+  const started = await beginIdempotent(ctx, cmd);
+  return started.kind === "replay" ? null : { cmd, started };
 }
 
 /** Confirmar é ato do usuário, um requisito por vez (seção 8, passo 3). */
 export const confirmarRequisito: Handler = async (ctx) => {
   const c = await abrir(ctx);
   exigirRascunho(c);
-  const { revisao: esperada } = parse(RevisaoBody, await readJson(ctx.request));
+  const body = parse(RevisaoBody, await readJson(ctx.request));
+  const esperada = body.revisao;
   const codigo = ctx.params.codigo ?? "";
+  const idem = await iniciarAto(ctx, c, `requisito.confirmar:${codigo}`, body);
+  if (!idem) return estado(ctx, c);
   await conversa(ctx, c);
   const atual = await requisitoVivo(ctx, c, codigo);
-  if (atual.status === "confirmado") return estado(ctx, c); // repetição inofensiva
+  if (atual.status === "confirmado") return estado(ctx, c); // já confirmado: nada a fazer
   await exigirRevisao(ctx, c, esperada);
-  return atoDoUsuario(ctx, c, esperada, (db, now) => [
-    db
-      .prepare(
-        `UPDATE requirements SET status = 'confirmado', confirmed_by = ?, confirmed_at = ?, updated_at = max(updated_at, ?)
+  return atoDoUsuario(
+    ctx,
+    c,
+    esperada,
+    (db, now) => [
+      db
+        .prepare(
+          `UPDATE requirements SET status = 'confirmado', confirmed_by = ?, confirmed_at = ?, updated_at = max(updated_at, ?)
          WHERE system_id = ? AND code = ? AND status = 'pendente'`,
-      )
-      .bind(c.user.id, now, now, c.systemId, codigo),
-    invalidarVersoesDaConversa(db, c.systemId),
-    auditar(db, c, "requisito.confirmado", codigo, now),
-  ]);
+        )
+        .bind(c.user.id, now, now, c.systemId, codigo),
+      invalidarVersoesDaConversa(db, c.systemId),
+      auditar(db, c, "requisito.confirmado", codigo, now),
+    ],
+    idem,
+  );
 };
 
 /** O usuário reescreve: a versão anterior vira substituída e o texto dele já vale como confirmado. */
 export const editarRequisito: Handler = async (ctx) => {
   const c = await abrir(ctx);
   exigirRascunho(c);
-  const { texto, revisao: esperada } = parse(TextoBody, await readJson(ctx.request));
+  const body = parse(TextoBody, await readJson(ctx.request));
+  const { texto, revisao: esperada } = body;
   const codigo = ctx.params.codigo ?? "";
+  const idem = await iniciarAto(ctx, c, `requisito.editar:${codigo}`, body);
+  if (!idem) return estado(ctx, c);
   await conversa(ctx, c);
   const atual = await requisitoVivo(ctx, c, codigo);
   if (normalizar(atual.text) === normalizar(texto) && atual.status === "confirmado") {
     return estado(ctx, c);
   }
   await exigirRevisao(ctx, c, esperada);
-  return atoDoUsuario(ctx, c, esperada, (db, now) => [
-    substituir(db, c.systemId, codigo, now),
-    inserirRequisito(db, {
-      systemId: c.systemId,
-      codigo,
-      texto,
-      origem: "usuario",
-      mensagem: null,
-      confirmadoPor: c.user.id,
-      now,
-    }),
-    invalidarVersoesDaConversa(db, c.systemId),
-    auditar(db, c, "requisito.editado", codigo, now),
-  ]);
+  return atoDoUsuario(
+    ctx,
+    c,
+    esperada,
+    (db, now) => [
+      substituir(db, c.systemId, codigo, now),
+      inserirRequisito(db, {
+        systemId: c.systemId,
+        codigo,
+        texto,
+        origem: "usuario",
+        mensagem: null,
+        confirmadoPor: c.user.id,
+        now,
+      }),
+      invalidarVersoesDaConversa(db, c.systemId),
+      auditar(db, c, "requisito.editado", codigo, now),
+    ],
+    idem,
+  );
 };
 
 /** Descartar tira o requisito da lista (fica no histórico como substituído). */
 export const descartarRequisito: Handler = async (ctx) => {
   const c = await abrir(ctx);
   exigirRascunho(c);
-  const { revisao: esperada } = parse(RevisaoBody, await readJson(ctx.request));
+  const body = parse(RevisaoBody, await readJson(ctx.request));
+  const esperada = body.revisao;
   const codigo = ctx.params.codigo ?? "";
+  const idem = await iniciarAto(ctx, c, `requisito.descartar:${codigo}`, body);
+  if (!idem) return estado(ctx, c);
   await conversa(ctx, c);
   await requisitoVivo(ctx, c, codigo);
   await exigirRevisao(ctx, c, esperada);
-  return atoDoUsuario(ctx, c, esperada, (db, now) => [
-    substituir(db, c.systemId, codigo, now),
-    invalidarVersoesDaConversa(db, c.systemId),
-    auditar(db, c, "requisito.descartado", codigo, now),
-  ]);
+  return atoDoUsuario(
+    ctx,
+    c,
+    esperada,
+    (db, now) => [
+      substituir(db, c.systemId, codigo, now),
+      invalidarVersoesDaConversa(db, c.systemId),
+      auditar(db, c, "requisito.descartado", codigo, now),
+    ],
+    idem,
+  );
 };
 
 /** O usuário acrescenta um requisito com as próprias palavras (já confirmado). */
@@ -625,9 +671,9 @@ export const adicionarRequisito: Handler = async (ctx) => {
       }),
       invalidarVersoesDaConversa(db, c.systemId),
       auditar(db, c, "requisito.adicionado", codigo, now),
-      recordStatement(ctx, cmd, started, codigo, 201, now),
     ],
     { cmd, started },
+    201,
   );
 };
 
@@ -684,39 +730,42 @@ async function gerarVersao(
     { sistema: c.systemId, usuario: c.user.id, finalidade, chave: chaveDoPedido(ctx) },
     pedido,
   );
-  let proposta: unknown;
-  try {
-    proposta = JSON.parse(resposta.texto);
-  } catch {
-    throw respostaInvalida();
-  }
-  const result = validateDraft(comRequisitosConfirmados(proposta, confirmados));
-  if (!result.draft) {
-    // Estrutura fora do contrato: nada é gravado; o diagnóstico volta para o usuário decidir.
-    return json({ versao: null, issues: result.issues }, { status: 422 });
-  }
-  const draft = result.draft;
-  const id = crypto.randomUUID();
-  const now = ctx.clock.now();
-  const db = ctx.env.DB;
-  try {
-    await db.batch([
-      guarda(db, c.systemId, esperada),
-      ...(await versaoStatements(ctx, {
-        id,
-        systemId: c.systemId,
-        userId: c.user.id,
-        origem: "chat",
-        draft,
-        issues: result.issues,
-        now,
-      })),
-      recordStatement(ctx, idem.cmd, idem.started, id, 201, now),
-    ]);
-  } catch (error) {
-    return falhaDoLote(ctx, c, error, idem);
-  }
-  return estado(ctx, c, 201);
+  return aposIa(ctx, resposta.usoId, async () => {
+    let proposta: unknown;
+    try {
+      proposta = JSON.parse(resposta.texto);
+    } catch {
+      throw respostaInvalida();
+    }
+    const result = validateDraft(comRequisitosConfirmados(proposta, confirmados));
+    if (!result.draft) {
+      // Estrutura fora do contrato: nada é gravado; o diagnóstico volta para o usuário decidir.
+      await liberarChave(ctx, resposta.usoId);
+      return json({ versao: null, issues: result.issues }, { status: 422 });
+    }
+    const draft = result.draft;
+    const id = crypto.randomUUID();
+    const now = ctx.clock.now();
+    const db = ctx.env.DB;
+    try {
+      await db.batch([
+        guarda(db, c.systemId, esperada),
+        ...(await versaoStatements(ctx, {
+          id,
+          systemId: c.systemId,
+          userId: c.user.id,
+          origem: "chat",
+          draft,
+          issues: result.issues,
+          now,
+        })),
+        recordStatement(ctx, idem.cmd, idem.started, id, 201, now),
+      ]);
+    } catch (error) {
+      return falhaDoLote(ctx, c, error, idem);
+    }
+    return estado(ctx, c, 201);
+  });
 }
 
 /** Passos 5 a 7: gerar a configuração a partir dos requisitos confirmados e validar. */

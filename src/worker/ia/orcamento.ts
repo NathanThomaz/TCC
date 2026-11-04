@@ -29,14 +29,16 @@ export function custoMicroBrl(tokensEntrada: number, tokensSaida: number): numbe
 }
 
 /**
- * Limite superior dos tokens de entrada: um token tem pelo menos um caractere, então o número de
- * caracteres nunca fica abaixo do de tokens. Exagera o custo de propósito (a reserva é o pior caso).
+ * Limite superior dos tokens de entrada: o tokenizador cobre qualquer texto por bytes, então um
+ * token tem pelo menos um byte UTF-8 e o número de bytes nunca fica abaixo do de tokens (inclusive
+ * com acentos e emoji). Exagera o custo de propósito: a reserva é o pior caso.
  */
 export function estimarTokens(pedido: PedidoIa): number {
+  const bytes = (texto: string) => new TextEncoder().encode(texto).byteLength;
   return (
-    pedido.instrucoes.length +
-    JSON.stringify(pedido.schema).length +
-    pedido.mensagens.reduce((soma, m) => soma + m.texto.length, 0)
+    bytes(pedido.instrucoes) +
+    bytes(JSON.stringify(pedido.schema)) +
+    pedido.mensagens.reduce((soma, m) => soma + bytes(m.texto), 0)
   );
 }
 
@@ -92,27 +94,58 @@ const CONSUMO_DO_MES = `(SELECT COALESCE(SUM(CASE state
     ELSE reserved_micro_brl END), 0) FROM ai_usage WHERE created_at >= ?8)`;
 
 /**
+ * Solta a chave de uma chamada concluída cujo resultado NÃO foi gravado (resposta inválida, estado
+ * alterado): a repetição com a mesma chave pode tentar de novo. Sem isso, a chave fica travada até
+ * o resultado ser gravado, para uma repetição em paralelo não pagar a IA de novo.
+ */
+export async function liberarChave(ctx: Pick<RequestContext, "env">, usoId: string) {
+  await ctx.env.DB.prepare("UPDATE ai_usage SET idempotency_key = NULL WHERE id = ?")
+    .bind(usoId)
+    .run();
+}
+
+/** Roda o que vem depois da IA; se falhar, solta a chave antes de propagar o erro. */
+export async function aposIa<T>(
+  ctx: Pick<RequestContext, "env">,
+  usoId: string,
+  passo: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await passo();
+  } catch (error) {
+    await liberarChave(ctx, usoId);
+    throw error;
+  }
+}
+
+/**
  * Executa uma chamada dentro do orçamento: reserva o pior caso → chama → registra o consumo.
  * Lança `limite_ia` sem chamar o provedor quando a reserva não cabe no teto, e
- * `ia_em_andamento` se a mesma chave já tem uma chamada aberta.
+ * `ia_em_andamento` se a mesma chave já tem uma chamada aberta ou concluída sem resultado gravado.
  */
 export async function chamarComOrcamento(
   ctx: Pick<RequestContext, "env" | "clock" | "log">,
   provedor: ProvedorIa,
   chamada: ChamadaIa,
   pedido: PedidoIa,
-): Promise<RespostaIa> {
+): Promise<RespostaIa & { usoId: string }> {
   const db = ctx.env.DB;
   const agora = ctx.clock.now();
   const reserva = custoMicroBrl(estimarTokens(pedido), MAX_TOKENS_SAIDA);
   const id = crypto.randomUUID();
   let inserida: D1Result;
   try {
-    const [, resultado] = await db.batch([
+    const [, , resultado] = await db.batch([
       // Reserva parada (Worker interrompido): continua contando pelo valor reservado, mas solta a chave.
       db
         .prepare(
           "UPDATE ai_usage SET state = 'incerto', error = 'reserva_parada' WHERE state = 'reservado' AND created_at < ?",
+        )
+        .bind(agora - RESERVA_PARADA_MS),
+      // Chamada concluída há tempo: o resultado já foi gravado (e a repetição vira replay) ou se perdeu.
+      db
+        .prepare(
+          "UPDATE ai_usage SET idempotency_key = NULL WHERE state = 'concluido' AND idempotency_key IS NOT NULL AND finished_at < ?",
         )
         .bind(agora - RESERVA_PARADA_MS),
       db
@@ -181,5 +214,5 @@ export async function chamarComOrcamento(
       id,
     )
     .run();
-  return resposta;
+  return { ...resposta, usoId: id };
 }

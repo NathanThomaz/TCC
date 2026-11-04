@@ -123,7 +123,6 @@ export function Criar() {
           <Configuracao
             sistema={id}
             estado={estado}
-            config={detalhe.data?.ultimaConfig ?? null}
             bloqueado={!estado.iaDisponivel || !rascunho}
             onEstado={atualizar}
           />
@@ -152,9 +151,10 @@ function Conversa({
     // Mesma chave enquanto o texto não mudar: reenviar depois de uma falha não duplica a rodada.
     mutationFn: (t: string) =>
       enviarMensagem(sistema, estado.revisao, t, chave({ t, revisao: estado.revisao })),
-    onSuccess: (e) => {
+    onSuccess: (e, enviado) => {
       onEstado(e);
-      setTexto("");
+      // Só limpa se a caixa ainda tem o que foi enviado (o usuário pode ter começado outra).
+      setTexto((atual) => (atual.trim() === enviado ? "" : atual));
     },
     onError: recarregar,
   });
@@ -271,12 +271,15 @@ function Requisitos({
   const [novo, setNovo] = useState("");
   const chave = useChavePorConteudo();
   const recarregar = useRecarregarSeAlterado(sistema);
+  // Mesma chave para o mesmo ato sobre a mesma revisão: um retry não aplica duas vezes.
+  const chaveAcao = useChavePorConteudo();
   const acao = useMutation({
     mutationFn: (a: {
       codigo: string;
       acao: "confirmar" | "editar" | "descartar";
       texto?: string;
-    }) => acaoRequisito(sistema, a.codigo, a.acao, estado.revisao, a.texto),
+      revisao: number;
+    }) => acaoRequisito(sistema, a.codigo, a.acao, a.revisao, a.texto, chaveAcao(a)),
     onSuccess: (e) => {
       onEstado(e);
       setEditando(null);
@@ -315,14 +318,16 @@ function Requisitos({
       <ul className="space-y-2">
         {estado.requisitos.map((r) => (
           <ItemRequisito
-            key={r.codigo}
+            // Texto novo (a IA reescreveu) = componente novo: a edição nunca parte do texto antigo.
+            key={`${r.codigo}:${r.texto}`}
+            revisao={estado.revisao}
             requisito={r}
             editando={editando === r.codigo}
             bloqueado={bloqueado || acao.isPending}
             onEditar={() => setEditando(r.codigo)}
             onCancelar={() => setEditando(null)}
-            onAcao={(a, texto) =>
-              acao.mutate({ codigo: r.codigo, acao: a, ...(texto ? { texto } : {}) })
+            onAcao={(a, revisao, texto) =>
+              acao.mutate({ codigo: r.codigo, acao: a, revisao, ...(texto ? { texto } : {}) })
             }
           />
         ))}
@@ -362,6 +367,7 @@ function Requisitos({
 function ItemRequisito({
   requisito: r,
   editando,
+  revisao,
   bloqueado,
   onEditar,
   onCancelar,
@@ -369,12 +375,15 @@ function ItemRequisito({
 }: {
   requisito: RequisitoDto;
   editando: boolean;
+  revisao: number;
   bloqueado: boolean;
   onEditar: () => void;
   onCancelar: () => void;
-  onAcao: (acao: "confirmar" | "editar" | "descartar", texto?: string) => void;
+  onAcao: (acao: "confirmar" | "editar" | "descartar", revisao: number, texto?: string) => void;
 }) {
   const [texto, setTexto] = useState(r.texto);
+  // A edição vale para a revisão em que foi aberta: se algo mudar enquanto edita, é recusada.
+  const [revisaoDaEdicao, setRevisaoDaEdicao] = useState(revisao);
   const confirmado = r.status === "confirmado";
   return (
     <li
@@ -390,7 +399,7 @@ function ItemRequisito({
           className="space-y-2"
           onSubmit={(e) => {
             e.preventDefault();
-            onAcao("editar", texto.trim());
+            onAcao("editar", revisaoDaEdicao, texto.trim());
           }}
         >
           <Label htmlFor={`req-${r.codigo}`}>{r.codigo}</Label>
@@ -427,7 +436,7 @@ function ItemRequisito({
               {r.origem === "usuario" ? " · escrito por você" : ""}
             </span>
             {!bloqueado && !confirmado && (
-              <Button size="sm" variant="outline" onClick={() => onAcao("confirmar")}>
+              <Button size="sm" variant="outline" onClick={() => onAcao("confirmar", revisao)}>
                 <Check aria-hidden /> Confirmar
               </Button>
             )}
@@ -437,7 +446,11 @@ function ItemRequisito({
                   size="sm"
                   variant="ghost"
                   aria-label={`Editar ${r.codigo}`}
-                  onClick={onEditar}
+                  onClick={() => {
+                    setTexto(r.texto);
+                    setRevisaoDaEdicao(revisao);
+                    onEditar();
+                  }}
                 >
                   <Pencil aria-hidden />
                 </Button>
@@ -445,7 +458,7 @@ function ItemRequisito({
                   size="sm"
                   variant="ghost"
                   aria-label={`Descartar ${r.codigo}`}
-                  onClick={() => onAcao("descartar")}
+                  onClick={() => onAcao("descartar", revisao)}
                 >
                   <Trash2 aria-hidden />
                 </Button>
@@ -461,13 +474,11 @@ function ItemRequisito({
 function Configuracao({
   sistema,
   estado,
-  config,
   bloqueado,
   onEstado,
 }: {
   sistema: string;
   estado: EstadoCriacao;
-  config: ConfigDraft | null;
   bloqueado: boolean;
   onEstado: (e: EstadoCriacao) => void;
 }) {
@@ -490,6 +501,7 @@ function Configuracao({
       iaDisponivel: r.iaDisponivel ?? estado.iaDisponivel,
       versao: r.versao ?? null,
       issues: r.issues ?? [],
+      config: r.config ?? null,
     });
   };
   const gerar = useMutation({
@@ -570,7 +582,7 @@ function Configuracao({
               · {v.origem === "chat" ? "gerada pela conversa" : "do formulário"}
             </span>
           </p>
-          {config && <Previa config={config} />}
+          {estado.config && <Previa config={estado.config} />}
           {estado.issues.length > 0 && (
             <IssueList
               issues={estado.issues}

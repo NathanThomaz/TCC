@@ -15,6 +15,7 @@ const vazio: EstadoCriacao = {
   iaDisponivel: true,
   versao: null,
   issues: [],
+  config: null,
 };
 const obterCriacao = vi.fn<() => Promise<EstadoCriacao>>();
 const enviarMensagem =

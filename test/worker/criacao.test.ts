@@ -452,6 +452,8 @@ describe("revisão cruzada: estado que muda durante a resposta da IA", () => {
       schema: {},
     };
     expect(estimarTokens(pedido)).toBe(3 + 2 + 2);
+    // Acento conta pelos bytes UTF-8 (um token cobre pelo menos um byte).
+    expect(estimarTokens({ ...pedido, instrucoes: "ã" })).toBe(2 + 2 + 2);
   });
 
   it("acréscimos simultâneos com a mesma revisão: só um entra (limite e código atômicos)", async () => {
@@ -463,5 +465,44 @@ describe("revisão cruzada: estado que muda durante a resposta da IA", () => {
     );
     expect(respostas.filter((r) => r.status === 201)).toHaveLength(1);
     expect((await call("GET", c(), ADMIN)).body.requisitos).toHaveLength(1);
+  });
+});
+
+describe("revisão cruzada, segunda passada", () => {
+  it("resposta inválida solta a chave: repetir o mesmo pedido tenta de novo", async () => {
+    const corpo = { texto: "Olá", revisao: await rev() };
+    roteiro.push("isto não é json");
+    expect((await call("POST", c("/mensagens"), ADMIN, corpo, "chave-retry-1")).status).toBe(502);
+    roteiro.push(levantamento({ requisitos: [{ codigo: null, texto: TEXTOS[0] }] }));
+    const de_novo = await call("POST", c("/mensagens"), ADMIN, corpo, "chave-retry-1");
+    expect(de_novo.status).toBe(201);
+    expect(pedidos).toHaveLength(2);
+  });
+
+  it("confirmar repetido com a mesma chave devolve o estado, sem 409", async () => {
+    roteiro.push(levantamento({ requisitos: [{ codigo: null, texto: TEXTOS[0] }] }));
+    await acao(c("/mensagens"), { texto: "Olá" });
+    const corpo = { revisao: await rev() };
+    const a = await call("POST", c("/requisitos/REQ-01/confirmar"), ADMIN, corpo, "chave-conf-1");
+    const b = await call("POST", c("/requisitos/REQ-01/confirmar"), ADMIN, corpo, "chave-conf-1");
+    expect([a.status, b.status]).toEqual([200, 200]);
+    expect(b.body.requisitos![0]!.status).toBe("confirmado");
+    const desc = { revisao: await rev() };
+    await call("POST", c("/requisitos/REQ-01/descartar"), ADMIN, desc, "chave-desc-1");
+    const repetido = await call(
+      "POST",
+      c("/requisitos/REQ-01/descartar"),
+      ADMIN,
+      desc,
+      "chave-desc-1",
+    );
+    expect(repetido.status).toBe(200);
+  });
+
+  it("a configuração da prévia vem junto com a versão (mesma resposta)", async () => {
+    await requisitosConfirmados();
+    roteiro.push(JSON.stringify(DISTRIBUIDORA));
+    const g = await acao(c("/gerar"));
+    expect(g.body.config!.regras).toEqual(DISTRIBUIDORA.regras);
   });
 });
