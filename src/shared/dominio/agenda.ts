@@ -108,6 +108,57 @@ export function sobrepoe(a: Intervalo, b: Intervalo): boolean {
   return a.inicio < b.fim && b.inicio < a.fim;
 }
 
+function partesEmSaoPaulo(instante: number) {
+  const partes = new Intl.DateTimeFormat("en-CA", {
+    timeZone: FUSO,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(instante);
+  const valor = (tipo: string) => partes.find((p) => p.type === tipo)?.value ?? "00";
+  return {
+    ano: valor("year"),
+    mes: valor("month"),
+    dia: valor("day"),
+    hora: valor("hour"),
+    minuto: valor("minute"),
+  };
+}
+
+/** Valor para `<input type="datetime-local">` ("2026-11-06T14:00") no fuso do Nexus. */
+export function paraCampoLocal(instante: number): string {
+  const p = partesEmSaoPaulo(instante);
+  return `${p.ano}-${p.mes}-${p.dia}T${p.hora}:${p.minuto}`;
+}
+
+/**
+ * "2026-11-06T14:00" lido como horário de São Paulo → instante UTC, independente do fuso do
+ * navegador. O deslocamento vem do Intl (vale também se o horário de verão voltar).
+ */
+export function deCampoLocal(texto: string): number | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(texto);
+  if (!m) return null;
+  const [ano, mes, dia, hora, minuto] = m.slice(1).map(Number) as [
+    number,
+    number,
+    number,
+    number,
+    number,
+  ];
+  const comoUtc = Date.UTC(ano, mes - 1, dia, hora, minuto);
+  let instante = comoUtc;
+  // Duas passadas resolvem a troca de deslocamento perto da virada.
+  for (let i = 0; i < 2; i++) {
+    const p = partesEmSaoPaulo(instante);
+    const lido = Date.UTC(+p.ano, +p.mes - 1, +p.dia, +p.hora, +p.minuto);
+    instante += comoUtc - lido;
+  }
+  return instante;
+}
+
 /** "05/11/2026 14:30" no fuso do Nexus. */
 export function formatarDataHora(instante: number): string {
   return new Intl.DateTimeFormat("pt-BR", {

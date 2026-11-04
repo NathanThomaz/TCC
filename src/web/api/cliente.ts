@@ -29,7 +29,7 @@ export async function tokenAtual(): Promise<string | null> {
 
 export async function chamar<T>(
   caminho: string,
-  opcoes: { method?: "GET" | "POST"; body?: unknown; chave?: string } = {},
+  opcoes: { method?: "GET" | "POST" | "PATCH"; body?: unknown; chave?: string } = {},
 ): Promise<T> {
   const token = await tokenAtual();
   const headers: Record<string, string> = {};

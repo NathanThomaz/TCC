@@ -92,6 +92,8 @@ export interface MovimentoDto {
   motivo: string | null;
   venda: string | null;
   autor: string;
+  /** E-mail de quem registrou (EST-02: responsável). */
+  autorEmail: string;
   criadoEm: number;
 }
 

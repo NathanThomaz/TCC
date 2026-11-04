@@ -25,6 +25,7 @@ interface MovimentoRow {
   reason: string | null;
   sale_id: string | null;
   actor_id: string;
+  actor_email: string;
   created_at: number;
 }
 
@@ -40,6 +41,7 @@ function publicMovimento(row: MovimentoRow): MovimentoDto {
     motivo: row.reason,
     venda: row.sale_id,
     autor: row.actor_id,
+    autorEmail: row.actor_email,
     criadoEm: row.created_at,
   };
 }
@@ -60,10 +62,11 @@ const CorrecaoBody = z.object({
   motivo,
 });
 
+const SELECT_MOVIMENTO =
+  "SELECT m.*, u.email AS actor_email FROM stock_movements m JOIN users u ON u.id = m.actor_id";
+
 async function carregarMovimento(ctx: RequestContext, systemId: string, id: string) {
-  const row = await ctx.env.DB.prepare(
-    "SELECT * FROM stock_movements WHERE id = ? AND system_id = ?",
-  )
+  const row = await ctx.env.DB.prepare(`${SELECT_MOVIMENTO} WHERE m.id = ? AND m.system_id = ?`)
     .bind(id, systemId)
     .first<MovimentoRow>();
   if (!row) throw notFound();
@@ -79,8 +82,8 @@ export const listarMovimentos: Handler = async (ctx) => {
   const op = await abrirOperacao(ctx, "estoque");
   const produto = ctx.url.searchParams.get("produto");
   const { results } = await ctx.env.DB.prepare(
-    `SELECT * FROM stock_movements WHERE system_id = ?1 AND (?2 IS NULL OR product_id = ?2)
-     ORDER BY created_at DESC, rowid DESC LIMIT 200`,
+    `${SELECT_MOVIMENTO} WHERE m.system_id = ?1 AND (?2 IS NULL OR m.product_id = ?2)
+     ORDER BY m.created_at DESC, m.rowid DESC LIMIT 200`,
   )
     .bind(op.systemId, produto)
     .all<MovimentoRow>();

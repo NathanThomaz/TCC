@@ -6,6 +6,14 @@ import { AppShell } from "@/components/nexus/AppShell";
 import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider } from "@/lib/auth";
 import { TemaProvider } from "@/lib/tema";
+import { Agenda } from "@/pages/app/Agenda";
+import { Aplicacao } from "@/pages/app/Aplicacao";
+import { Estoque } from "@/pages/app/Estoque";
+import { Painel } from "@/pages/app/Painel";
+import { Pessoas } from "@/pages/app/Pessoas";
+import { Produtos } from "@/pages/app/Produtos";
+import { VendaEditor } from "@/pages/app/VendaEditor";
+import { Vendas } from "@/pages/app/Vendas";
 import { Configuracoes } from "@/pages/Configuracoes";
 import { Configurar } from "@/pages/Configurar";
 import { DetalheSistema } from "@/pages/DetalheSistema";
@@ -46,6 +54,16 @@ createRoot(root).render(
                 <Route path="/sistemas" element={<Sistemas />} />
                 <Route path="/sistemas/:id" element={<DetalheSistema />} />
                 <Route path="/sistemas/:id/configurar" element={<Configurar />} />
+                <Route path="/sistemas/:id/app" element={<Aplicacao />}>
+                  <Route index element={<Painel />} />
+                  <Route path="clientes" element={<Pessoas tipo="clientes" />} />
+                  <Route path="profissionais" element={<Pessoas tipo="profissionais" />} />
+                  <Route path="produtos" element={<Produtos />} />
+                  <Route path="estoque" element={<Estoque />} />
+                  <Route path="vendas" element={<Vendas />} />
+                  <Route path="vendas/:venda" element={<VendaEditor />} />
+                  <Route path="agenda" element={<Agenda />} />
+                </Route>
                 <Route path="/perfil" element={<Perfil />} />
                 <Route path="/configuracoes" element={<Configuracoes />} />
               </Route>
