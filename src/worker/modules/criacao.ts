@@ -33,7 +33,7 @@ import {
   pedidoCorrecao,
   type Levantamento,
 } from "../ia/prompts";
-import { isUnique, parse } from "./comum";
+import { isUnique, parse, triggerCode } from "./comum";
 import { versaoStatements } from "./systems";
 
 // Criação por conversa (seção 8). A IA conversa, extrai requisitos e propõe a configuração; o
@@ -87,12 +87,14 @@ interface RequisitoRow {
 
 async function conversa(ctx: RequestContext, c: Contexto): Promise<string> {
   const db = ctx.env.DB;
-  await db
-    .prepare(
-      "INSERT OR IGNORE INTO conversations (id, system_id, user_id, kind, created_at) VALUES (?, ?, ?, 'criacao', ?)",
-    )
-    .bind(crypto.randomUUID(), c.systemId, c.user.id, ctx.clock.now())
-    .run();
+  await db.batch([
+    db
+      .prepare(
+        "INSERT OR IGNORE INTO conversations (id, system_id, user_id, kind, created_at) VALUES (?, ?, ?, 'criacao', ?)",
+      )
+      .bind(crypto.randomUUID(), c.systemId, c.user.id, ctx.clock.now()),
+    db.prepare("INSERT OR IGNORE INTO creation_state (system_id) VALUES (?)").bind(c.systemId),
+  ]);
   const row = await db
     .prepare(
       "SELECT id FROM conversations WHERE system_id = ? AND user_id = ? AND kind = 'criacao'",
@@ -175,10 +177,62 @@ async function ultimaVersao(ctx: RequestContext, systemId: string) {
   };
 }
 
+// ---- Revisão do estado: nada é gravado sobre um estado que mudou enquanto a IA respondia ----
+
+async function revisaoAtual(ctx: RequestContext, systemId: string): Promise<number> {
+  const row = await ctx.env.DB.prepare("SELECT revision FROM creation_state WHERE system_id = ?")
+    .bind(systemId)
+    .first<{ revision: number }>();
+  return row?.revision ?? 0;
+}
+
+const estadoAlterado = () =>
+  new AppError(
+    409,
+    "estado_alterado",
+    "Os requisitos mudaram em outra tela enquanto isto era feito. Nada foi gravado: confira e tente de novo.",
+  );
+
+/** Primeiro (rápido): a revisão que o usuário viu ainda é a atual? */
+async function exigirRevisao(ctx: RequestContext, c: Contexto, esperada: number) {
+  if ((await revisaoAtual(ctx, c.systemId)) !== esperada) throw estadoAlterado();
+}
+
+/**
+ * Depois (atômico): a mesma conferência dentro do lote. O trigger creation_state_revision recusa se
+ * outra gravação passou na frente, e creation_state_only_draft se o sistema deixou de ser rascunho.
+ */
+function guarda(db: D1Database, systemId: string, esperada: number): D1PreparedStatement {
+  return db
+    .prepare("UPDATE creation_state SET revision = ? WHERE system_id = ?")
+    .bind(esperada + 1, systemId);
+}
+
+/** Lote recusado: repetição da mesma chave devolve o resultado; guardas viram 409 claros. */
+async function falhaDoLote(
+  ctx: RequestContext,
+  c: Contexto,
+  error: unknown,
+  idem?: { cmd: IdempotentCommand; started: Extract<IdempotencyOutcome, { kind: "new" }> },
+): Promise<Response> {
+  if (idem) {
+    const replay = await replayAfterRace(ctx, idem.cmd, idem.started);
+    if (replay?.kind === "replay") return estado(ctx, c, replay.statusCode);
+  }
+  const codigo = triggerCode(error, ["estado_alterado", "sistema_nao_rascunho"]);
+  if (codigo === "estado_alterado") throw estadoAlterado();
+  if (codigo === "sistema_nao_rascunho") {
+    throw conflict("O sistema foi ativado; a criação por conversa não altera mais nada.");
+  }
+  if (isUnique(error)) throw estadoAlterado();
+  throw error;
+}
+
 async function estado(ctx: RequestContext, c: Contexto, status = 200): Promise<Response> {
   const conversaId = await conversa(ctx, c);
   const { versao, issues } = await ultimaVersao(ctx, c.systemId);
   const body: CriacaoApiBody = {
+    revisao: await revisaoAtual(ctx, c.systemId),
     mensagens: await mensagens(ctx, conversaId),
     requisitos: await requisitosVivos(ctx, c.systemId),
     iaDisponivel: ctx.ia !== undefined,
@@ -314,7 +368,11 @@ function auditar(db: D1Database, c: Contexto, acao: string, alvo: string, now: n
 
 // ---- Conversa ----
 
-const MensagemBody = z.object({ texto: z.string().trim().min(1).max(2000) });
+const revisao = z.number().int().min(0);
+const MensagemBody = z.object({ texto: z.string().trim().min(1).max(2000), revisao });
+const RevisaoBody = z.object({ revisao });
+const TextoBody = z.object({ texto: z.string().trim().min(3).max(400), revisao });
+const CorrigirBody = z.object({ versao: z.string().min(1).max(100), revisao });
 
 function lerJsonDaIa<T>(texto: string, schema: z.ZodType<T>): T {
   let valor: unknown;
@@ -335,23 +393,12 @@ const respostaInvalida = () =>
     "A IA respondeu fora do formato esperado. Nada foi alterado; tente de novo.",
   );
 
-async function repetida(
-  ctx: RequestContext,
-  c: Contexto,
-  cmd: IdempotentCommand,
-  started: Extract<IdempotencyOutcome, { kind: "new" }>,
-  error: unknown,
-): Promise<Response> {
-  const replay = isUnique(error) ? await replayAfterRace(ctx, cmd, started) : null;
-  if (replay?.kind === "replay") return estado(ctx, c, replay.statusCode);
-  if (isUnique(error)) throw conflict("Outra mensagem foi gravada ao mesmo tempo. Tente de novo.");
-  throw error;
-}
+const chaveDoPedido = (ctx: RequestContext) => ctx.request.headers.get("idempotency-key") ?? "";
 
 /**
  * Uma rodada da conversa: a mensagem do usuário, a resposta da IA e as mudanças de requisitos
- * são gravadas juntas, só depois de a IA responder. Se a IA falhar, nada muda e o texto pode ser
- * reenviado (a tela o mantém).
+ * são gravadas juntas, só depois de a IA responder e só se nada mudou nesse meio-tempo (revisão).
+ * Se a IA falhar, nada muda e o texto pode ser reenviado (a tela o mantém).
  */
 export const enviarMensagem: Handler = async (ctx) => {
   const c = await abrir(ctx);
@@ -363,8 +410,10 @@ export const enviarMensagem: Handler = async (ctx) => {
   if (!ctx.ia) throw iaNaoConfigurada();
 
   const conversaId = await conversa(ctx, c);
+  await exigirRevisao(ctx, c, body.revisao);
   const historico = (await mensagens(ctx, conversaId)).slice(-HISTORICO);
   const vivos = await requisitosVivos(ctx, c.systemId);
+  const maior = await maiorCodigo(ctx, c.systemId);
   const pedido: PedidoIa = {
     instrucoes: instrucoesLevantamento(
       c.nome,
@@ -382,11 +431,17 @@ export const enviarMensagem: Handler = async (ctx) => {
   const resposta = await chamarComOrcamento(
     ctx,
     ctx.ia,
-    { sistema: c.systemId, usuario: c.user.id, finalidade: "levantamento" },
+    {
+      sistema: c.systemId,
+      usuario: c.user.id,
+      finalidade: "levantamento",
+      chave: chaveDoPedido(ctx),
+    },
     pedido,
   );
   const ia = lerJsonDaIa(resposta.texto, LevantamentoSchema);
-  const mescla = mesclarRequisitos(vivos, ia.requisitos, await maiorCodigo(ctx, c.systemId));
+  // Calculada sobre o estado da revisão lida; a guarda garante que é o mesmo na gravação.
+  const mescla = mesclarRequisitos(vivos, ia.requisitos, maior);
 
   const db = ctx.env.DB;
   const now = ctx.clock.now();
@@ -402,6 +457,7 @@ export const enviarMensagem: Handler = async (ctx) => {
   const algumConfirmadoMudou = mescla.reescritos.some((r) => r.eraConfirmado);
   try {
     await db.batch([
+      guarda(db, c.systemId, body.revisao),
       inserirMensagem(idUsuario, "usuario", body.texto, {}),
       inserirMensagem(idIa, "assistente", ia.resposta, {
         perguntas: ia.perguntas,
@@ -435,14 +491,14 @@ export const enviarMensagem: Handler = async (ctx) => {
       recordStatement(ctx, cmd, started, idIa, 201, now),
     ]);
   } catch (error) {
-    return repetida(ctx, c, cmd, started, error);
+    return falhaDoLote(ctx, c, error, { cmd, started });
   }
   return estado(ctx, c, 201);
 };
 
 // ---- Atos do usuário sobre os requisitos ----
-
-const TextoBody = z.object({ texto: z.string().trim().min(3).max(400) });
+// Cada ato envia a revisão que a tela mostrava: confirmar, editar ou descartar vale para o texto
+// que o usuário viu; se a IA ou outra tela mudou algo, o ato é recusado e a tela recarrega.
 
 async function requisitoVivo(ctx: RequestContext, c: Contexto, codigo: string) {
   const row = await ctx.env.DB.prepare(
@@ -454,77 +510,88 @@ async function requisitoVivo(ctx: RequestContext, c: Contexto, codigo: string) {
   return row;
 }
 
-/** Confirmar é ato do usuário, um requisito por vez (seção 8, passo 3). Repetir é inofensivo. */
+/** Ato do usuário sobre o estado da revisão enviada (lote único com a guarda). */
+async function atoDoUsuario(
+  ctx: RequestContext,
+  c: Contexto,
+  esperada: number,
+  instrucoes: (db: D1Database, now: number) => D1PreparedStatement[],
+  idem?: { cmd: IdempotentCommand; started: Extract<IdempotencyOutcome, { kind: "new" }> },
+): Promise<Response> {
+  const db = ctx.env.DB;
+  const now = ctx.clock.now();
+  try {
+    await db.batch([guarda(db, c.systemId, esperada), ...instrucoes(db, now)]);
+  } catch (error) {
+    return falhaDoLote(ctx, c, error, idem);
+  }
+  return estado(ctx, c, idem ? 201 : 200);
+}
+
+/** Confirmar é ato do usuário, um requisito por vez (seção 8, passo 3). */
 export const confirmarRequisito: Handler = async (ctx) => {
   const c = await abrir(ctx);
   exigirRascunho(c);
+  const { revisao: esperada } = parse(RevisaoBody, await readJson(ctx.request));
   const codigo = ctx.params.codigo ?? "";
+  await conversa(ctx, c);
   const atual = await requisitoVivo(ctx, c, codigo);
-  if (atual.status === "pendente") {
-    const db = ctx.env.DB;
-    const now = ctx.clock.now();
-    await db.batch([
-      db
-        .prepare(
-          `UPDATE requirements SET status = 'confirmado', confirmed_by = ?, confirmed_at = ?, updated_at = max(updated_at, ?)
-           WHERE system_id = ? AND code = ? AND status = 'pendente'`,
-        )
-        .bind(c.user.id, now, now, c.systemId, codigo),
-      invalidarVersoesDaConversa(db, c.systemId),
-      auditar(db, c, "requisito.confirmado", codigo, now),
-    ]);
-  }
-  return estado(ctx, c);
+  if (atual.status === "confirmado") return estado(ctx, c); // repetição inofensiva
+  await exigirRevisao(ctx, c, esperada);
+  return atoDoUsuario(ctx, c, esperada, (db, now) => [
+    db
+      .prepare(
+        `UPDATE requirements SET status = 'confirmado', confirmed_by = ?, confirmed_at = ?, updated_at = max(updated_at, ?)
+         WHERE system_id = ? AND code = ? AND status = 'pendente'`,
+      )
+      .bind(c.user.id, now, now, c.systemId, codigo),
+    invalidarVersoesDaConversa(db, c.systemId),
+    auditar(db, c, "requisito.confirmado", codigo, now),
+  ]);
 };
 
 /** O usuário reescreve: a versão anterior vira substituída e o texto dele já vale como confirmado. */
 export const editarRequisito: Handler = async (ctx) => {
   const c = await abrir(ctx);
   exigirRascunho(c);
+  const { texto, revisao: esperada } = parse(TextoBody, await readJson(ctx.request));
   const codigo = ctx.params.codigo ?? "";
-  const { texto } = parse(TextoBody, await readJson(ctx.request));
+  await conversa(ctx, c);
   const atual = await requisitoVivo(ctx, c, codigo);
   if (normalizar(atual.text) === normalizar(texto) && atual.status === "confirmado") {
     return estado(ctx, c);
   }
-  const db = ctx.env.DB;
-  const now = ctx.clock.now();
-  try {
-    await db.batch([
-      substituir(db, c.systemId, codigo, now),
-      inserirRequisito(db, {
-        systemId: c.systemId,
-        codigo,
-        texto,
-        origem: "usuario",
-        mensagem: null,
-        confirmadoPor: c.user.id,
-        now,
-      }),
-      invalidarVersoesDaConversa(db, c.systemId),
-      auditar(db, c, "requisito.editado", codigo, now),
-    ]);
-  } catch (error) {
-    if (isUnique(error)) throw conflict("O requisito mudou ao mesmo tempo. Recarregue.");
-    throw error;
-  }
-  return estado(ctx, c);
+  await exigirRevisao(ctx, c, esperada);
+  return atoDoUsuario(ctx, c, esperada, (db, now) => [
+    substituir(db, c.systemId, codigo, now),
+    inserirRequisito(db, {
+      systemId: c.systemId,
+      codigo,
+      texto,
+      origem: "usuario",
+      mensagem: null,
+      confirmadoPor: c.user.id,
+      now,
+    }),
+    invalidarVersoesDaConversa(db, c.systemId),
+    auditar(db, c, "requisito.editado", codigo, now),
+  ]);
 };
 
 /** Descartar tira o requisito da lista (fica no histórico como substituído). */
 export const descartarRequisito: Handler = async (ctx) => {
   const c = await abrir(ctx);
   exigirRascunho(c);
+  const { revisao: esperada } = parse(RevisaoBody, await readJson(ctx.request));
   const codigo = ctx.params.codigo ?? "";
+  await conversa(ctx, c);
   await requisitoVivo(ctx, c, codigo);
-  const db = ctx.env.DB;
-  const now = ctx.clock.now();
-  await db.batch([
+  await exigirRevisao(ctx, c, esperada);
+  return atoDoUsuario(ctx, c, esperada, (db, now) => [
     substituir(db, c.systemId, codigo, now),
     invalidarVersoesDaConversa(db, c.systemId),
     auditar(db, c, "requisito.descartado", codigo, now),
   ]);
-  return estado(ctx, c);
 };
 
 /** O usuário acrescenta um requisito com as próprias palavras (já confirmado). */
@@ -535,14 +602,18 @@ export const adicionarRequisito: Handler = async (ctx) => {
   const cmd = { scope: c.systemId, actorId: c.user.id, command: "criacao.requisito", body };
   const started = await beginIdempotent(ctx, cmd);
   if (started.kind === "replay") return estado(ctx, c, started.statusCode);
+  await conversa(ctx, c);
+  await exigirRevisao(ctx, c, body.revisao);
+  // Limite e código lidos na revisão esperada; a guarda garante que nada mudou até a gravação.
   if ((await requisitosVivos(ctx, c.systemId)).length >= LIMITS.requirements) {
     throw conflict(`Limite de ${LIMITS.requirements} requisitos atingido.`);
   }
   const codigo = codigoDe((await maiorCodigo(ctx, c.systemId)) + 1);
-  const db = ctx.env.DB;
-  const now = ctx.clock.now();
-  try {
-    await db.batch([
+  return atoDoUsuario(
+    ctx,
+    c,
+    body.revisao,
+    (db, now) => [
       inserirRequisito(db, {
         systemId: c.systemId,
         codigo,
@@ -555,16 +626,12 @@ export const adicionarRequisito: Handler = async (ctx) => {
       invalidarVersoesDaConversa(db, c.systemId),
       auditar(db, c, "requisito.adicionado", codigo, now),
       recordStatement(ctx, cmd, started, codigo, 201, now),
-    ]);
-  } catch (error) {
-    return repetida(ctx, c, cmd, started, error);
-  }
-  return estado(ctx, c, 201);
+    ],
+    { cmd, started },
+  );
 };
 
 // ---- Geração e correção da configuração ----
-
-const CorrigirBody = z.object({ versao: z.string().min(1).max(100) });
 
 async function confirmadosSemPendencia(ctx: RequestContext, c: Contexto) {
   const vivos = await requisitosVivos(ctx, c.systemId);
@@ -596,11 +663,16 @@ function comRequisitosConfirmados(
   };
 }
 
+/**
+ * Chama a IA e grava a versão só se a revisão ainda for a mesma: requisitos editados durante a
+ * geração (ou sistema ativado nesse meio-tempo) desfazem a gravação, e nenhuma versão válida nasce
+ * de requisitos velhos.
+ */
 async function gerarVersao(
   ctx: RequestContext,
   c: Contexto,
-  cmd: IdempotentCommand,
-  started: Extract<IdempotencyOutcome, { kind: "new" }>,
+  esperada: number,
+  idem: { cmd: IdempotentCommand; started: Extract<IdempotencyOutcome, { kind: "new" }> },
   confirmados: { codigo: string; texto: string }[],
   finalidade: "modelagem" | "correcao",
   pedido: PedidoIa,
@@ -609,7 +681,7 @@ async function gerarVersao(
   const resposta = await chamarComOrcamento(
     ctx,
     ctx.ia,
-    { sistema: c.systemId, usuario: c.user.id, finalidade },
+    { sistema: c.systemId, usuario: c.user.id, finalidade, chave: chaveDoPedido(ctx) },
     pedido,
   );
   let proposta: unknown;
@@ -623,23 +695,26 @@ async function gerarVersao(
     // Estrutura fora do contrato: nada é gravado; o diagnóstico volta para o usuário decidir.
     return json({ versao: null, issues: result.issues }, { status: 422 });
   }
+  const draft = result.draft;
   const id = crypto.randomUUID();
   const now = ctx.clock.now();
+  const db = ctx.env.DB;
   try {
-    await ctx.env.DB.batch([
+    await db.batch([
+      guarda(db, c.systemId, esperada),
       ...(await versaoStatements(ctx, {
         id,
         systemId: c.systemId,
         userId: c.user.id,
         origem: "chat",
-        draft: result.draft,
+        draft,
         issues: result.issues,
         now,
       })),
-      recordStatement(ctx, cmd, started, id, 201, now),
+      recordStatement(ctx, idem.cmd, idem.started, id, 201, now),
     ]);
   } catch (error) {
-    return repetida(ctx, c, cmd, started, error);
+    return falhaDoLote(ctx, c, error, idem);
   }
   return estado(ctx, c, 201);
 }
@@ -647,12 +722,15 @@ async function gerarVersao(
 /** Passos 5 a 7: gerar a configuração a partir dos requisitos confirmados e validar. */
 export const gerarConfiguracao: Handler = async (ctx) => {
   const c = await abrir(ctx);
-  const cmd = { scope: c.systemId, actorId: c.user.id, command: "criacao.gerar", body: {} };
+  const body = parse(RevisaoBody, await readJson(ctx.request));
+  const cmd = { scope: c.systemId, actorId: c.user.id, command: "criacao.gerar", body };
   const started = await beginIdempotent(ctx, cmd);
   if (started.kind === "replay") return estado(ctx, c, started.statusCode);
   exigirRascunho(c);
+  await conversa(ctx, c);
+  await exigirRevisao(ctx, c, body.revisao);
   const confirmados = await confirmadosSemPendencia(ctx, c);
-  return gerarVersao(ctx, c, cmd, started, confirmados, "modelagem", {
+  return gerarVersao(ctx, c, body.revisao, { cmd, started }, confirmados, "modelagem", {
     instrucoes: instrucoesModelagem(c.nome, confirmados),
     mensagens: [
       { papel: "usuario", texto: "Gere a configuração a partir dos requisitos confirmados." },
@@ -669,6 +747,8 @@ export const corrigirConfiguracao: Handler = async (ctx) => {
   const started = await beginIdempotent(ctx, cmd);
   if (started.kind === "replay") return estado(ctx, c, started.statusCode);
   exigirRascunho(c);
+  await conversa(ctx, c);
+  await exigirRevisao(ctx, c, body.revisao);
   const db = ctx.env.DB;
   const versao = await db
     .prepare("SELECT config_json, status FROM model_versions WHERE id = ? AND system_id = ?")
@@ -688,7 +768,7 @@ export const corrigirConfiguracao: Handler = async (ctx) => {
     (i) => i.severity === "bloqueante",
   );
   const confirmados = await confirmadosSemPendencia(ctx, c);
-  return gerarVersao(ctx, c, cmd, started, confirmados, "correcao", {
+  return gerarVersao(ctx, c, body.revisao, { cmd, started }, confirmados, "correcao", {
     instrucoes: instrucoesCorrecao(c.nome, confirmados),
     mensagens: [
       {

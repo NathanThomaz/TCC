@@ -12,6 +12,7 @@ function base(sistema: string) {
 
 function estado(r: CriacaoApiBody): EstadoCriacao {
   return {
+    revisao: r.revisao ?? 0,
     mensagens: r.mensagens ?? [],
     requisitos: r.requisitos ?? [],
     iaDisponivel: r.iaDisponivel ?? false,
@@ -24,11 +25,16 @@ export async function obterCriacao(sistema: string) {
   return estado(await chamar<CriacaoApiBody>(base(sistema)));
 }
 
-export async function enviarMensagem(sistema: string, texto: string, chave: string) {
+export async function enviarMensagem(
+  sistema: string,
+  revisao: number,
+  texto: string,
+  chave: string,
+) {
   return estado(
     await chamar<CriacaoApiBody>(`${base(sistema)}/mensagens`, {
       method: "POST",
-      body: { texto },
+      body: { texto, revisao },
       chave,
     }),
   );
@@ -38,6 +44,7 @@ export async function acaoRequisito(
   sistema: string,
   codigo: string,
   acao: "confirmar" | "editar" | "descartar",
+  revisao: number,
   texto?: string,
 ) {
   return estado(
@@ -45,32 +52,46 @@ export async function acaoRequisito(
       `${base(sistema)}/requisitos/${encodeURIComponent(codigo)}/${acao}`,
       {
         method: "POST",
-        body: texto === undefined ? {} : { texto },
+        body: texto === undefined ? { revisao } : { texto, revisao },
         chave: novaChave(),
       },
     ),
   );
 }
 
-export async function adicionarRequisito(sistema: string, texto: string, chave: string) {
+export async function adicionarRequisito(
+  sistema: string,
+  revisao: number,
+  texto: string,
+  chave: string,
+) {
   return estado(
     await chamar<CriacaoApiBody>(`${base(sistema)}/requisitos`, {
       method: "POST",
-      body: { texto },
+      body: { texto, revisao },
       chave,
     }),
   );
 }
 
 /** Gerar e corrigir: estrutura fora do contrato volta com 422 e o diagnóstico, sem versão. */
-export async function gerarConfiguracao(sistema: string, chave: string) {
-  return chamar<CriacaoApiBody>(`${base(sistema)}/gerar`, { method: "POST", body: {}, chave });
+export async function gerarConfiguracao(sistema: string, revisao: number, chave: string) {
+  return chamar<CriacaoApiBody>(`${base(sistema)}/gerar`, {
+    method: "POST",
+    body: { revisao },
+    chave,
+  });
 }
 
-export async function corrigirConfiguracao(sistema: string, versao: string, chave: string) {
+export async function corrigirConfiguracao(
+  sistema: string,
+  revisao: number,
+  versao: string,
+  chave: string,
+) {
   return chamar<CriacaoApiBody>(`${base(sistema)}/corrigir`, {
     method: "POST",
-    body: { versao },
+    body: { versao, revisao },
     chave,
   });
 }

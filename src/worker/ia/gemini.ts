@@ -33,7 +33,11 @@ export interface ProvedorIa {
 
 /** Falha da chamada (rede, cota, resposta vazia): mensagem segura, sem detalhes do provedor. */
 export class IaIndisponivel extends Error {
-  constructor(readonly motivo: string) {
+  constructor(
+    readonly motivo: string,
+    /** Tokens informados pelo provedor mesmo na falha (ex.: resposta vazia): o custo é real. */
+    readonly tokens?: { entrada: number; saida: number },
+  ) {
     super(motivo);
     this.name = "IaIndisponivel";
   }
@@ -42,58 +46,68 @@ export class IaIndisponivel extends Error {
 export function geminiDoAmbiente(env: Env, fetcher: typeof fetch = fetch): ProvedorIa | undefined {
   const chave = env.GEMINI_API_KEY;
   if (!chave) return undefined;
+
+  async function chamar(pedido: PedidoIa, signal: AbortSignal): Promise<RespostaIa> {
+    const resposta = await fetcher(
+      `https://generativelanguage.googleapis.com/v1beta/models/${MODELO_GEMINI}:generateContent`,
+      {
+        method: "POST",
+        signal,
+        headers: { "content-type": "application/json", "x-goog-api-key": chave ?? "" },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: pedido.instrucoes }] },
+          contents: pedido.mensagens.map((m) => ({
+            role: m.papel === "usuario" ? "user" : "model",
+            parts: [{ text: m.texto }],
+          })),
+          generationConfig: {
+            responseMimeType: "application/json",
+            responseJsonSchema: pedido.schema,
+            temperature: 0,
+            maxOutputTokens: MAX_TOKENS_SAIDA,
+          },
+        }),
+      },
+    );
+    if (!resposta.ok) throw new IaIndisponivel(`http_${resposta.status}`);
+    const corpo = await resposta.json<{
+      candidates?: { content?: { parts?: { text?: string }[] }; finishReason?: string }[];
+      usageMetadata?: {
+        promptTokenCount?: number;
+        candidatesTokenCount?: number;
+        thoughtsTokenCount?: number;
+      };
+    } | null>();
+    const uso = corpo?.usageMetadata;
+    // Raciocínio é cobrado como saída.
+    const tokens = uso
+      ? {
+          entrada: uso.promptTokenCount ?? 0,
+          saida: (uso.candidatesTokenCount ?? 0) + (uso.thoughtsTokenCount ?? 0),
+        }
+      : undefined;
+    const candidato = corpo?.candidates?.[0];
+    const texto = candidato?.content?.parts?.map((p) => p.text ?? "").join("") ?? "";
+    if (!texto) {
+      throw new IaIndisponivel(`vazia_${candidato?.finishReason ?? "sem_motivo"}`, tokens);
+    }
+    return { texto, tokensEntrada: tokens?.entrada ?? 0, tokensSaida: tokens?.saida ?? 0 };
+  }
+
   return {
     modelo: MODELO_GEMINI,
     async gerar(pedido) {
       const controle = new AbortController();
+      // O prazo vale até ler o corpo inteiro: cabeçalhos rápidos com corpo lento também expiram.
       const timer = setTimeout(() => controle.abort(), TIMEOUT_MS);
-      let resposta: Response;
       try {
-        resposta = await fetcher(
-          `https://generativelanguage.googleapis.com/v1beta/models/${MODELO_GEMINI}:generateContent`,
-          {
-            method: "POST",
-            signal: controle.signal,
-            headers: { "content-type": "application/json", "x-goog-api-key": chave },
-            body: JSON.stringify({
-              systemInstruction: { parts: [{ text: pedido.instrucoes }] },
-              contents: pedido.mensagens.map((m) => ({
-                role: m.papel === "usuario" ? "user" : "model",
-                parts: [{ text: m.texto }],
-              })),
-              generationConfig: {
-                responseMimeType: "application/json",
-                responseJsonSchema: pedido.schema,
-                temperature: 0,
-                maxOutputTokens: MAX_TOKENS_SAIDA,
-              },
-            }),
-          },
-        );
-      } catch {
+        return await chamar(pedido, controle.signal);
+      } catch (error) {
+        if (error instanceof IaIndisponivel) throw error;
         throw new IaIndisponivel(controle.signal.aborted ? "tempo_esgotado" : "rede");
       } finally {
         clearTimeout(timer);
       }
-      if (!resposta.ok) throw new IaIndisponivel(`http_${resposta.status}`);
-      const corpo = (await resposta.json().catch(() => null)) as {
-        candidates?: { content?: { parts?: { text?: string }[] }; finishReason?: string }[];
-        usageMetadata?: {
-          promptTokenCount?: number;
-          candidatesTokenCount?: number;
-          thoughtsTokenCount?: number;
-        };
-      } | null;
-      const candidato = corpo?.candidates?.[0];
-      const texto = candidato?.content?.parts?.map((p) => p.text ?? "").join("") ?? "";
-      if (!texto) throw new IaIndisponivel(`vazia_${candidato?.finishReason ?? "sem_motivo"}`);
-      const uso = corpo?.usageMetadata ?? {};
-      return {
-        texto,
-        tokensEntrada: uso.promptTokenCount ?? 0,
-        // Raciocínio é cobrado como saída.
-        tokensSaida: (uso.candidatesTokenCount ?? 0) + (uso.thoughtsTokenCount ?? 0),
-      };
     },
   };
 }

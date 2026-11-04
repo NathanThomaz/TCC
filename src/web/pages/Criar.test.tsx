@@ -9,6 +9,7 @@ import { ApiError } from "@/api/cliente";
 // enquanto houver requisito pendente (T05).
 
 const vazio: EstadoCriacao = {
+  revisao: 0,
   mensagens: [],
   requisitos: [],
   iaDisponivel: true,
@@ -16,10 +17,11 @@ const vazio: EstadoCriacao = {
   issues: [],
 };
 const obterCriacao = vi.fn<() => Promise<EstadoCriacao>>();
-const enviarMensagem = vi.fn<(s: string, t: string, k: string) => Promise<EstadoCriacao>>();
+const enviarMensagem =
+  vi.fn<(s: string, r: number, t: string, k: string) => Promise<EstadoCriacao>>();
 vi.mock("@/api/criacao", () => ({
   obterCriacao: () => obterCriacao(),
-  enviarMensagem: (s: string, t: string, k: string) => enviarMensagem(s, t, k),
+  enviarMensagem: (s: string, r: number, t: string, k: string) => enviarMensagem(s, r, t, k),
   acaoRequisito: vi.fn(),
   adicionarRequisito: vi.fn(),
   gerarConfiguracao: vi.fn(),
@@ -81,7 +83,7 @@ describe("Criar por conversa", () => {
     enviarMensagem.mockResolvedValueOnce(vazio);
     fireEvent.click(screen.getByRole("button", { name: /Enviar/ }));
     await waitFor(() => expect((caixa as HTMLTextAreaElement).value).toBe(""));
-    expect(enviarMensagem.mock.calls[0]![2]).toBe(enviarMensagem.mock.calls[1]![2]);
+    expect(enviarMensagem.mock.calls[0]![3]).toBe(enviarMensagem.mock.calls[1]![3]);
   });
 
   it("T05: com requisito pendente, gerar a configuração fica bloqueado", async () => {

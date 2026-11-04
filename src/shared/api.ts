@@ -206,6 +206,8 @@ export interface RequisitoDto {
 }
 
 export interface CriacaoApiBody {
+  /** Revisão do estado da criação: toda ação envia a que viu; se mudou, nada é gravado. */
+  revisao?: number;
   mensagens?: MensagemDto[];
   /** Requisitos vivos (pendentes e confirmados), em ordem de código. */
   requisitos?: RequisitoDto[];

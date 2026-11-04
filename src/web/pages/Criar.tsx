@@ -19,7 +19,6 @@ import type { CriacaoApiBody, RequisitoDto } from "../../shared/api";
 import { TEMPLATE_LABELS } from "../../shared/contract/catalog";
 import type { ConfigDraft } from "../../shared/contract/schema";
 import { formatarCentavos } from "../../shared/dominio/precos";
-import { novaChave } from "@/api/cliente";
 import {
   acaoRequisito,
   adicionarRequisito,
@@ -30,7 +29,7 @@ import {
   type EstadoCriacao,
 } from "@/api/criacao";
 import { aprovarVersao, ativarSistema, obterSistema } from "@/api/sistemas";
-import { ErroApi, useChavePorConteudo } from "@/components/app/Comum";
+import { codigoDoErro, ErroApi, useChavePorConteudo } from "@/components/app/Comum";
 import { ErrorState, PageHeader } from "@/components/nexus/Estados";
 import { IssueList } from "@/components/nexus/IssueList";
 import { StatusBadge } from "@/components/nexus/StatusBadge";
@@ -42,6 +41,16 @@ import { Textarea } from "@/components/ui/textarea";
 import { ROTULO_MODULO } from "@/lib/nexus";
 import { Link, useNavigate } from "@/lib/rotas";
 import { cn } from "@/lib/utils";
+
+/** Se o estado mudou em outra tela (revisão), recarrega para o usuário ver a versão atual. */
+function useRecarregarSeAlterado(sistema: string) {
+  const qc = useQueryClient();
+  return (erro: unknown) => {
+    if (codigoDoErro(erro) === "estado_alterado") {
+      void qc.invalidateQueries({ queryKey: ["criacao", sistema] });
+    }
+  };
+}
 
 // Criação por conversa (seção 8). A IA conversa e propõe; o usuário confirma cada requisito,
 // pede a geração, revisa a prévia, pede correção se houver erro e aprova a versão exata. Tudo
@@ -137,14 +146,17 @@ function Conversa({
 }) {
   const [texto, setTexto] = useState("");
   const chave = useChavePorConteudo();
+  const recarregar = useRecarregarSeAlterado(sistema);
   const fim = useRef<HTMLDivElement>(null);
   const m = useMutation({
     // Mesma chave enquanto o texto não mudar: reenviar depois de uma falha não duplica a rodada.
-    mutationFn: (t: string) => enviarMensagem(sistema, t, chave(t)),
+    mutationFn: (t: string) =>
+      enviarMensagem(sistema, estado.revisao, t, chave({ t, revisao: estado.revisao })),
     onSuccess: (e) => {
       onEstado(e);
       setTexto("");
     },
+    onError: recarregar,
   });
   useEffect(() => {
     fim.current?.scrollIntoView?.({ block: "nearest" });
@@ -258,24 +270,30 @@ function Requisitos({
   const [editando, setEditando] = useState<string | null>(null);
   const [novo, setNovo] = useState("");
   const chave = useChavePorConteudo();
+  const recarregar = useRecarregarSeAlterado(sistema);
   const acao = useMutation({
     mutationFn: (a: {
       codigo: string;
       acao: "confirmar" | "editar" | "descartar";
       texto?: string;
-    }) => acaoRequisito(sistema, a.codigo, a.acao, a.texto),
+    }) => acaoRequisito(sistema, a.codigo, a.acao, estado.revisao, a.texto),
     onSuccess: (e) => {
       onEstado(e);
       setEditando(null);
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => {
+      toast.error(e.message);
+      recarregar(e);
+    },
   });
   const adicionar = useMutation({
-    mutationFn: (t: string) => adicionarRequisito(sistema, t, chave(t)),
+    mutationFn: (t: string) =>
+      adicionarRequisito(sistema, estado.revisao, t, chave({ t, revisao: estado.revisao })),
     onSuccess: (e) => {
       onEstado(e);
       setNovo("");
     },
+    onError: recarregar,
   });
   const pendentes = estado.requisitos.filter((r) => r.status === "pendente").length;
 
@@ -456,8 +474,9 @@ function Configuracao({
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [estrutural, setEstrutural] = useState<CriacaoApiBody["issues"] | null>(null);
-  // Uma chave por clique: cada pedido de geração ou de correção é uma intenção nova.
-  const chaveGerar = useRef(novaChave());
+  // Mesma chave enquanto a revisão (e a versão a corrigir) não mudar: um retry não chama a IA de novo.
+  const chave = useChavePorConteudo();
+  const recarregar = useRecarregarSeAlterado(sistema);
   const tratar = (r: CriacaoApiBody) => {
     if (r.versao === null) {
       setEstrutural(r.issues ?? []);
@@ -465,21 +484,30 @@ function Configuracao({
     }
     setEstrutural(null);
     onEstado({
+      revisao: r.revisao ?? estado.revisao,
       mensagens: r.mensagens ?? estado.mensagens,
       requisitos: r.requisitos ?? estado.requisitos,
       iaDisponivel: r.iaDisponivel ?? estado.iaDisponivel,
       versao: r.versao ?? null,
       issues: r.issues ?? [],
     });
-    chaveGerar.current = novaChave();
   };
   const gerar = useMutation({
-    mutationFn: () => gerarConfiguracao(sistema, chaveGerar.current),
+    mutationFn: () =>
+      gerarConfiguracao(sistema, estado.revisao, chave({ gerar: true, revisao: estado.revisao })),
     onSuccess: tratar,
+    onError: recarregar,
   });
   const corrigir = useMutation({
-    mutationFn: (versao: string) => corrigirConfiguracao(sistema, versao, chaveGerar.current),
+    mutationFn: (versao: string) =>
+      corrigirConfiguracao(
+        sistema,
+        estado.revisao,
+        versao,
+        chave({ corrigir: versao, revisao: estado.revisao }),
+      ),
     onSuccess: tratar,
+    onError: recarregar,
   });
   const ativar = useMutation({
     mutationFn: async () => {

@@ -3,6 +3,28 @@
 -- fica no servidor: recarregar, sair ou falhar a IA não apaga conversa nem requisitos.
 -- Nunca editar esta migration depois de aplicada.
 
+-- Revisão do estado da criação (requisitos e versões da conversa) por sistema. Toda gravação parte
+-- da revisão que a tela (ou a chamada à IA) viu e soma exatamente 1: se algo mudou enquanto a IA
+-- respondia, o lote é desfeito e nada se baseia em estado velho. Só vale com o sistema em rascunho.
+CREATE TABLE creation_state (
+  system_id TEXT NOT NULL PRIMARY KEY REFERENCES systems (id),
+  revision INTEGER NOT NULL DEFAULT 0 CHECK (typeof(revision) = 'integer' AND revision >= 0)
+);
+
+CREATE TRIGGER creation_state_revision
+BEFORE UPDATE OF revision ON creation_state
+WHEN NEW.revision <> OLD.revision + 1
+BEGIN
+  SELECT RAISE(ABORT, 'estado_alterado');
+END;
+
+CREATE TRIGGER creation_state_only_draft
+BEFORE UPDATE OF revision ON creation_state
+WHEN (SELECT status FROM systems WHERE id = NEW.system_id) IS NOT 'draft'
+BEGIN
+  SELECT RAISE(ABORT, 'sistema_nao_rascunho');
+END;
+
 -- Uma conversa de criação por sistema (do administrador dono); consulta é por usuário + sistema.
 CREATE TABLE conversations (
   id TEXT NOT NULL PRIMARY KEY,
@@ -69,16 +91,22 @@ BEGIN
   SELECT RAISE(ABORT, 'transicao_de_status_invalida');
 END;
 
--- Consumo de IA (seção 21): cada chamada reserva uma estimativa antes de sair e grava o consumo
--- real ao voltar. O teto mensal soma o concluído e as reservas em aberto (bloqueio preventivo).
--- Custos em micro-reais (1 real = 1.000.000) para não perder centavos fracionários.
+-- Consumo de IA (seção 21): cada chamada reserva o pior caso antes de sair e grava o consumo
+-- real ao voltar. O teto mensal soma o concluído, as falhas com tokens informados e, pelo valor
+-- reservado, as reservas em aberto e as incertas (falha sem tokens informados ou reserva parada,
+-- que podem ter sido cobradas: só a conciliação com o provedor libera). Micro-reais (1 real =
+-- 1.000.000) para não perder centavos fracionários.
 CREATE TABLE ai_usage (
   id TEXT NOT NULL PRIMARY KEY,
   system_id TEXT REFERENCES systems (id),
   user_id TEXT NOT NULL REFERENCES users (id),
   purpose TEXT NOT NULL CHECK (purpose IN ('levantamento', 'modelagem', 'correcao', 'consulta')),
   model TEXT NOT NULL,
-  state TEXT NOT NULL DEFAULT 'reservado' CHECK (state IN ('reservado', 'concluido', 'falhou')),
+  state TEXT NOT NULL DEFAULT 'reservado'
+    CHECK (state IN ('reservado', 'concluido', 'falhou', 'incerto')),
+  -- Idempotency-Key do pedido: enquanto a reserva está aberta, a mesma chave não chama a IA de
+  -- novo (duas requisições iguais em paralelo não pagam duas vezes).
+  idempotency_key TEXT,
   reserved_micro_brl INTEGER NOT NULL CHECK (reserved_micro_brl >= 0),
   input_tokens INTEGER CHECK (input_tokens IS NULL OR input_tokens >= 0),
   output_tokens INTEGER CHECK (output_tokens IS NULL OR output_tokens >= 0),
@@ -89,3 +117,5 @@ CREATE TABLE ai_usage (
 );
 
 CREATE INDEX ai_usage_month ON ai_usage (created_at, state);
+CREATE UNIQUE INDEX ai_usage_open_key ON ai_usage (user_id, purpose, idempotency_key)
+  WHERE state = 'reservado' AND idempotency_key IS NOT NULL;

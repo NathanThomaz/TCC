@@ -18,6 +18,7 @@ export async function limparBanco(): Promise<void> {
       "DELETE FROM messages",
       "DELETE FROM conversations",
       "DELETE FROM ai_usage",
+      "DELETE FROM creation_state",
       "DELETE FROM operation_requests",
       "DELETE FROM approvals",
       "DELETE FROM validation_runs",
