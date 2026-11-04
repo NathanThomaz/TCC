@@ -210,6 +210,9 @@ function LinhaAtendimento({
   // No par ainda não iniciado, remarca-se pelo primeiro (com os dois horários).
   const podeRemarcar =
     a.status === "scheduled" && !(a.posicaoNoPar === 2 && primeiro?.status === "scheduled");
+  // AGE-04: o segundo do par só começa depois da conclusão registrada do primeiro.
+  const podeIniciar =
+    a.status === "scheduled" && (a.posicaoNoPar !== 2 || primeiro?.status === "done");
 
   return (
     <li
@@ -242,7 +245,7 @@ function LinhaAtendimento({
         {a.atrasado ? "Atrasado" : ROTULO_STATUS[a.status]}
       </span>
       <span className="flex gap-1">
-        {a.status === "scheduled" && (
+        {podeIniciar && (
           <Button
             size="sm"
             variant="outline"

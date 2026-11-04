@@ -247,6 +247,10 @@ function Rascunho({ venda, servicos }: { venda: VendaDto | null; servicos: Atend
     (p) => p.status === "active" || pedido.some((x) => x.produto === p.id),
   );
   const produtoDe = (id: string): ProdutoDto | undefined => produtos.data?.find((p) => p.id === id);
+  // O disponível da API já desconta a reserva desta venda; para ela, essa reserva volta a contar.
+  const disponivelParaEsta = (p: ProdutoDto) =>
+    p.disponivel +
+    (venda && !vencida ? (venda.itens.find((i) => i.produto === p.id)?.unidades ?? 0) : 0);
 
   return (
     <>
@@ -323,7 +327,7 @@ function Rascunho({ venda, servicos }: { venda: VendaDto | null; servicos: Atend
                           value={x.id}
                           disabled={linhas.some((o, j) => j !== i && o.produto === x.id)}
                         >
-                          {x.nome} · disp. {x.disponivel}
+                          {x.nome} · disp. {disponivelParaEsta(x)}
                         </SelectItem>
                       ))}
                     </SelectContent>

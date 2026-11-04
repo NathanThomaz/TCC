@@ -108,7 +108,7 @@ export function Produtos() {
                 </td>
               )}
               {temCaixa && (
-                <td className="px-4 py-2 tabular-nums">
+                <td className="whitespace-nowrap px-4 py-2 tabular-nums">
                   {p.unidadesPorCaixa === null ? "—" : `${p.unidadesPorCaixa} un.`}
                 </td>
               )}
