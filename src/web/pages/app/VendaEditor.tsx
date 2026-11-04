@@ -158,6 +158,10 @@ function Rascunho({ venda, servicos }: { venda: VendaDto | null; servicos: Atend
   });
   const [cliente, setCliente] = useState(venda?.cliente ?? "");
   const [linhas, setLinhas] = useState<Linha[]>(venda ? deVenda(venda) : [linhaVazia()]);
+  // Revisão de onde partem as edições locais. Se a venda mudar em outra tela (revisão nova vinda
+  // do servidor), nada é salvo nem concluído até o usuário carregar a versão atual.
+  const [base, setBase] = useState<VendaDto | null>(venda);
+  const desatualizada = venda !== null && base !== null && venda.revisao !== base.revisao;
   const [campos, setCampos] = useState<CamposInformativos>(venda?.campos ?? {});
   const [faltas, setFaltas] = useState<FaltaDto[] | null>(null);
   const [agora, setAgora] = useState(() => Date.now());
@@ -167,14 +171,14 @@ function Rascunho({ venda, servicos }: { venda: VendaDto | null; servicos: Atend
   }, []);
 
   const pedido = paraPedido(linhas);
-  const alterado = !venda || JSON.stringify(pedido) !== JSON.stringify(paraPedido(deVenda(venda)));
+  const alterado = !base || JSON.stringify(pedido) !== JSON.stringify(paraPedido(deVenda(base)));
   // Expiração mostrada pelo relógio local só como aviso; quem decide é o backend (RES-05).
   const vencida = venda !== null && (venda.expirada || venda.expiraEm <= agora);
 
   // Recalculada a cada render (o React Compiler memoiza).
   const previa = (() => {
     const porId = new Map((produtos.data ?? []).map((p) => [p.id, p]));
-    const salvos = new Map((venda?.itens ?? []).map((i) => [i.produto, i]));
+    const salvos = new Map((base?.itens ?? []).map((i) => [i.produto, i]));
     const itens = [];
     for (const item of pedido) {
       const p = porId.get(item.produto);
@@ -208,13 +212,15 @@ function Rascunho({ venda, servicos }: { venda: VendaDto | null; servicos: Atend
     mutationFn: () => {
       setFaltas(null);
       if (venda) {
-        const dados = { revisao: venda.revisao, itens: pedido };
+        const dados = { revisao: (base ?? venda).revisao, itens: pedido };
         return salvarItens(app.id, venda.id, dados, chave({ venda: venda.id, ...dados }));
       }
       const dados = { cliente, itens: pedido, campos };
       return criarVenda(app.id, dados, chave(dados));
     },
     onSuccess: (v) => {
+      setBase(v);
+      setLinhas(deVenda(v));
       invalidar();
       toast.success(`Rascunho salvo. Estoque reservado até ${formatarDataHora(v.expiraEm)}.`);
       if (!venda)
@@ -227,7 +233,7 @@ function Rascunho({ venda, servicos }: { venda: VendaDto | null; servicos: Atend
     onError: (e) => setFaltas(dadosDoErro<FaltaDto[]>(e, "faltas") ?? null),
   });
   const concluir = useMutation({
-    mutationFn: () => concluirVenda(app.id, venda!.id, venda!.revisao),
+    mutationFn: () => concluirVenda(app.id, venda!.id, (base ?? venda!).revisao),
     onSuccess: () => {
       invalidar();
       toast.success("Venda concluída. O estoque foi baixado.");
@@ -275,6 +281,30 @@ function Rascunho({ venda, servicos }: { venda: VendaDto | null; servicos: Atend
         }
       />
 
+      {desatualizada && venda && (
+        <div
+          role="alert"
+          className="mb-6 flex flex-wrap items-center gap-3 rounded-lg border border-warning/40 bg-warning-soft p-4 text-sm"
+        >
+          <AlertTriangle className="size-4 text-warning" aria-hidden />
+          <span className="flex-1">
+            Esta venda foi alterada em outra tela. Carregue a versão atual antes de salvar ou
+            concluir; suas alterações locais serão descartadas.
+          </span>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              setBase(venda);
+              setLinhas(deVenda(venda));
+            }}
+          >
+            Carregar versão atual
+          </Button>
+        </div>
+      )}
+
       <form
         className="space-y-6"
         onSubmit={(e) => {
@@ -308,10 +338,9 @@ function Rascunho({ venda, servicos }: { venda: VendaDto | null; servicos: Atend
           <legend className="mb-1 text-sm font-medium">Itens</legend>
           {linhas.map((l, i) => {
             const p = produtoDe(l.produto);
-            const fator =
-              venda?.itens.find((x) => x.produto === l.produto)?.unidadesPorCaixa ??
-              p?.unidadesPorCaixa ??
-              null;
+            // Item já no rascunho usa o fator dele, mesmo nulo; produto novo, o do cadastro.
+            const salvo = base?.itens.find((x) => x.produto === l.produto);
+            const fator = salvo ? salvo.unidadesPorCaixa : (p?.unidadesPorCaixa ?? null);
             return (
               <div key={i} className="flex flex-wrap items-end gap-2 rounded-lg border bg-card p-3">
                 <div className="min-w-48 flex-1 space-y-1.5">
@@ -433,6 +462,7 @@ function Rascunho({ venda, servicos }: { venda: VendaDto | null; servicos: Atend
             type="submit"
             disabled={
               salvar.isPending ||
+              desatualizada ||
               pedido.length === 0 ||
               (!venda && cliente === "") ||
               (!!venda && !alterado && !vencida)
@@ -450,7 +480,7 @@ function Rascunho({ venda, servicos }: { venda: VendaDto | null; servicos: Atend
               <Button
                 type="button"
                 variant="secondary"
-                disabled={concluir.isPending || alterado || vencida}
+                disabled={concluir.isPending || alterado || vencida || desatualizada}
                 onClick={() => concluir.mutate()}
               >
                 {concluir.isPending && <Loader2 className="animate-spin" aria-hidden />}Concluir

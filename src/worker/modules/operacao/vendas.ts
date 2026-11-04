@@ -475,8 +475,14 @@ export const salvarItens: Handler = async (ctx) => {
   if (started.kind === "replay") return respostaRepetida(ctx, op, started);
 
   const venda = await carregarVendaRow(ctx, op.systemId, id);
-  if (venda.status !== "draft") throw conflict(MENSAGENS.venda_nao_editavel);
-  if (venda.revision !== body.revisao) throw conflict(MENSAGENS.venda_alterada);
+  if (venda.status !== "draft" || venda.revision !== body.revisao) {
+    // Repetição da mesma chave que perdeu a corrida: a vencedora já avançou a revisão.
+    const replay = await replayAfterRace(ctx, cmd, started);
+    if (replay?.kind === "replay") return respostaRepetida(ctx, op, replay);
+    throw conflict(
+      venda.status !== "draft" ? MENSAGENS.venda_nao_editavel : MENSAGENS.venda_alterada,
+    );
+  }
 
   const now = ctx.clock.now();
   const expiresAt = now + venda.reservation_minutes * 60_000;

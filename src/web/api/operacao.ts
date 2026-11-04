@@ -264,10 +264,11 @@ export async function acaoAtendimento(
   id: string,
   acao: "iniciar" | "concluir" | "cancelar" | "remarcar",
   body: unknown = {},
+  chave = novaChave(),
 ) {
   const r = await chamar<OperacaoApiBody>(
     `${base(sistema)}/agenda/${encodeURIComponent(id)}/${acao}`,
-    { method: "POST", body, chave: novaChave() },
+    { method: "POST", body, chave },
   );
   return exigir(r.atendimentos, "atendimentos");
 }

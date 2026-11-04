@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CalendarDays, CalendarPlus, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -32,7 +32,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useBusca } from "@/lib/rotas";
+import { useBusca, useNavigate } from "@/lib/rotas";
 import { cn } from "@/lib/utils";
 import { rotuloModulo, useApp } from "./Aplicacao";
 import { ROTULO_STATUS, rotuloTipo } from "./VendaEditor";
@@ -61,6 +61,7 @@ type Dialogo = { tipo: "agendar" } | { tipo: "remarcar" | "cancelar"; atendiment
 export function Agenda() {
   const app = useApp();
   const busca = useBusca();
+  const navigate = useNavigate();
   const [profissional, setProfissional] = useState(TODOS);
   const [inicioDia, setInicioDia] = useState(() => paraCampoLocal(Date.now()).slice(0, 10));
   const [dialogo, setDialogo] = useState<Dialogo | null>(busca.venda ? { tipo: "agendar" } : null);
@@ -80,14 +81,16 @@ export function Agenda() {
     queryFn: () => listarAgenda(app.id, filtro),
   });
 
-  const porDia = useMemo(() => {
+  const porDia = (() => {
     const grupos = new Map<string, AtendimentoDto[]>();
-    for (const a of q.data ?? []) {
+    // A API também devolve o outro atendimento de cada par, mesmo fora do período (para
+    // remarcar o par); a lista mostra só os do período.
+    for (const a of (q.data ?? []).filter((x) => x.inicio < filtro.ate && x.fim > filtro.de)) {
       const chave = dia.format(a.inicio);
       grupos.set(chave, [...(grupos.get(chave) ?? []), a]);
     }
     return [...grupos.entries()];
-  }, [q.data]);
+  })();
 
   return (
     <>
@@ -161,7 +164,11 @@ export function Agenda() {
         <AgendarDialog
           venda={busca.venda}
           cliente={busca.cliente}
-          onFechar={() => setDialogo(null)}
+          onFechar={() => {
+            setDialogo(null);
+            // O vínculo com a venda vale só para este agendamento: sai da URL ao fechar.
+            if (busca.venda) navigate({ search: {}, replace: true });
+          }}
         />
       )}
       {dialogo?.tipo === "remarcar" && (
@@ -464,6 +471,7 @@ function RemarcarDialog({
 }) {
   const app = useApp();
   const invalidar = useInvalidarAgenda();
+  const chave = useChavePorConteudo();
   const segundo =
     a.posicaoNoPar === 1 ? todos.find((x) => x.par === a.par && x.posicaoNoPar === 2) : undefined;
   const [inicio, setInicio] = useState(paraCampoLocal(a.inicio));
@@ -473,10 +481,9 @@ function RemarcarDialog({
       const i = deCampoLocal(inicio);
       const s = segundo ? deCampoLocal(inicioSegundo) : null;
       if (i === null || (segundo && s === null)) throw new Error("Informe data e hora.");
-      return acaoAtendimento(app.id, a.id, "remarcar", {
-        inicio: i,
-        ...(s !== null ? { inicioSegundo: s } : {}),
-      });
+      const dados = { inicio: i, ...(s !== null ? { inicioSegundo: s } : {}) };
+      // Mesma chave para a mesma intenção: um retry tardio não desfaz remarcação posterior.
+      return acaoAtendimento(app.id, a.id, "remarcar", dados, chave({ id: a.id, ...dados }));
     },
     onSuccess: () => {
       invalidar();

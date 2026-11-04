@@ -82,6 +82,7 @@ export function CamposForm({
               <Input
                 id={id}
                 type={c.tipo === "numero" ? "number" : c.tipo === "data" ? "date" : "text"}
+                {...(c.tipo === "numero" ? { step: "any" } : {})}
                 value={atual ?? ""}
                 required={c.obrigatorio}
                 maxLength={200}

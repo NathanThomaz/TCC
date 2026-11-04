@@ -869,3 +869,40 @@ describe("revisão cruzada: guardas no banco e idempotência", () => {
     expect((await estoqueDe(prod)).fisico).toBe(8);
   });
 });
+
+describe("revisão cruzada, segunda passada", () => {
+  it("rascunho: a mesma chave em paralelo devolve a gravação vencedora", async () => {
+    const c = await cliente();
+    const prod = await produto();
+    await entrada(prod, 20);
+    const v = (await venda(c, [{ produto: prod, unidades: 1 }])).body.venda!;
+    const corpo = { revisao: v.revisao, itens: [{ produto: prod, unidades: 4 }] };
+    const respostas = await Promise.all(
+      Array.from({ length: 3 }, () =>
+        call("POST", p(`/vendas/${v.id}/itens`), ADMIN, corpo, "chave-salvar-rascunho"),
+      ),
+    );
+    expect(respostas.map((r) => r.status)).toEqual([200, 200, 200]);
+    expect(new Set(respostas.map((r) => r.body.venda!.revisao))).toEqual(new Set([v.revisao + 1]));
+    expect((await estoqueDe(prod)).reservado).toBe(4);
+  });
+
+  it("agenda: o outro atendimento do par vem junto mesmo fora do período", async () => {
+    const c = await cliente();
+    const t = (await call("POST", p("/profissionais"), ADMIN, { nome: "Técnico" })).body
+      .profissional!.id;
+    const inicio = NOW + 24 * H;
+    await call("POST", p("/agenda"), ADMIN, {
+      cliente: c,
+      profissional: t,
+      tipo: "instalacao",
+      inicio,
+      inicioSegundo: inicio + 10 * 24 * H,
+      campos: { endereco: "Rua E" },
+    });
+    const de = NOW;
+    const ate = NOW + 7 * 24 * H;
+    const lista = (await call("GET", p(`/agenda?de=${de}&ate=${ate}`), ADMIN)).body.atendimentos!;
+    expect(lista.map((a) => a.posicaoNoPar)).toEqual([1, 2]);
+  });
+});

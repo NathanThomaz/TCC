@@ -143,8 +143,12 @@ export const listarAgenda: Handler = async (ctx) => {
   }
   const profissional = ctx.url.searchParams.get("profissional");
   const { results } = await ctx.env.DB.prepare(
-    `${SELECT_ATENDIMENTO} WHERE a.system_id = ?1 AND a.start_at < ?3 AND a.end_at > ?2
-       AND (?4 IS NULL OR a.professional_id = ?4)
+    // Inclui o outro atendimento de cada par do período, mesmo fora dele: a tela precisa dos dois
+    // horários para remarcar o par.
+    `${SELECT_ATENDIMENTO} WHERE a.system_id = ?1 AND (?4 IS NULL OR a.professional_id = ?4)
+       AND ((a.start_at < ?3 AND a.end_at > ?2) OR a.pair_id IN (
+         SELECT pair_id FROM appointments
+         WHERE system_id = ?1 AND pair_id IS NOT NULL AND start_at < ?3 AND end_at > ?2))
      ORDER BY a.start_at LIMIT 500`,
   )
     .bind(op.systemId, de, ate, profissional)
