@@ -185,7 +185,8 @@ async function estoque(ctx: RequestContext, op: Operacao, c: Consulta): Promise<
 async function reservas(ctx: RequestContext, op: Operacao): Promise<Resposta> {
   if (!temModulo(op.config, "vendas")) return semModulo("vendas");
   const { results } = await ctx.env.DB.prepare(
-    `SELECT c.name AS cliente, s.expires_at FROM sales s JOIN customers c ON c.id = s.customer_id
+    `SELECT c.name AS cliente, s.expires_at FROM sales s
+     JOIN customers c ON c.id = s.customer_id AND c.system_id = s.system_id
      WHERE s.system_id = ? AND s.status = 'draft' AND s.expires_at > ? ORDER BY s.expires_at LIMIT 20`,
   )
     .bind(op.systemId, ctx.clock.now())
@@ -216,7 +217,7 @@ async function agenda(ctx: RequestContext, op: Operacao, c: Consulta): Promise<R
      JOIN professionals p ON p.id = a.professional_id AND p.system_id = a.system_id
      WHERE a.system_id = ?1 AND a.status <> 'cancelled' AND a.start_at < ?3 AND a.end_at > ?2
        AND (?4 IS NULL OR instr(lower(p.name), lower(?4)) > 0)
-     ORDER BY a.start_at LIMIT 30`,
+     ORDER BY a.start_at LIMIT 31`,
   )
     .bind(op.systemId, faixa.de, faixa.ate, c.profissional)
     .all<{
@@ -234,15 +235,18 @@ async function agenda(ctx: RequestContext, op: Operacao, c: Consulta): Promise<R
     in_progress: "em atendimento",
     done: "concluído",
   };
+  // Busca 31 para saber se há mais que os 30 mostrados (a resposta avisa o corte).
+  const cortado = results.length > 30;
+  const mostrados = results.slice(0, 30);
   const filtros = [
     `Período: ${dataBr(periodo.de)} a ${dataBr(periodo.ate)} (horário de Brasília)`,
     ...(c.profissional ? [`Profissional: contém “${c.profissional}”`] : []),
   ];
   return {
     texto:
-      results.length === 0
+      mostrados.length === 0
         ? "Não há atendimentos nesse período."
-        : results
+        : mostrados
             .map((a) => {
               const hora = new Intl.DateTimeFormat("pt-BR", {
                 timeZone: FUSO,
@@ -251,7 +255,10 @@ async function agenda(ctx: RequestContext, op: Operacao, c: Consulta): Promise<R
               });
               return `${formatarDataHora(a.start_at)}–${hora.format(a.end_at)} · ${rotulo(a.service_type)} · ${a.cliente} · ${a.profissional} · ${estados[a.status] ?? a.status}`;
             })
-            .join("\n"),
+            .join("\n") +
+          (cortado
+            ? "\n(Mostrando os 30 primeiros; filtre por profissional ou um período menor.)"
+            : ""),
     filtros,
     origem: "agenda (atendimentos não cancelados)",
   };
@@ -360,7 +367,8 @@ export const perguntar: Handler = async (ctx) => {
     try {
       await db.batch([
         inserir(crypto.randomUUID(), "usuario", body.texto, {}),
-        inserir(idResposta, "assistente", r.texto, {
+        // A coluna aceita até 8000 caracteres; as listas já são limitadas, isto é só a garantia.
+        inserir(idResposta, "assistente", r.texto.slice(0, 8000), {
           intencao: consulta.intencao,
           filtros: r.filtros,
           origem: r.origem,

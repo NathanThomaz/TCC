@@ -30,17 +30,19 @@ export function Consulta() {
   const [texto, setTexto] = useState("");
   const chave = useChavePorConteudo();
   const fim = useRef<HTMLDivElement>(null);
+  const total = q.data?.mensagens.length ?? 0;
   const m = useMutation({
-    mutationFn: (t: string) => perguntar(app.id, t, chave(t)),
+    // Mesma chave só para repetir a mesma tentativa; a mesma pergunta feita depois é outra intenção
+    // (a conversa cresceu), então ganha chave nova e uma resposta com os dados de agora.
+    mutationFn: (t: string) => perguntar(app.id, t, chave({ t, depoisDe: total })),
     onSuccess: (e: EstadoConsulta, enviado) => {
       qc.setQueryData(chaveQuery, e);
       setTexto((atual) => (atual.trim() === enviado ? "" : atual));
     },
   });
-  const total = q.data?.mensagens.length ?? 0;
   useEffect(() => {
     fim.current?.scrollIntoView?.({ block: "nearest" });
-  }, [total]);
+  }, [total, m.isPending]);
 
   if (q.isPending) return <Skeleton className="h-80 w-full rounded-xl" />;
   if (q.isError) return <ErrorState mensagem={q.error.message} onTentar={() => void q.refetch()} />;
