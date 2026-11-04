@@ -4,6 +4,7 @@ import type { ContasApiBody, OperacaoApiBody, SystemsApiBody } from "../../src/s
 import type { VerifiedToken } from "../../src/worker/auth/firebase-token";
 import { InvalidTokenError } from "../../src/worker/auth/firebase-token";
 import { createApp } from "../../src/worker/app";
+import { AccountLookupError } from "../../src/worker/auth/firebase-admin";
 import { DISTRIBUIDORA } from "../fixtures/distribuidora";
 import { limparBanco } from "../limpar-banco";
 
@@ -39,6 +40,9 @@ const NOVO = "token-novo-0000000000000";
 /** Firebase simulado: registra convites, desativações e reativações. */
 let chamadas: string[] = [];
 let falharConvite = false;
+let falharDesativar = false;
+let falharLookup = false;
+let aoConsultar: (() => Promise<unknown>) | undefined;
 let firebaseDesativado = new Set<string>();
 
 const app = createApp({
@@ -48,14 +52,19 @@ const app = createApp({
       const identity = IDENTITIES[token];
       return identity ? Promise.resolve(identity) : Promise.reject(new InvalidTokenError("x"));
     },
-    lookup: (uid) => Promise.resolve({ validSince: null, disabled: firebaseDesativado.has(uid) }),
+    lookup: async (uid) => {
+      await aoConsultar?.();
+      if (falharLookup) throw new AccountLookupError("rede");
+      return { validSince: null, disabled: firebaseDesativado.has(uid) };
+    },
     contas: {
       invite: (email) => {
         chamadas.push(`convite:${email}`);
-        return falharConvite ? Promise.reject(new Error("rede")) : Promise.resolve();
+        return falharConvite ? Promise.reject(new Error("rede")) : Promise.resolve(`fb-${email}`);
       },
       disable: (uid) => {
         chamadas.push(`desativar:${uid}`);
+        if (falharDesativar) return Promise.reject(new Error("rede"));
         firebaseDesativado.add(uid);
         return Promise.resolve();
       },
@@ -106,6 +115,9 @@ beforeEach(async () => {
   agora = NOW;
   chamadas = [];
   falharConvite = false;
+  falharDesativar = false;
+  falharLookup = false;
+  aoConsultar = undefined;
   firebaseDesativado = new Set();
   await limparBanco();
   const T = NOW - 1000;
@@ -229,5 +241,89 @@ describe("contas secundárias", () => {
     expect(
       (await call("POST", `/contas/${id}/status`, ADMIN2, { status: "disabled" })).status,
     ).toBe(404);
+  });
+});
+
+describe("contas: revisão cruzada", () => {
+  async function contaAtiva(sistemas: string[]) {
+    const id = (await convidar(sistemas)).body.conta!.id;
+    await call("GET", "/session", NOVO); // primeiro acesso
+    return id;
+  }
+
+  it("conta desativada não recebe acesso nem numa concessão em corrida (trigger)", async () => {
+    const id = await contaAtiva([S1]);
+    await call("POST", `/contas/${id}/status`, ADMIN, { status: "disabled" });
+    await expect(
+      env.DB.prepare(
+        "INSERT INTO system_access (user_id, system_id, status, granted_by, created_at, updated_at) VALUES (?, ?, 'active', 'a', ?, ?) ON CONFLICT (user_id, system_id) DO UPDATE SET status = 'active'",
+      )
+        .bind(id, S1, NOW, NOW)
+        .run(),
+    ).rejects.toThrow(/conta_desativada/);
+  });
+
+  it("Firebase fora do ar: a tolerância não aceita conta desativada durante a consulta", async () => {
+    const id = await contaAtiva([S1]);
+    agora = NOW + 6 * 60_000; // conferência de revogação vencida (> 5 min), dentro da tolerância
+    // O administrador desativa exatamente enquanto o Firebase é consultado, e a consulta falha.
+    aoConsultar = () =>
+      env.DB.prepare("UPDATE users SET status = 'disabled', updated_at = ? WHERE id = ?")
+        .bind(agora, id)
+        .run();
+    falharLookup = true;
+    expect((await call("GET", "/session", NOVO)).status).toBe(403);
+  });
+  it("desativada pelo Firebase: os acessos também são revogados e reativar volta sem acessos", async () => {
+    const id = await contaAtiva([S1, S2]);
+    firebaseDesativado.add("uid-n");
+    agora = NOW + 6 * 60_000; // força a nova consulta ao Firebase
+    expect((await call("GET", "/session", NOVO)).status).toBe(403);
+    const r = await call("POST", `/contas/${id}/status`, ADMIN, { status: "active" });
+    expect(r.body.conta!.sistemas.every((s) => !s.ativo)).toBe(true);
+  });
+
+  it("conta ainda pendente também é desativada no Firebase (uid guardado no convite)", async () => {
+    const id = (await convidar([S1])).body.conta!.id;
+    await call("POST", `/contas/${id}/status`, ADMIN, { status: "disabled" });
+    expect(chamadas).toContain("desativar:fb-novo@example.com");
+  });
+
+  it("falha ao desativar no Firebase fica pendente e repetir tenta de novo", async () => {
+    const id = await contaAtiva([S1]);
+    falharDesativar = true;
+    await call("POST", `/contas/${id}/status`, ADMIN, { status: "disabled" });
+    const pendente = await env.DB.prepare("SELECT provider_sync FROM users WHERE id = ?")
+      .bind(id)
+      .first<{ provider_sync: string | null }>();
+    expect(pendente!.provider_sync).toBe("desativar");
+    falharDesativar = false;
+    await call("POST", `/contas/${id}/status`, ADMIN, { status: "disabled" });
+    const depois = await env.DB.prepare("SELECT provider_sync FROM users WHERE id = ?")
+      .bind(id)
+      .first<{ provider_sync: string | null }>();
+    expect(depois!.provider_sync).toBeNull();
+    expect(chamadas.filter((c) => c === "desativar:uid-n")).toHaveLength(2);
+  });
+
+  it("corte das sessões cobre o segundo inteiro (token emitido no mesmo segundo é recusado)", async () => {
+    const id = await contaAtiva([S1]);
+    // agora = NOW, exatamente no início de um segundo, igual ao auth_time do token.
+    await call("POST", `/contas/${id}/status`, ADMIN, { status: "disabled" });
+    await call("POST", `/contas/${id}/status`, ADMIN, { status: "active" });
+    expect((await call("GET", "/session", NOVO)).status).toBe(401);
+  });
+
+  it("convite interrompido: a repetição com a mesma chave envia o convite e informa o envio", async () => {
+    const corpo = { email: "novo@example.com", sistemas: [S1] };
+    falharConvite = true;
+    const a = await call("POST", "/contas", ADMIN, corpo, "chave-convite-2");
+    expect(a.body.conviteEnviado).toBe(false);
+    falharConvite = false;
+    const b = await call("POST", "/contas", ADMIN, corpo, "chave-convite-2");
+    expect(b.body.conviteEnviado).toBe(true);
+    const c = await call("POST", "/contas", ADMIN, corpo, "chave-convite-2");
+    expect(c.body.conviteEnviado).toBe(true);
+    expect(chamadas).toEqual(["convite:novo@example.com", "convite:novo@example.com"]);
   });
 });

@@ -119,8 +119,11 @@ export function createAccountLookup(options: {
 
 /** O que a gestão de contas precisa do Firebase (seção 7). */
 export interface AccountAdmin {
-  /** Garante a conta sem senha e pede ao Firebase o link de definir senha (que confirma o e-mail). */
-  invite(email: string): Promise<void>;
+  /**
+   * Garante a conta sem senha e pede ao Firebase o link de definir senha (que confirma o e-mail).
+   * Devolve o uid da conta no Firebase.
+   */
+  invite(email: string): Promise<string>;
   /** Desativa no Firebase e invalida as sessões emitidas (validSince = agora). */
   disable(uid: string): Promise<void>;
   /** Reativa no Firebase (as sessões antigas continuam inválidas). */
@@ -176,14 +179,14 @@ export function createAccountAdmin(options: {
       body: JSON.stringify(corpo),
     });
     if (!response.ok) throw new AccountLookupError(`${caminho} falhou (${response.status})`);
-    return response.json<{ users?: { localId?: string }[] }>();
+    return response.json<{ users?: { localId?: string }[]; localId?: string }>();
   }
 
   const segura =
-    <A extends unknown[]>(fn: (...a: A) => Promise<void>) =>
-    async (...args: A) => {
+    <A extends unknown[], R>(fn: (...a: A) => Promise<R>) =>
+    async (...args: A): Promise<R> => {
       try {
-        await fn(...args);
+        return await fn(...args);
       } catch (error) {
         if (error instanceof AccountLookupError) throw error;
         throw new AccountLookupError(
@@ -195,7 +198,10 @@ export function createAccountAdmin(options: {
   return {
     invite: segura(async (email: string) => {
       const existente = await admin("accounts:lookup", { email: [email] });
-      if (!existente.users?.length) await admin("accounts", { email, emailVerified: false });
+      const uid =
+        existente.users?.[0]?.localId ??
+        (await admin("accounts", { email, emailVerified: false })).localId;
+      if (!uid) throw new AccountLookupError("conta criada sem uid");
       const envio = await options.fetch(
         `https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${encodeURIComponent(options.webApiKey)}`,
         {
@@ -205,6 +211,7 @@ export function createAccountAdmin(options: {
         },
       );
       if (!envio.ok) throw new AccountLookupError(`sendOobCode falhou (${envio.status})`);
+      return uid;
     }),
     disable: segura(async (uid: string) => {
       await admin("accounts:update", {

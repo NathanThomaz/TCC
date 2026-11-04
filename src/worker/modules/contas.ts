@@ -20,6 +20,9 @@ interface ContaRow {
   display_name: string | null;
   status: ContaDto["status"];
   firebase_uid: string | null;
+  invited_uid: string | null;
+  invite_sent_at: number | null;
+  provider_sync: "desativar" | "reativar" | null;
 }
 
 async function administrador(ctx: RequestContext): Promise<AuthUser> {
@@ -31,7 +34,8 @@ async function administrador(ctx: RequestContext): Promise<AuthUser> {
 async function carregarConta(ctx: RequestContext, admin: AuthUser, id: string): Promise<ContaRow> {
   // Conta de outro administrador responde 404 (não revela que existe).
   const row = await ctx.env.DB.prepare(
-    "SELECT id, email, display_name, status, firebase_uid FROM users WHERE id = ? AND owner_id = ? AND role = 'secondary'",
+    `SELECT id, email, display_name, status, firebase_uid, invited_uid, invite_sent_at, provider_sync
+     FROM users WHERE id = ? AND owner_id = ? AND role = 'secondary'`,
   )
     .bind(id, admin.id)
     .first<ContaRow>();
@@ -82,6 +86,40 @@ async function uma(ctx: RequestContext, admin: AuthUser, id: string): Promise<Co
   return conta;
 }
 
+/**
+ * Pede o link de definir senha e grava que saiu (e o uid do Firebase, para poder desativar a conta
+ * antes do primeiro acesso). Falha não desfaz a conta: ela fica pendente e o envio é retomado.
+ */
+async function enviarConvite(
+  ctx: RequestContext,
+  conta: { id: string; email: string },
+): Promise<boolean> {
+  const contas = ctx.auth?.contas;
+  if (!contas) return false;
+  try {
+    const uid = await contas.invite(conta.email);
+    await ctx.env.DB.prepare(
+      "UPDATE users SET invited_uid = COALESCE(invited_uid, ?), invite_sent_at = ?, updated_at = max(updated_at, ?) WHERE id = ?",
+    )
+      .bind(uid, ctx.clock.now(), ctx.clock.now(), conta.id)
+      .run();
+    return true;
+  } catch (error) {
+    ctx.log.warn("conta.convite_falhou", { error });
+    return false;
+  }
+}
+
+/** Repetição do convite: se o envio não saiu (falha ou interrupção), tenta de novo agora. */
+async function respostaDoConvite(ctx: RequestContext, admin: AuthUser, id: string, status: number) {
+  const conta = await carregarConta(ctx, admin, id);
+  const enviado =
+    conta.invite_sent_at !== null ||
+    (conta.status === "pending" && (await enviarConvite(ctx, conta)));
+  const body: ContasApiBody = { conta: await uma(ctx, admin, id), conviteEnviado: enviado };
+  return json(body, { status });
+}
+
 const conviteIndisponivel = () =>
   unavailable("O envio de convites não está configurado neste ambiente.");
 
@@ -107,13 +145,9 @@ export const convidarConta: Handler = async (ctx) => {
   const cmd = { scope: "global", actorId: admin.id, command: "conta.convidar", body };
   const started = await beginIdempotent(ctx, cmd);
   if (started.kind === "replay") {
-    return json(
-      { conta: await uma(ctx, admin, started.resourceId) },
-      { status: started.statusCode },
-    );
+    return respostaDoConvite(ctx, admin, started.resourceId, started.statusCode);
   }
-  const contas = ctx.auth?.contas;
-  if (!contas) throw conviteIndisponivel();
+  if (!ctx.auth?.contas) throw conviteIndisponivel();
 
   const db = ctx.env.DB;
   const existente = await db
@@ -152,10 +186,7 @@ export const convidarConta: Handler = async (ctx) => {
   } catch (error) {
     const replay = isUnique(error) ? await replayAfterRace(ctx, cmd, started) : null;
     if (replay?.kind === "replay") {
-      return json(
-        { conta: await uma(ctx, admin, replay.resourceId) },
-        { status: replay.statusCode },
-      );
+      return respostaDoConvite(ctx, admin, replay.resourceId, replay.statusCode);
     }
     if (isUnique(error))
       throw new AppError(409, "email_em_uso", "Já existe uma conta com este e-mail.");
@@ -165,15 +196,7 @@ export const convidarConta: Handler = async (ctx) => {
     triggerConflict(error, { acesso_incoerente: "Um dos sistemas não pertence a você." });
   }
 
-  let conviteEnviado = true;
-  try {
-    await contas.invite(body.email);
-  } catch (error) {
-    conviteEnviado = false;
-    ctx.log.warn("conta.convite_falhou", { error });
-  }
-  const resposta: ContasApiBody = { conta: await uma(ctx, admin, id), conviteEnviado };
-  return json(resposta, { status: 201 });
+  return respostaDoConvite(ctx, admin, id, 201);
 };
 
 /** Reenvia o link de definir senha a uma conta que ainda não fez o primeiro acesso. */
@@ -181,12 +204,8 @@ export const reenviarConvite: Handler = async (ctx) => {
   const admin = await administrador(ctx);
   const conta = await carregarConta(ctx, admin, ctx.params.id ?? "");
   if (conta.status !== "pending") throw conflict("Esta conta já fez o primeiro acesso.");
-  const contas = ctx.auth?.contas;
-  if (!contas) throw conviteIndisponivel();
-  try {
-    await contas.invite(conta.email);
-  } catch (error) {
-    ctx.log.warn("conta.convite_falhou", { error });
+  if (!ctx.auth?.contas) throw conviteIndisponivel();
+  if (!(await enviarConvite(ctx, conta))) {
     throw unavailable("Não foi possível enviar o convite agora. Tente de novo.");
   }
   return json({ conta: await uma(ctx, admin, conta.id), conviteEnviado: true });
@@ -227,17 +246,55 @@ export const definirAcesso: Handler = async (ctx) => {
         .bind(sistema, admin.id, ativo ? "acesso.concedido" : "acesso.revogado", conta.id, now),
     ]);
   } catch (error) {
-    triggerConflict(error, { acesso_incoerente: "Este sistema não pertence a você." });
+    triggerConflict(error, {
+      acesso_incoerente: "Este sistema não pertence a você.",
+      conta_desativada: "Reative a conta antes de conceder acessos.",
+    });
   }
   return json({ conta: await uma(ctx, admin, conta.id) });
 };
 
 const StatusBody = z.object({ status: z.enum(["active", "disabled"]) });
 
+/** uid atual no Firebase (relido: o primeiro acesso pode ter acabado de preenchê-lo). */
+async function uidNoFirebase(ctx: RequestContext, id: string): Promise<string | null> {
+  const row = await ctx.env.DB.prepare("SELECT firebase_uid, invited_uid FROM users WHERE id = ?")
+    .bind(id)
+    .first<{ firebase_uid: string | null; invited_uid: string | null }>();
+  return row?.firebase_uid ?? row?.invited_uid ?? null;
+}
+
 /**
- * Desativar: bloqueia o login (D1 e Firebase), invalida as sessões emitidas (valid_since) e revoga
- * todos os acessos. Reativar: volta a entrar, mas sem acessos até o administrador revisá-los; as
- * sessões antigas continuam inválidas. Recuperar a senha não reativa (seção 7).
+ * Leva a desativação ao Firebase e só então limpa a pendência. Falhou, a pendência fica e repetir a
+ * desativação tenta de novo. Uma reativação que vier depois limpa a pendência e prevalece; se esta
+ * chamada chegar atrasada ao Firebase, a conta volta a ser desativada na próxima consulta de
+ * revogação (o desencontro sempre termina no lado seguro).
+ */
+async function sincronizarDesativacao(ctx: RequestContext, id: string) {
+  const contas = ctx.auth?.contas;
+  const uid = await uidNoFirebase(ctx, id);
+  const limpar = () =>
+    ctx.env.DB.prepare(
+      "UPDATE users SET provider_sync = NULL WHERE id = ? AND status = 'disabled' AND provider_sync = 'desativar'",
+    )
+      .bind(id)
+      .run();
+  if (!uid) return limpar(); // ainda não existe conta no Firebase
+  if (!contas) return;
+  try {
+    await contas.disable(uid);
+    await limpar();
+  } catch (error) {
+    ctx.log.warn("conta.desativar_firebase_falhou", { error });
+  }
+}
+
+/**
+ * Desativar: bloqueia o login no D1 na hora (a API consulta toda requisição), invalida as sessões
+ * emitidas até o fim do segundo corrente (o Firebase guarda o corte em segundos) e revoga os
+ * acessos pelo trigger users_disabled_revokes_access; depois, desativa no Firebase. Reativar:
+ * reativa no Firebase primeiro e volta sem acessos, para o administrador revisá-los. Recuperar a
+ * senha não reativa (seção 7).
  */
 export const definirStatusConta: Handler = async (ctx) => {
   const admin = await administrador(ctx);
@@ -245,45 +302,38 @@ export const definirStatusConta: Handler = async (ctx) => {
   const { status } = parse(StatusBody, await readJson(ctx.request));
   const db = ctx.env.DB;
   const now = ctx.clock.now();
-  const contas = ctx.auth?.contas;
 
   if (status === "disabled") {
     if (conta.status !== "disabled") {
-      // D1 primeiro: é ele que a API consulta em toda requisição, então o bloqueio vale já.
+      const corte = Math.floor(now / 1000) * 1000 + 1000;
       await db.batch([
         db
           .prepare(
-            `UPDATE users SET status = 'disabled', valid_since = max(COALESCE(valid_since, 0), ?),
-               valid_since_checked_at = ?, updated_at = ? WHERE id = ?`,
+            `UPDATE users SET status = 'disabled', provider_sync = 'desativar',
+               valid_since = max(COALESCE(valid_since, 0), ?), valid_since_checked_at = ?, updated_at = max(updated_at, ?)
+             WHERE id = ? AND status <> 'disabled'`,
           )
-          .bind(now, now, now, conta.id),
+          .bind(corte, now, now, conta.id),
         db
           .prepare(
-            "UPDATE system_access SET status = 'revoked', updated_at = ? WHERE user_id = ? AND status = 'active'",
-          )
-          .bind(now, conta.id),
-        db
-          .prepare(
-            "INSERT INTO audit_events (actor_id, action, target_type, target_id, created_at) VALUES (?, 'conta.desativada', 'user', ?, ?)",
+            "INSERT INTO audit_events (actor_id, action, target_type, target_id, created_at) SELECT ?, 'conta.desativada', 'user', ?, ? WHERE changes() = 1",
           )
           .bind(admin.id, conta.id, now),
       ]);
-      if (conta.firebase_uid && contas) {
-        // Melhor esforço: o login já está bloqueado pelo D1; o Firebase só reforça.
-        await contas.disable(conta.firebase_uid).catch((error: unknown) => {
-          ctx.log.warn("conta.desativar_firebase_falhou", { error });
-        });
-      }
     }
+    const atual = await carregarConta(ctx, admin, conta.id);
+    if (atual.provider_sync === "desativar") await sincronizarDesativacao(ctx, conta.id);
     return json({ conta: await uma(ctx, admin, conta.id) });
   }
 
   if (conta.status === "disabled") {
     // Sem reativar no Firebase, a próxima consulta de revogação desativaria de novo.
-    if (conta.firebase_uid) {
+    const uid = await uidNoFirebase(ctx, conta.id);
+    if (uid) {
+      const contas = ctx.auth?.contas;
       if (!contas) throw conviteIndisponivel();
       try {
-        await contas.enable(conta.firebase_uid);
+        await contas.enable(uid);
       } catch (error) {
         ctx.log.warn("conta.reativar_firebase_falhou", { error });
         throw unavailable("Não foi possível reativar a conta agora. Tente de novo.");
@@ -291,11 +341,14 @@ export const definirStatusConta: Handler = async (ctx) => {
     }
     await db.batch([
       db
-        .prepare("UPDATE users SET status = ?, updated_at = ? WHERE id = ? AND status = 'disabled'")
-        .bind(conta.firebase_uid ? "active" : "pending", now, conta.id),
+        .prepare(
+          `UPDATE users SET status = CASE WHEN firebase_uid IS NULL THEN 'pending' ELSE 'active' END,
+             provider_sync = NULL, updated_at = max(updated_at, ?) WHERE id = ? AND status = 'disabled'`,
+        )
+        .bind(now, conta.id),
       db
         .prepare(
-          "INSERT INTO audit_events (actor_id, action, target_type, target_id, created_at) VALUES (?, 'conta.reativada', 'user', ?, ?)",
+          "INSERT INTO audit_events (actor_id, action, target_type, target_id, created_at) SELECT ?, 'conta.reativada', 'user', ?, ? WHERE changes() = 1",
         )
         .bind(admin.id, conta.id, now),
     ]);

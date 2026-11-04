@@ -153,8 +153,9 @@ describe("createAccountAdmin", () => {
     });
 
   it("convite: cria a conta sem senha se não existir e pede o link de definir senha", async () => {
-    const google = fakeGoogle({ users: [] });
-    await admin(google.fetcher).invite("novo@example.com");
+    // Mesmo corpo para todas as chamadas: o lookup vê users vazio e a criação devolve o localId.
+    const google = fakeGoogle({ users: [], localId: "uid-novo" });
+    await expect(admin(google.fetcher).invite("novo@example.com")).resolves.toBe("uid-novo");
     const urls = google.calls.map((c) => c.url.replace(/\?.*$/, ""));
     expect(urls).toEqual([
       "https://oauth2.googleapis.com/token",

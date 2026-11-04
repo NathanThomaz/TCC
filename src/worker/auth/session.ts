@@ -97,11 +97,13 @@ async function checkRevocation(
          SET valid_since = NULLIF(max(COALESCE(valid_since, 0), ?), 0),
              valid_since_checked_at = max(COALESCE(valid_since_checked_at, 0), ?)
          WHERE id = ?
-         RETURNING valid_since, valid_since_checked_at`,
+         RETURNING valid_since, valid_since_checked_at, status`,
       )
         .bind(state.validSince ?? 0, now, user.id)
-        .first<Pick<UserRow, "valid_since" | "valid_since_checked_at">>();
+        .first<Pick<UserRow, "valid_since" | "valid_since_checked_at" | "status">>();
       if (stored) current = { ...user, ...stored };
+      // Desativada no D1 enquanto o Firebase era consultado: vale a desativação.
+      if (current.status === "disabled") throw accountDisabled();
     } catch (error) {
       if (!(error instanceof AccountLookupError)) throw error;
       ctx.log.warn("auth.revocation_check_failed", { error });
@@ -110,6 +112,13 @@ async function checkRevocation(
           "Não foi possível confirmar sua sessão agora. Tente de novo em instantes.",
         );
       }
+      // Tolerância, mas com o estado ATUAL do D1: uma desativação (ou um novo corte de sessões)
+      // gravada enquanto o Firebase não respondia continua valendo.
+      const atual = await ctx.env.DB.prepare("SELECT status, valid_since FROM users WHERE id = ?")
+        .bind(user.id)
+        .first<Pick<UserRow, "status" | "valid_since">>();
+      if (!atual || atual.status === "disabled") throw accountDisabled();
+      current = { ...current, status: atual.status, valid_since: atual.valid_since };
     }
   }
   if (current.valid_since !== null && identity.authTime < current.valid_since) {
