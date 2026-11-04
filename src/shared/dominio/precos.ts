@@ -53,7 +53,14 @@ export function calcularTotais(itens: ItemPrecificado[], limiteAtacado: number |
   };
 }
 
-/** R$ 1.234,56 a partir de centavos inteiros. */
+/**
+ * R$ 1.234,56 a partir de centavos inteiros. Montado à mão: o estilo "currency" do Intl varia o
+ * espaço entre os ambientes (o Worker escreve "R$50,00"), e a resposta precisa ser a mesma.
+ */
 export function formatarCentavos(centavos: number): string {
-  return (centavos / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  const valor = (Math.abs(centavos) / 100).toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  return `${centavos < 0 ? "−" : ""}R$ ${valor}`;
 }

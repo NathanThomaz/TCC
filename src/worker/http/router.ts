@@ -1,4 +1,5 @@
 import type { AuthProvider } from "../auth/session";
+import type { ProvedorIa } from "../ia/gemini";
 import type { Env } from "../env";
 import type { Clock } from "../lib/clock";
 import { systemClock } from "../lib/clock";
@@ -18,6 +19,8 @@ export interface RequestContext {
   requestId: string;
   /** Provedor de identidade; `undefined` quando a autenticação não está configurada. */
   auth: AuthProvider | undefined;
+  /** Provedor de IA; `undefined` quando a chave não está configurada. */
+  ia: ProvedorIa | undefined;
 }
 
 export type Handler = (ctx: RequestContext) => Promise<Response> | Response;
@@ -33,6 +36,8 @@ export interface RouterDeps {
   clock: Clock;
   /** Monta o provedor de identidade para o ambiente (injetável nos testes). */
   auth?: (env: Env, clock: Clock) => AuthProvider | undefined;
+  /** Monta o provedor de IA para o ambiente (injetável nos testes). */
+  ia?: (env: Env) => ProvedorIa | undefined;
 }
 
 const defaultDeps: RouterDeps = { clock: systemClock };
@@ -85,6 +90,7 @@ export function createRouter(routes: Route[], deps: RouterDeps = defaultDeps) {
           log,
           requestId,
           auth: deps.auth?.(env, deps.clock),
+          ia: deps.ia?.(env),
         });
       } else if (candidates.length > 0) {
         const allow = [...new Set(candidates.map((candidate) => candidate.route.method))].join(

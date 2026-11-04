@@ -13,4 +13,8 @@ export interface Env {
   FIREBASE_APP_ID?: string;
   /** Segredo: JSON da conta de serviço (client_email, private_key), só para accounts:lookup. */
   FIREBASE_SERVICE_ACCOUNT?: string;
+  /** Segredo: chave dedicada do Gemini para o Nexus (ADR-003). Ausente = chat indisponível. */
+  GEMINI_API_KEY?: string;
+  /** Teto mensal da IA em centavos de real (padrão 2000 = R$ 20, seção 21). */
+  IA_TETO_MENSAL_CENTAVOS?: string;
 }

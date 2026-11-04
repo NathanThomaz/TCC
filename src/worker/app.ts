@@ -1,4 +1,5 @@
 import {
+  createAccountAdmin,
   createAccountLookup,
   parseServiceAccount,
   type AccountLookup,
@@ -31,6 +32,7 @@ import {
   statusProduto,
   statusProfissional,
 } from "./modules/operacao/cadastros";
+import { obterConsulta, perguntar } from "./modules/operacao/consulta";
 import { obterApp } from "./modules/operacao/contexto";
 import {
   corrigirSaldo,
@@ -48,6 +50,24 @@ import {
   salvarItens,
 } from "./modules/operacao/vendas";
 import { getSession } from "./modules/session";
+import {
+  convidarConta,
+  definirAcesso,
+  definirStatusConta,
+  listarContas,
+  reenviarConvite,
+} from "./modules/contas";
+import {
+  adicionarRequisito,
+  confirmarRequisito,
+  corrigirConfiguracao,
+  descartarRequisito,
+  editarRequisito,
+  enviarMensagem,
+  gerarConfiguracao,
+  obterCriacao,
+} from "./modules/criacao";
+import { geminiDoAmbiente } from "./ia/gemini";
 import {
   activateSystem,
   approveVersion,
@@ -83,15 +103,27 @@ const firebaseAuth: NonNullable<RouterDeps["auth"]> = (env, clock) => {
       }),
     };
   }
+  const webApiKey = env.FIREBASE_WEB_API_KEY;
   return {
     verify: (token) =>
       verifyFirebaseIdToken(token, { projectId, keys: firebaseKeys(), now: clock.now() }),
     lookup: lookupCache.lookup,
+    contas: webApiKey
+      ? createAccountAdmin({
+          projectId,
+          serviceAccount,
+          webApiKey,
+          fetch: (input, init) => fetch(input, init),
+          now: () => clock.now(),
+        })
+      : undefined,
   };
 };
 
 /** Monta o app; `deps` permite fixar o relógio e o provedor de identidade nos testes. */
-export function createApp(deps: RouterDeps = { clock: systemClock, auth: firebaseAuth }) {
+export function createApp(
+  deps: RouterDeps = { clock: systemClock, auth: firebaseAuth, ia: (env) => geminiDoAmbiente(env) },
+) {
   const S = `${API_BASE}/systems`;
   const O = `${S}/:systemId`;
   return createRouter(
@@ -99,6 +131,12 @@ export function createApp(deps: RouterDeps = { clock: systemClock, auth: firebas
       { method: "GET", path: `${API_BASE}/health`, handler: getHealth },
       { method: "GET", path: `${API_BASE}/config`, handler: getPublicConfig },
       { method: "GET", path: `${API_BASE}/session`, handler: getSession },
+      // Contas secundárias, só do administrador (seção 7).
+      { method: "GET", path: `${API_BASE}/contas`, handler: listarContas },
+      { method: "POST", path: `${API_BASE}/contas`, handler: convidarConta },
+      { method: "POST", path: `${API_BASE}/contas/:id/convite`, handler: reenviarConvite },
+      { method: "POST", path: `${API_BASE}/contas/:id/acessos`, handler: definirAcesso },
+      { method: "POST", path: `${API_BASE}/contas/:id/status`, handler: definirStatusConta },
       { method: "GET", path: S, handler: listSystems },
       { method: "POST", path: S, handler: createSystem },
       { method: "GET", path: `${S}/:systemId`, handler: getSystem },
@@ -109,8 +147,27 @@ export function createApp(deps: RouterDeps = { clock: systemClock, auth: firebas
         handler: approveVersion,
       },
       { method: "POST", path: `${S}/:systemId/activate`, handler: activateSystem },
+      // Criação por conversa (seção 8).
+      { method: "GET", path: `${O}/criacao`, handler: obterCriacao },
+      { method: "POST", path: `${O}/criacao/mensagens`, handler: enviarMensagem },
+      { method: "POST", path: `${O}/criacao/requisitos`, handler: adicionarRequisito },
+      {
+        method: "POST",
+        path: `${O}/criacao/requisitos/:codigo/confirmar`,
+        handler: confirmarRequisito,
+      },
+      { method: "POST", path: `${O}/criacao/requisitos/:codigo/editar`, handler: editarRequisito },
+      {
+        method: "POST",
+        path: `${O}/criacao/requisitos/:codigo/descartar`,
+        handler: descartarRequisito,
+      },
+      { method: "POST", path: `${O}/criacao/gerar`, handler: gerarConfiguracao },
+      { method: "POST", path: `${O}/criacao/corrigir`, handler: corrigirConfiguracao },
       // Operação do sistema ativo (seções 10 a 14).
       { method: "GET", path: `${O}/app`, handler: obterApp },
+      { method: "GET", path: `${O}/consulta`, handler: obterConsulta },
+      { method: "POST", path: `${O}/consulta/mensagens`, handler: perguntar },
       { method: "GET", path: `${O}/clientes`, handler: listarClientes },
       { method: "POST", path: `${O}/clientes`, handler: criarCliente },
       { method: "PATCH", path: `${O}/clientes/:id`, handler: editarCliente },
