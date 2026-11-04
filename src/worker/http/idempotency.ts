@@ -97,6 +97,35 @@ export function recordStatement(
 }
 
 /**
+ * Como `recordStatement`, mas só registra se a instrução anterior do batch afetou exatamente uma
+ * linha (`changes() = 1`). Serve para efeitos condicionais (ex.: saldo esperado): se o efeito
+ * não aconteceu, a chave não fica gravada como sucesso e quem chama devolve o conflito.
+ */
+export function recordIfChanged(
+  ctx: Pick<RequestContext, "env">,
+  cmd: IdempotentCommand,
+  started: Extract<IdempotencyOutcome, { kind: "new" }>,
+  resourceId: string,
+  statusCode: number,
+  now: number,
+): D1PreparedStatement {
+  return ctx.env.DB.prepare(
+    `INSERT INTO operation_requests
+       (scope, actor_id, command, idempotency_key, request_hash, status_code, response_json, created_at)
+     SELECT ?, ?, ?, ?, ?, ?, json_object('recurso', ?), ? WHERE changes() = 1`,
+  ).bind(
+    cmd.scope,
+    cmd.actorId,
+    cmd.command,
+    started.key,
+    started.requestHash,
+    statusCode,
+    resourceId,
+    now,
+  );
+}
+
+/**
  * Depois de um batch que falhou por UNIQUE: se outra requisição com a mesma chave venceu a
  * corrida, devolve a repetição dela; senão, `null` (o erro era de outra causa).
  */
