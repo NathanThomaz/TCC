@@ -6,10 +6,11 @@ import { validateDraft } from "../../shared/contract/validate";
 import { authenticate, requireAdmin, requireSystemAccess } from "../auth/session";
 import { readJson } from "../http/body";
 import { beginIdempotent, recordStatement, replayAfterRace } from "../http/idempotency";
-import { AppError, conflict, notFound, validationFailed } from "../http/errors";
+import { AppError, conflict, notFound } from "../http/errors";
 import { json } from "../http/responses";
 import type { Handler, RequestContext } from "../http/router";
 import { canonicalJson, sha256Hex } from "../lib/hash";
+import { isUnique, parse, triggerConflict } from "./comum";
 
 // Sistemas e o ciclo de configuração (seção 8): rascunho → versão validada → aprovação da versão
 // exata (hash) → ativação. Invariantes críticos também estão no D1 (migrations 0001 e 0002).
@@ -42,27 +43,6 @@ const CreateVersionBody = z.object({
 });
 const ApproveBody = z.object({ hash: z.string().regex(/^[0-9a-f]{64}$/) });
 const ActivateBody = z.object({ versao: z.string().min(1).max(100) });
-
-function parse<T>(schema: z.ZodType<T>, body: unknown): T {
-  const result = schema.safeParse(body);
-  if (!result.success) {
-    throw validationFailed("Campos inválidos.", { issues: result.error.issues.length });
-  }
-  return result.data;
-}
-
-function isUnique(error: unknown): boolean {
-  return error instanceof Error && /UNIQUE|PRIMARY KEY/i.test(error.message);
-}
-
-/** Converte a recusa de um trigger do D1 em conflito com mensagem clara. */
-function triggerConflict(error: unknown, messages: Record<string, string>): never {
-  const text = error instanceof Error ? error.message : String(error);
-  for (const [code, message] of Object.entries(messages)) {
-    if (text.includes(code)) throw new AppError(409, code, message);
-  }
-  throw error;
-}
 
 function publicSystem(row: SystemRow): SystemDto {
   return {

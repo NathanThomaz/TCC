@@ -47,6 +47,146 @@ export interface SystemsApiBody {
   error?: ApiErrorBody["error"];
 }
 
+// ---- Operação de um sistema ativo (/api/v1/systems/:systemId/...) ----
+
+export type StatusCadastro = "active" | "inactive";
+export type CamposInformativos = Record<string, string | number>;
+
+export interface ClienteDto {
+  id: string;
+  nome: string;
+  status: StatusCadastro;
+  campos: CamposInformativos;
+}
+
+export interface ProfissionalDto {
+  id: string;
+  nome: string;
+  status: StatusCadastro;
+  campos: CamposInformativos;
+}
+
+export interface ProdutoDto {
+  id: string;
+  nome: string;
+  status: StatusCadastro;
+  varejoCentavos: number;
+  atacadoCentavos: number | null;
+  unidadesPorCaixa: number | null;
+  /** EST-05: disponível = físico − reservado ativo, calculado no instante da consulta. */
+  fisico: number;
+  reservado: number;
+  disponivel: number;
+  campos: CamposInformativos;
+}
+
+export interface MovimentoDto {
+  id: string;
+  produto: string;
+  tipo: "entrada" | "correcao" | "venda" | "estorno";
+  /** Em unidades; negativo = saída. */
+  delta: number;
+  caixasInformadas: number | null;
+  unidadesInformadas: number | null;
+  saldoDepois: number;
+  motivo: string | null;
+  venda: string | null;
+  autor: string;
+  /** E-mail de quem registrou (EST-02: responsável). */
+  autorEmail: string;
+  criadoEm: number;
+}
+
+export interface ItemVendaDto {
+  produto: string;
+  nomeProduto: string;
+  caixas: number;
+  unidadesSoltas: number;
+  unidadesPorCaixa: number | null;
+  unidades: number;
+  varejoCentavos: number;
+  atacadoCentavos: number | null;
+  totalCentavos: number;
+}
+
+export type StatusVenda = "draft" | "discarded" | "completed" | "cancelled";
+
+export interface VendaDto {
+  id: string;
+  cliente: string;
+  nomeCliente: string;
+  status: StatusVenda;
+  /** Rascunho com reserva vencida (RES-05): consultável, precisa ser regravado para concluir. */
+  expirada: boolean;
+  revisao: number;
+  expiraEm: number;
+  limiteAtacadoCentavos: number | null;
+  prazoReservaMinutos: number;
+  subtotalVarejoCentavos: number;
+  totalCentavos: number;
+  faixa: "varejo" | "atacado";
+  itens: ItemVendaDto[];
+  campos: CamposInformativos;
+  criadoEm: number;
+  concluidaEm: number | null;
+  canceladaEm: number | null;
+  motivoCancelamento: string | null;
+}
+
+export type StatusAtendimento = "scheduled" | "in_progress" | "done" | "cancelled";
+
+export interface AtendimentoDto {
+  id: string;
+  cliente: string;
+  nomeCliente: string;
+  profissional: string;
+  nomeProfissional: string;
+  tipo: string;
+  inicio: number;
+  fim: number;
+  status: StatusAtendimento;
+  /** Horário passado sem início registrado: continua agendado e aparece como atrasado (ADR-002). */
+  atrasado: boolean;
+  par: string | null;
+  posicaoNoPar: 1 | 2 | null;
+  venda: string | null;
+  campos: CamposInformativos;
+  motivoCancelamento: string | null;
+}
+
+/** Falta de estoque ao reservar (RES-02/RES-06): o que foi pedido e o que havia disponível. */
+export interface FaltaDto {
+  produto: string;
+  nomeProduto: string;
+  pedido: number;
+  disponivel: number;
+}
+
+/** Respostas da operação (cada rota preenche só os campos dela). */
+export interface OperacaoApiBody {
+  sistema?: SystemDto;
+  config?: ConfigDraft;
+  /** Papel de quem opera (a correção de saldo é só do administrador). */
+  papel?: "admin" | "secondary";
+  clientes?: ClienteDto[];
+  cliente?: ClienteDto;
+  produtos?: ProdutoDto[];
+  produto?: ProdutoDto;
+  profissionais?: ProfissionalDto[];
+  profissional?: ProfissionalDto;
+  movimentos?: MovimentoDto[];
+  movimento?: MovimentoDto;
+  vendas?: VendaDto[];
+  venda?: VendaDto;
+  /** CAN-02: a venda já estava cancelada; nada foi estornado de novo. */
+  jaCancelada?: boolean;
+  atendimentos?: AtendimentoDto[];
+  faltas?: FaltaDto[];
+  /** CAN-04/CAN-05: serviços vinculados que pedem confirmação ou bloqueiam o cancelamento. */
+  servicos?: AtendimentoDto[];
+  error?: ApiErrorBody["error"];
+}
+
 /** GET /api/v1/config — configuração pública do front. `firebase` nulo = login indisponível. */
 export interface PublicConfig {
   environment: string;
