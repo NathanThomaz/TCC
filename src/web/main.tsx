@@ -16,6 +16,7 @@ import { VendaEditor } from "@/pages/app/VendaEditor";
 import { Vendas } from "@/pages/app/Vendas";
 import { Configuracoes } from "@/pages/Configuracoes";
 import { Configurar } from "@/pages/Configurar";
+import { Criar } from "@/pages/Criar";
 import { DetalheSistema } from "@/pages/DetalheSistema";
 import { Entrar } from "@/pages/Entrar";
 import { Inicio } from "@/pages/Inicio";
@@ -54,6 +55,7 @@ createRoot(root).render(
                 <Route path="/sistemas" element={<Sistemas />} />
                 <Route path="/sistemas/:id" element={<DetalheSistema />} />
                 <Route path="/sistemas/:id/configurar" element={<Configurar />} />
+                <Route path="/sistemas/:id/criar" element={<Criar />} />
                 <Route path="/sistemas/:id/app" element={<Aplicacao />}>
                   <Route index element={<Painel />} />
                   <Route path="clientes" element={<Pessoas tipo="clientes" />} />

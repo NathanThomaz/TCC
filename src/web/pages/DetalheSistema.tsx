@@ -1,7 +1,7 @@
 import { Link } from "@/lib/rotas";
 import { useParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { AppWindow, ArrowLeft, FileStack, Info, Settings2 } from "lucide-react";
+import { AppWindow, ArrowLeft, FileStack, Info, Settings2, Sparkles } from "lucide-react";
 import { HashCurto } from "@/components/nexus/HashCurto";
 import { obterSistema } from "@/api/sistemas";
 import { formatarData } from "@/lib/nexus";
@@ -61,11 +61,18 @@ export function Detalhe() {
         }
         acoes={
           sistema.status === "draft" ? (
-            <Button asChild>
-              <Link to="/sistemas/$id/configurar" params={{ id }} search={{ passo: 1 }}>
-                <Settings2 aria-hidden /> Configurar
-              </Link>
-            </Button>
+            <>
+              <Button asChild>
+                <Link to="/sistemas/$id/criar" params={{ id }}>
+                  <Sparkles aria-hidden /> Criar por conversa
+                </Link>
+              </Button>
+              <Button asChild variant="outline">
+                <Link to="/sistemas/$id/configurar" params={{ id }} search={{ passo: 1 }}>
+                  <Settings2 aria-hidden /> Configurar pelo formulário
+                </Link>
+              </Button>
+            </>
           ) : sistema.status === "active" ? (
             <Button asChild>
               <Link to="/sistemas/$id/app" params={{ id }}>
