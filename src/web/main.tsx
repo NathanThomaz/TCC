@@ -8,6 +8,7 @@ import { AuthProvider } from "@/lib/auth";
 import { TemaProvider } from "@/lib/tema";
 import { Agenda } from "@/pages/app/Agenda";
 import { Aplicacao } from "@/pages/app/Aplicacao";
+import { Consulta } from "@/pages/app/Consulta";
 import { Estoque } from "@/pages/app/Estoque";
 import { Painel } from "@/pages/app/Painel";
 import { Pessoas } from "@/pages/app/Pessoas";
@@ -65,6 +66,7 @@ createRoot(root).render(
                   <Route path="vendas" element={<Vendas />} />
                   <Route path="vendas/:venda" element={<VendaEditor />} />
                   <Route path="agenda" element={<Agenda />} />
+                  <Route path="perguntar" element={<Consulta />} />
                 </Route>
                 <Route path="/perfil" element={<Perfil />} />
                 <Route path="/configuracoes" element={<Configuracoes />} />
