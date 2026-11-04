@@ -79,12 +79,6 @@ export function Detalhe() {
                 <AppWindow aria-hidden /> Abrir aplicação
               </Link>
             </Button>
-          ) : sistema.status === "active" ? (
-            <Button asChild>
-              <Link to="/sistemas/$id/app" params={{ id }}>
-                <AppWindow aria-hidden /> Abrir aplicação
-              </Link>
-            </Button>
           ) : undefined
         }
       />
