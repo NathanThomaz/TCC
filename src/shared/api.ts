@@ -187,6 +187,36 @@ export interface OperacaoApiBody {
   error?: ApiErrorBody["error"];
 }
 
+// ---- Criação por conversa (/api/v1/systems/:systemId/criacao) ----
+
+export interface MensagemDto {
+  id: string;
+  papel: "usuario" | "assistente";
+  texto: string;
+  perguntas: string[];
+  foraDoCatalogo: string[];
+  criadoEm: number;
+}
+
+export interface RequisitoDto {
+  codigo: string;
+  texto: string;
+  status: "pendente" | "confirmado" | "substituido";
+  origem: "ia" | "usuario";
+}
+
+export interface CriacaoApiBody {
+  mensagens?: MensagemDto[];
+  /** Requisitos vivos (pendentes e confirmados), em ordem de código. */
+  requisitos?: RequisitoDto[];
+  /** Se a IA está configurada neste ambiente (sem ela, o formulário manual continua). */
+  iaDisponivel?: boolean;
+  /** Última versão gravada (formulário ou conversa) e o diagnóstico dela. */
+  versao?: VersionDto | null;
+  issues?: IssueDto[];
+  error?: ApiErrorBody["error"];
+}
+
 /** GET /api/v1/config — configuração pública do front. `firebase` nulo = login indisponível. */
 export interface PublicConfig {
   environment: string;

@@ -49,6 +49,17 @@ import {
 } from "./modules/operacao/vendas";
 import { getSession } from "./modules/session";
 import {
+  adicionarRequisito,
+  confirmarRequisito,
+  corrigirConfiguracao,
+  descartarRequisito,
+  editarRequisito,
+  enviarMensagem,
+  gerarConfiguracao,
+  obterCriacao,
+} from "./modules/criacao";
+import { geminiDoAmbiente } from "./ia/gemini";
+import {
   activateSystem,
   approveVersion,
   createSystem,
@@ -91,7 +102,9 @@ const firebaseAuth: NonNullable<RouterDeps["auth"]> = (env, clock) => {
 };
 
 /** Monta o app; `deps` permite fixar o relógio e o provedor de identidade nos testes. */
-export function createApp(deps: RouterDeps = { clock: systemClock, auth: firebaseAuth }) {
+export function createApp(
+  deps: RouterDeps = { clock: systemClock, auth: firebaseAuth, ia: (env) => geminiDoAmbiente(env) },
+) {
   const S = `${API_BASE}/systems`;
   const O = `${S}/:systemId`;
   return createRouter(
@@ -109,6 +122,23 @@ export function createApp(deps: RouterDeps = { clock: systemClock, auth: firebas
         handler: approveVersion,
       },
       { method: "POST", path: `${S}/:systemId/activate`, handler: activateSystem },
+      // Criação por conversa (seção 8).
+      { method: "GET", path: `${O}/criacao`, handler: obterCriacao },
+      { method: "POST", path: `${O}/criacao/mensagens`, handler: enviarMensagem },
+      { method: "POST", path: `${O}/criacao/requisitos`, handler: adicionarRequisito },
+      {
+        method: "POST",
+        path: `${O}/criacao/requisitos/:codigo/confirmar`,
+        handler: confirmarRequisito,
+      },
+      { method: "POST", path: `${O}/criacao/requisitos/:codigo/editar`, handler: editarRequisito },
+      {
+        method: "POST",
+        path: `${O}/criacao/requisitos/:codigo/descartar`,
+        handler: descartarRequisito,
+      },
+      { method: "POST", path: `${O}/criacao/gerar`, handler: gerarConfiguracao },
+      { method: "POST", path: `${O}/criacao/corrigir`, handler: corrigirConfiguracao },
       // Operação do sistema ativo (seções 10 a 14).
       { method: "GET", path: `${O}/app`, handler: obterApp },
       { method: "GET", path: `${O}/clientes`, handler: listarClientes },
