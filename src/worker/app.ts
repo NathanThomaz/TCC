@@ -1,4 +1,5 @@
 import {
+  createAccountAdmin,
   createAccountLookup,
   parseServiceAccount,
   type AccountLookup,
@@ -49,6 +50,13 @@ import {
 } from "./modules/operacao/vendas";
 import { getSession } from "./modules/session";
 import {
+  convidarConta,
+  definirAcesso,
+  definirStatusConta,
+  listarContas,
+  reenviarConvite,
+} from "./modules/contas";
+import {
   adicionarRequisito,
   confirmarRequisito,
   corrigirConfiguracao,
@@ -94,10 +102,20 @@ const firebaseAuth: NonNullable<RouterDeps["auth"]> = (env, clock) => {
       }),
     };
   }
+  const webApiKey = env.FIREBASE_WEB_API_KEY;
   return {
     verify: (token) =>
       verifyFirebaseIdToken(token, { projectId, keys: firebaseKeys(), now: clock.now() }),
     lookup: lookupCache.lookup,
+    contas: webApiKey
+      ? createAccountAdmin({
+          projectId,
+          serviceAccount,
+          webApiKey,
+          fetch: (input, init) => fetch(input, init),
+          now: () => clock.now(),
+        })
+      : undefined,
   };
 };
 
@@ -112,6 +130,12 @@ export function createApp(
       { method: "GET", path: `${API_BASE}/health`, handler: getHealth },
       { method: "GET", path: `${API_BASE}/config`, handler: getPublicConfig },
       { method: "GET", path: `${API_BASE}/session`, handler: getSession },
+      // Contas secundárias, só do administrador (seção 7).
+      { method: "GET", path: `${API_BASE}/contas`, handler: listarContas },
+      { method: "POST", path: `${API_BASE}/contas`, handler: convidarConta },
+      { method: "POST", path: `${API_BASE}/contas/:id/convite`, handler: reenviarConvite },
+      { method: "POST", path: `${API_BASE}/contas/:id/acessos`, handler: definirAcesso },
+      { method: "POST", path: `${API_BASE}/contas/:id/status`, handler: definirStatusConta },
       { method: "GET", path: S, handler: listSystems },
       { method: "POST", path: S, handler: createSystem },
       { method: "GET", path: `${S}/:systemId`, handler: getSystem },

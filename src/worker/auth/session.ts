@@ -1,6 +1,6 @@
 import { AppError, forbidden, notFound, unauthenticated, unavailable } from "../http/errors";
 import type { RequestContext } from "../http/router";
-import { AccountLookupError, type AccountLookup } from "./firebase-admin";
+import { AccountLookupError, type AccountAdmin, type AccountLookup } from "./firebase-admin";
 import { InvalidTokenError, type VerifiedToken } from "./firebase-token";
 
 // Sessão validada no backend (seção 7): identidade e privilégios vêm do token verificado e do
@@ -32,6 +32,8 @@ export type TokenVerifier = (token: string) => Promise<VerifiedToken>;
 export interface AuthProvider {
   verify: TokenVerifier;
   lookup: AccountLookup;
+  /** Convite e desativação de contas; ausente se faltar a chave web (gestão de contas indisponível). */
+  contas?: AccountAdmin | undefined;
 }
 
 /** Idade máxima da última conferência de revogação no Firebase antes de consultar de novo. */

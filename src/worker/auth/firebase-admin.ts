@@ -116,3 +116,105 @@ export function createAccountLookup(options: {
     }
   };
 }
+
+/** O que a gestão de contas precisa do Firebase (seção 7). */
+export interface AccountAdmin {
+  /** Garante a conta sem senha e pede ao Firebase o link de definir senha (que confirma o e-mail). */
+  invite(email: string): Promise<void>;
+  /** Desativa no Firebase e invalida as sessões emitidas (validSince = agora). */
+  disable(uid: string): Promise<void>;
+  /** Reativa no Firebase (as sessões antigas continuam inválidas). */
+  enable(uid: string): Promise<void>;
+}
+
+/**
+ * Operações administrativas pela Identity Toolkit REST, com a mesma conta de serviço. O link de
+ * definir senha usa a chave web pública (accounts:sendOobCode), como na prova firebase-convite.
+ */
+export function createAccountAdmin(options: {
+  projectId: string;
+  serviceAccount: ServiceAccount;
+  webApiKey: string;
+  fetch: typeof fetch;
+  now: () => number;
+}): AccountAdmin {
+  let cached: { token: string; expiresAt: number } | undefined;
+  const base = `https://identitytoolkit.googleapis.com/v1/projects/${encodeURIComponent(options.projectId)}`;
+
+  async function accessToken(): Promise<string> {
+    const now = options.now();
+    if (cached && cached.expiresAt - 60_000 > now) return cached.token;
+    const assertion = await new SignJWT({ scope: SCOPE })
+      .setProtectedHeader({ alg: "RS256", typ: "JWT" })
+      .setIssuer(options.serviceAccount.client_email)
+      .setAudience(TOKEN_URL)
+      .setIssuedAt(Math.floor(now / 1000))
+      .setExpirationTime(Math.floor(now / 1000) + 3600)
+      .sign(await importPKCS8(options.serviceAccount.private_key, "RS256"));
+    const response = await options.fetch(TOKEN_URL, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+        assertion,
+      }),
+    });
+    if (!response.ok) throw new AccountLookupError(`token OAuth recusado (${response.status})`);
+    const body = await response.json<{ access_token?: string; expires_in?: number }>();
+    if (!body.access_token) throw new AccountLookupError("token OAuth ausente");
+    cached = { token: body.access_token, expiresAt: now + (body.expires_in ?? 3600) * 1000 };
+    return cached.token;
+  }
+
+  async function admin(caminho: string, corpo: unknown) {
+    const response = await options.fetch(`${base}/${caminho}`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${await accessToken()}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(corpo),
+    });
+    if (!response.ok) throw new AccountLookupError(`${caminho} falhou (${response.status})`);
+    return response.json<{ users?: { localId?: string }[] }>();
+  }
+
+  const segura =
+    <A extends unknown[]>(fn: (...a: A) => Promise<void>) =>
+    async (...args: A) => {
+      try {
+        await fn(...args);
+      } catch (error) {
+        if (error instanceof AccountLookupError) throw error;
+        throw new AccountLookupError(
+          `falha na integração com o Firebase: ${error instanceof Error ? error.name : "erro"}`,
+        );
+      }
+    };
+
+  return {
+    invite: segura(async (email: string) => {
+      const existente = await admin("accounts:lookup", { email: [email] });
+      if (!existente.users?.length) await admin("accounts", { email, emailVerified: false });
+      const envio = await options.fetch(
+        `https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${encodeURIComponent(options.webApiKey)}`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ requestType: "PASSWORD_RESET", email }),
+        },
+      );
+      if (!envio.ok) throw new AccountLookupError(`sendOobCode falhou (${envio.status})`);
+    }),
+    disable: segura(async (uid: string) => {
+      await admin("accounts:update", {
+        localId: uid,
+        disableUser: true,
+        validSince: String(Math.floor(options.now() / 1000)),
+      });
+    }),
+    enable: segura(async (uid: string) => {
+      await admin("accounts:update", { localId: uid, disableUser: false });
+    }),
+  };
+}

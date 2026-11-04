@@ -187,6 +187,26 @@ export interface OperacaoApiBody {
   error?: ApiErrorBody["error"];
 }
 
+// ---- Contas secundárias (/api/v1/contas), só do administrador (seção 7) ----
+
+export interface ContaDto {
+  id: string;
+  email: string;
+  nome: string | null;
+  /** pending = convidada, ainda sem primeiro acesso; disabled = desativada (não entra). */
+  status: "pending" | "active" | "disabled";
+  /** Sistemas do administrador e se esta conta tem acesso a cada um. */
+  sistemas: { id: string; nome: string; ativo: boolean }[];
+}
+
+export interface ContasApiBody {
+  contas?: ContaDto[];
+  conta?: ContaDto;
+  /** O convite (link de definir senha) foi pedido ao Firebase com sucesso. */
+  conviteEnviado?: boolean;
+  error?: ApiErrorBody["error"];
+}
+
 // ---- Criação por conversa (/api/v1/systems/:systemId/criacao) ----
 
 export interface MensagemDto {
