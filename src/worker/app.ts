@@ -9,7 +9,6 @@ import { createRouter } from "./http/router";
 import { systemClock } from "./lib/clock";
 import { getPublicConfig } from "./modules/config";
 import { getHealth } from "./modules/health";
-import { getSession } from "./modules/session";
 import {
   cancelarAtendimento,
   agendar,
