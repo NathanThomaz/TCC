@@ -45,12 +45,12 @@ const origem = [
   ...(local ? ["--local"] : ["--remote"]),
 ];
 
-function contagens(alvo) {
+function contagens(nome, alvo) {
   const tabelas = JSON.parse(
     wrangler([
       "d1",
       "execute",
-      banco,
+      nome,
       ...alvo,
       "--json",
       "--command",
@@ -59,7 +59,7 @@ function contagens(alvo) {
   )[0].results.map((r) => r.name);
   // Uma linha com uma subconsulta por tabela (o D1 limita os termos de um UNION).
   const sql = `SELECT ${tabelas.map((t) => `(SELECT COUNT(*) FROM "${t}") AS "${t}"`).join(", ")}`;
-  return JSON.parse(wrangler(["d1", "execute", banco, ...alvo, "--json", "--command", sql]))[0]
+  return JSON.parse(wrangler(["d1", "execute", nome, ...alvo, "--json", "--command", sql]))[0]
     .results[0];
 }
 
@@ -85,7 +85,7 @@ const arquivo = path.join(destino, `nexus-${ambiente ?? (local ? "local" : "dev"
 
 // 1. Exportação (só leitura da origem).
 wrangler(["d1", "export", banco, ...origem, "--output", arquivo]);
-const antes = contagens(origem);
+const antes = contagens(banco, origem);
 
 // 2. Restauração num D1 local novo, numa pasta temporária (nada é sobrescrito).
 const temporaria = mkdtempSync(path.join(tmpdir(), "nexus-restauracao-"));
@@ -104,7 +104,8 @@ const copia = [
 const restauracao = path.join(temporaria, "restauracao.sql");
 writeFileSync(restauracao, reordenar(readFileSync(arquivo, "utf8")));
 wrangler(["d1", "execute", "DB", ...copia, "--file", restauracao]);
-const depois = contagens(copia.map((a) => a));
+// A cópia é um D1 local do wrangler.jsonc base: o nome é o binding DB, sem --env.
+const depois = contagens("DB", copia);
 
 // 3. Conferência.
 const divergencias = Object.keys({ ...antes, ...depois }).filter((t) => antes[t] !== depois[t]);
