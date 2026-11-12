@@ -2,67 +2,94 @@ import { Link, useNavigate, useBusca } from "@/lib/rotas";
 import { useParams } from "react-router";
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, ArrowRight, Info } from "lucide-react";
+import { ArrowLeft, ArrowRight, Bot, Info } from "lucide-react";
 import { obterSistema } from "@/api/sistemas";
 import type { ConfigDraft } from "@/types/nexus";
-import { PASSOS, rascunhoPadrao } from "@/lib/nexus";
+import { comRequisitosGerados, PASSOS, rascunhoPadrao } from "@/lib/nexus";
 import { ErrorState, PageHeader } from "@/components/nexus/Estados";
 import { StepIndicator } from "@/components/nexus/StepIndicator";
+import { PassoModelo } from "@/components/configurar/Passos";
 import {
-  PassoAparencia,
-  PassoAtendimentos,
-  PassoCampos,
-  PassoForaCatalogo,
-  PassoModelo,
-  PassoRegras,
-  PassoRequisitos,
-} from "@/components/configurar/Passos";
+  PADRAO,
+  PassoAjustes,
+  pendenciasDosAjustes,
+  type Sugerivel,
+} from "@/components/configurar/Ajustes";
 import { Revisao, type Resultado } from "@/components/configurar/Revisao";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
-function lerRascunho(chave: string): ConfigDraft | null {
+// Modo avançado (ADR-004): o dono configura sozinho em 3 passos — modelo, ajustes dos módulos com
+// os padrões do modelo marcados como sugestão, e revisão pelo mesmo validador da conversa.
+
+function ler<T>(chave: string): T | null {
   try {
     const salvo = window.sessionStorage.getItem(chave);
-    return salvo ? (JSON.parse(salvo) as ConfigDraft) : null;
+    return salvo ? (JSON.parse(salvo) as T) : null;
   } catch {
     return null;
   }
 }
 
+function gravar(chave: string, valor: unknown) {
+  try {
+    window.sessionStorage.setItem(chave, JSON.stringify(valor));
+  } catch {
+    // Sem armazenamento (aba privada): o rascunho só vive enquanto a tela estiver aberta.
+  }
+}
+
+/** Com vendas, o prazo de reserva é obrigatório: começa com o valor sugerido, para confirmar. */
+function comPadroes(d: ConfigDraft): { draft: ConfigDraft; sugestoes: Sugerivel[] } {
+  if (!d.modulos.includes("vendas") || d.regras.some((r) => r.tipo === "prazo_reserva")) {
+    return { draft: d, sugestoes: [] };
+  }
+  return {
+    draft: { ...d, regras: [...d.regras, PADRAO.prazo_reserva] },
+    sugestoes: ["prazo_reserva"],
+  };
+}
+
 export function Configurar() {
   const { id = "" } = useParams();
-  const passo = Math.min(8, Math.max(1, Number(useBusca().passo ?? 1) || 1));
+  const passo = Math.min(PASSOS.length, Math.max(1, Number(useBusca().passo ?? 1) || 1));
   const navigate = useNavigate();
   const q = useQuery({ queryKey: ["sistema", id], queryFn: () => obterSistema(id) });
   const [draft, setDraft] = useState<ConfigDraft | null>(null);
+  const [sugestoes, setSugestoesEstado] = useState<Sugerivel[]>([]);
   const [resultado, setResultado] = useState<Resultado | null>(null);
   const tituloRef = useRef<HTMLHeadingElement>(null);
   const chave = `nexus:rascunho:${id}`;
+  const chaveSugestoes = `nexus:sugestoes:${id}`;
 
   // Carrega o rascunho guardado (ou a última versão, ou o padrão) uma única vez, durante a
   // renderização (estado derivado com guarda, sem efeito em cascata).
   if (!draft && q.data) {
-    setDraft(lerRascunho(chave) ?? q.data.ultimaConfig ?? rascunhoPadrao(q.data.sistema.nome));
+    const salvo = ler<ConfigDraft>(chave);
+    if (salvo) {
+      setDraft(salvo);
+      setSugestoesEstado(ler<Sugerivel[]>(chaveSugestoes) ?? []);
+    } else {
+      const inicial = comPadroes(q.data.ultimaConfig ?? rascunhoPadrao(q.data.sistema.nome));
+      setDraft(inicial.draft);
+      setSugestoesEstado(inicial.sugestoes);
+    }
   }
 
   const set = (fn: (d: ConfigDraft) => ConfigDraft) =>
     setDraft((d) => {
       if (!d) return d;
       const n = fn(d);
-      window.sessionStorage.setItem(chave, JSON.stringify(n));
+      gravar(chave, n);
       setResultado(null); // conteúdo mudou: diagnóstico anterior deixa de valer
       return n;
     });
-
-  const semAgenda = !!draft && !draft.modulos.includes("agenda");
-  const irPara = (n: number) => navigate({ search: { passo: n } });
-  const proximo = (dir: 1 | -1) => {
-    let n = passo + dir;
-    if (n === 5 && semAgenda) n += dir;
-    irPara(Math.min(8, Math.max(1, n)));
+  const setSugestoes = (s: Sugerivel[]) => {
+    setSugestoesEstado(s);
+    gravar(chaveSugestoes, s);
   };
 
+  const irPara = (n: number) => navigate({ search: { passo: n } });
   const primeiro = useRef(true);
   useEffect(() => {
     if (primeiro.current) {
@@ -96,6 +123,15 @@ export function Configurar() {
       </div>
     );
 
+  const pendentes = pendenciasDosAjustes(draft, sugestoes);
+  const faltas = passo === 2 ? pendentes : [];
+  const modeloMudou = (n: ConfigDraft) => {
+    // Trocar o modelo pode trazer vendas: o prazo de reserva volta como sugestão.
+    const r = comPadroes(n);
+    if (r.sugestoes.length) setSugestoes([...new Set([...sugestoes, ...r.sugestoes])]);
+    return r.draft;
+  };
+
   return (
     <>
       <Link
@@ -106,13 +142,20 @@ export function Configurar() {
         <ArrowLeft className="size-4" aria-hidden /> {q.data.sistema.nome}
       </Link>
       <PageHeader
-        titulo="Configurar sistema"
-        descricao="O rascunho é guardado automaticamente entre os passos."
+        titulo="Configurar sozinho"
+        descricao="Modo avançado: escolha o modelo, ajuste os módulos e revise. O rascunho é guardado entre os passos."
+        acoes={
+          <Button asChild variant="outline">
+            <Link to="/sistemas/$id/criar" params={{ id }}>
+              <Bot aria-hidden /> Conversar com o assistente
+            </Link>
+          </Button>
+        }
       />
       <StepIndicator
         passos={PASSOS}
         atual={passo}
-        desabilitados={semAgenda ? [5] : []}
+        desabilitados={pendentes.length ? [3] : []}
         onIr={irPara}
       />
 
@@ -123,21 +166,28 @@ export function Configurar() {
           tabIndex={-1}
           className="mb-1 text-xl font-semibold outline-none"
         >
-          <span className="text-muted-foreground tabular-nums">{passo}/8 · </span>
+          <span className="text-muted-foreground tabular-nums">
+            {passo}/{PASSOS.length} ·{" "}
+          </span>
           {PASSOS[passo - 1]}
         </h2>
         <div className="mt-3">
-          {passo === 1 && <PassoModelo draft={draft} set={set} />}
-          {passo === 2 && <PassoRequisitos draft={draft} set={set} />}
-          {passo === 3 && <PassoAparencia draft={draft} set={set} />}
-          {passo === 4 && <PassoCampos draft={draft} set={set} />}
-          {passo === 5 && <PassoAtendimentos draft={draft} set={set} />}
-          {passo === 6 && <PassoRegras draft={draft} set={set} irPara={irPara} />}
-          {passo === 7 && <PassoForaCatalogo draft={draft} set={set} />}
-          {passo === 8 && (
+          {passo === 1 && (
+            <PassoModelo draft={draft} set={(fn) => set((d) => modeloMudou(fn(d)))} />
+          )}
+          {passo === 2 && (
+            <PassoAjustes
+              draft={draft}
+              set={set}
+              sistemaId={id}
+              sugestoes={sugestoes}
+              setSugestoes={setSugestoes}
+            />
+          )}
+          {passo === 3 && (
             <Revisao
               sistemaId={id}
-              draft={draft}
+              draft={comRequisitosGerados(draft)}
               resultado={resultado}
               setResultado={setResultado}
               irPara={irPara}
@@ -146,12 +196,22 @@ export function Configurar() {
         </div>
       </section>
 
+      {faltas.length > 0 && (
+        <ul
+          role="status"
+          className="mt-6 space-y-1 rounded-lg border border-warning/30 bg-warning-soft p-3 text-sm"
+        >
+          {faltas.map((f) => (
+            <li key={f}>{f}</li>
+          ))}
+        </ul>
+      )}
       <div className="mt-8 flex justify-between border-t pt-4">
-        <Button variant="outline" onClick={() => proximo(-1)} disabled={passo === 1}>
+        <Button variant="outline" onClick={() => irPara(passo - 1)} disabled={passo === 1}>
           <ArrowLeft aria-hidden /> Voltar
         </Button>
-        {passo < 8 && (
-          <Button onClick={() => proximo(1)}>
+        {passo < PASSOS.length && (
+          <Button onClick={() => irPara(passo + 1)} disabled={faltas.length > 0}>
             Avançar <ArrowRight aria-hidden />
           </Button>
         )}

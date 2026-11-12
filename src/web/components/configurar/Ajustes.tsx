@@ -1,0 +1,405 @@
+import { useState, type ReactNode } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ChevronDown, CircleCheck, Lightbulb, Loader2, Wrench } from "lucide-react";
+import { criarPedido, listarPedidos } from "@/api/pedidos";
+import { ErroApi } from "@/components/app/Comum";
+import { EstadoPedido } from "@/components/criacao/Pedido";
+import {
+  LimiteAtacado,
+  PassoAparencia,
+  PassoAtendimentos,
+  PassoCampos,
+  type PassoProps,
+} from "@/components/configurar/Passos";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
+import type { Regra } from "@/types/nexus";
+import { cn } from "@/lib/utils";
+
+// Modo avançado, passo 2 (ADR-004): um bloco por módulo, com os padrões do modelo já preenchidos
+// e marcados "Sugestão — confirme" até o dono confirmar ou mudar. Não há requisitos na tela: cada
+// ajuste vira, por trás, o requisito e a regra que o validador exige.
+
+export type Sugerivel = "limite_atacado" | "unidades_por_caixa" | "prazo_reserva";
+
+/** Valores sugeridos pelo modelo: só valem depois que o dono confirma ou muda. */
+export const PADRAO: Record<Sugerivel, Regra> = {
+  limite_atacado: { tipo: "limite_atacado", valor_centavos: 100000, requisitos: [] },
+  unidades_por_caixa: { tipo: "unidades_por_caixa", unidades: 12, requisitos: [] },
+  prazo_reserva: { tipo: "prazo_reserva", minutos: 120, requisitos: [] },
+};
+
+/** O que ainda impede avançar do passo de ajustes (mensagens em linguagem de negócio). */
+export function pendenciasDosAjustes(d: PassoProps["draft"], sugestoes: Sugerivel[]): string[] {
+  const faltas: string[] = [];
+  const regra = <T extends Regra["tipo"]>(t: T) =>
+    d.regras.find((r): r is Extract<Regra, { tipo: T }> => r.tipo === t);
+  if (d.modulos.includes("vendas") && !((regra("prazo_reserva")?.minutos ?? 0) >= 1)) {
+    faltas.push("Diga por quanto tempo um pedido aberto segura o estoque.");
+  }
+  const atacado = regra("limite_atacado");
+  if (atacado && !(atacado.valor_centavos > 0)) faltas.push("Informe o valor do atacado.");
+  if (d.modulos.includes("agenda") && d.tipos_atendimento.length === 0) {
+    faltas.push("Cadastre ao menos um tipo de atendimento.");
+  }
+  if (sugestoes.length) {
+    faltas.push(
+      `Confirme ${sugestoes.length === 1 ? "1 sugestão" : `${sugestoes.length} sugestões`} ou mude o valor.`,
+    );
+  }
+  return faltas;
+}
+
+function Selo({ sugestao, onConfirmar }: { sugestao: boolean; onConfirmar: () => void }) {
+  return sugestao ? (
+    <span className="inline-flex flex-wrap items-center gap-2">
+      <span className="inline-flex items-center gap-1.5 rounded-md bg-warning-soft px-2 py-1 text-xs text-warning">
+        <Lightbulb className="size-4" aria-hidden /> Sugestão — confirme
+      </span>
+      <Button variant="outline" size="sm" onClick={onConfirmar}>
+        Confirmar
+      </Button>
+    </span>
+  ) : (
+    <span className="inline-flex items-center gap-1.5 rounded-md bg-success-soft px-2 py-1 text-xs text-success">
+      <CircleCheck className="size-4" aria-hidden /> Você definiu
+    </span>
+  );
+}
+
+function Secao({
+  titulo,
+  resumo,
+  children,
+}: {
+  titulo: string;
+  resumo: string;
+  children: ReactNode;
+}) {
+  return (
+    <details open className="group rounded-lg border bg-card shadow-card">
+      <summary className="flex cursor-pointer list-none items-center gap-3 p-4">
+        <span className="min-w-0 flex-1">
+          <span className="block font-semibold">{titulo}</span>
+          <span className="block text-sm text-muted-foreground">{resumo}</span>
+        </span>
+        <ChevronDown
+          className="size-5 shrink-0 transition-transform group-open:rotate-180"
+          aria-hidden
+        />
+      </summary>
+      <div className="space-y-5 border-t p-4">{children}</div>
+    </details>
+  );
+}
+
+export function PassoAjustes({
+  draft,
+  set,
+  sistemaId,
+  sugestoes,
+  setSugestoes,
+}: PassoProps & {
+  sistemaId: string;
+  sugestoes: Sugerivel[];
+  setSugestoes: (s: Sugerivel[]) => void;
+}) {
+  const regra = <T extends Regra["tipo"]>(t: T) =>
+    draft.regras.find((r): r is Extract<Regra, { tipo: T }> => r.tipo === t);
+  const definir = (tipo: Regra["tipo"], nova: Regra | null) =>
+    set((d) => ({
+      ...d,
+      regras: [...d.regras.filter((r) => r.tipo !== tipo), ...(nova ? [nova] : [])],
+    }));
+  const confirmar = (t: Sugerivel) => setSugestoes(sugestoes.filter((s) => s !== t));
+  /** Mudar o valor é decidir: deixa de ser sugestão. */
+  const mudar = (t: Sugerivel, nova: Regra) => {
+    definir(t, nova);
+    confirmar(t);
+  };
+  const ligar = (t: Sugerivel, ligado: boolean) => {
+    definir(t, ligado ? PADRAO[t] : null);
+    setSugestoes(
+      ligado ? [...sugestoes.filter((s) => s !== t), t] : sugestoes.filter((s) => s !== t),
+    );
+  };
+
+  const temVendas = draft.modulos.includes("vendas");
+  const temAgenda = draft.modulos.includes("agenda");
+  const atacado = regra("limite_atacado");
+  const caixa = regra("unidades_por_caixa");
+  const reserva = regra("prazo_reserva");
+  const par = regra("par_atendimento");
+  const sugerido = (t: Sugerivel) => sugestoes.includes(t);
+
+  return (
+    <div className="space-y-4">
+      <p className="max-w-2xl text-sm text-muted-foreground">
+        Os valores comuns já vêm preenchidos como sugestão. Confirme ou mude cada um; o que você
+        precisar e não estiver aqui vira um pedido ao desenvolvedor.
+      </p>
+
+      {temVendas && (
+        <Secao
+          titulo="Vendas e estoque"
+          resumo={
+            sugestoes.length
+              ? `${sugestoes.length} ${sugestoes.length === 1 ? "sugestão" : "sugestões"} para confirmar`
+              : "Tudo confirmado"
+          }
+        >
+          <div className="space-y-3">
+            <div className="flex items-center gap-3">
+              <Switch
+                id="aj-atacado"
+                checked={!!atacado}
+                onCheckedChange={(v) => ligar("limite_atacado", v)}
+              />
+              <Label htmlFor="aj-atacado">Vender no atacado</Label>
+            </div>
+            {atacado && (
+              <div className="max-w-xs space-y-2 pl-1">
+                <LimiteAtacado
+                  id="aj-atacado-valor"
+                  valor={atacado.valor_centavos}
+                  onChange={(c) => mudar("limite_atacado", { ...atacado, valor_centavos: c })}
+                />
+                <Selo
+                  sugestao={sugerido("limite_atacado")}
+                  onConfirmar={() => confirmar("limite_atacado")}
+                />
+              </div>
+            )}
+          </div>
+          <div className="space-y-3">
+            <div className="flex items-center gap-3">
+              <Switch
+                id="aj-caixa"
+                checked={!!caixa}
+                onCheckedChange={(v) => ligar("unidades_por_caixa", v)}
+              />
+              <Label htmlFor="aj-caixa">Vende por caixa</Label>
+            </div>
+            {caixa && (
+              <div className="max-w-xs space-y-2 pl-1">
+                <Label htmlFor="aj-caixa-un">Unidades por caixa (2 a 1000)</Label>
+                <Input
+                  id="aj-caixa-un"
+                  type="number"
+                  min={2}
+                  max={1000}
+                  className="tabular-nums"
+                  value={Number.isFinite(caixa.unidades) ? caixa.unidades : ""}
+                  onChange={(e) =>
+                    mudar("unidades_por_caixa", { ...caixa, unidades: e.target.valueAsNumber })
+                  }
+                />
+                <Selo
+                  sugestao={sugerido("unidades_por_caixa")}
+                  onConfirmar={() => confirmar("unidades_por_caixa")}
+                />
+              </div>
+            )}
+          </div>
+          <div className="max-w-xs space-y-2">
+            <Label htmlFor="aj-reserva">Pedido aberto segura o estoque por (minutos)</Label>
+            <Input
+              id="aj-reserva"
+              type="number"
+              min={1}
+              className="tabular-nums"
+              placeholder="Ex.: 120"
+              value={reserva && reserva.minutos > 0 ? reserva.minutos : ""}
+              onChange={(e) =>
+                mudar("prazo_reserva", {
+                  tipo: "prazo_reserva",
+                  minutos: e.target.valueAsNumber || 0,
+                  requisitos: [],
+                })
+              }
+            />
+            <p className="text-xs text-muted-foreground">
+              Enquanto o pedido está aberto, o estoque fica reservado para ele. Obrigatório com
+              vendas.
+            </p>
+            {reserva && (
+              <Selo
+                sugestao={sugerido("prazo_reserva")}
+                onConfirmar={() => confirmar("prazo_reserva")}
+              />
+            )}
+          </div>
+        </Secao>
+      )}
+
+      <Secao titulo="Informações extras" resumo={`${draft.campos.length} campo(s) a mais`}>
+        <PassoCampos draft={draft} set={set} />
+      </Secao>
+
+      {temAgenda && (
+        <Secao
+          titulo="Agenda"
+          resumo={`${draft.tipos_atendimento.length} tipo(s) de atendimento${par ? " · em par" : ""}`}
+        >
+          <PassoAtendimentos draft={draft} set={set} />
+          {draft.tipos_atendimento.length >= 2 && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <Switch
+                  id="aj-par"
+                  checked={!!par}
+                  onCheckedChange={(v) =>
+                    definir(
+                      "par_atendimento",
+                      v
+                        ? {
+                            tipo: "par_atendimento",
+                            primeiro: draft.tipos_atendimento[0]!.id,
+                            segundo: draft.tipos_atendimento[1]!.id,
+                            requisitos: [],
+                          }
+                        : null,
+                    )
+                  }
+                />
+                <Label htmlFor="aj-par">
+                  Atendimentos em par (o segundo logo depois, mesmo profissional)
+                </Label>
+              </div>
+              {par && (
+                <div className="grid max-w-xl gap-3 sm:grid-cols-2">
+                  {(["primeiro", "segundo"] as const).map((k) => (
+                    <div key={k}>
+                      <Label>{k === "primeiro" ? "Primeiro" : "Segundo"}</Label>
+                      <Select
+                        value={par[k]}
+                        onValueChange={(v) => definir("par_atendimento", { ...par, [k]: v })}
+                      >
+                        <SelectTrigger
+                          className="mt-1"
+                          aria-label={k === "primeiro" ? "Primeiro" : "Segundo"}
+                        >
+                          <SelectValue placeholder="Escolha" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {draft.tipos_atendimento.map((t) => (
+                            <SelectItem key={t.id} value={t.id}>
+                              {t.rotulo || "Sem nome"}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ))}
+                  {par.primeiro === par.segundo && (
+                    <p className="text-xs text-destructive sm:col-span-2">
+                      Escolha atendimentos diferentes.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </Secao>
+      )}
+
+      <Secao titulo="Aparência" resumo={draft.aparencia.titulo || "Sem título"}>
+        <PassoAparencia draft={draft} set={set} />
+      </Secao>
+
+      <PedidoAoDesenvolvedor sistemaId={sistemaId} />
+    </div>
+  );
+}
+
+/** "Precisa de algo que não está aqui?": vira pedido ao desenvolvedor, com as palavras do dono. */
+function PedidoAoDesenvolvedor({ sistemaId }: { sistemaId: string }) {
+  const qc = useQueryClient();
+  const pedidos = useQuery({
+    queryKey: ["pedidos", sistemaId],
+    queryFn: () => listarPedidos(sistemaId),
+  });
+  const [titulo, setTitulo] = useState("");
+  const [texto, setTexto] = useState("");
+  const m = useMutation({
+    mutationFn: () => criarPedido(sistemaId, titulo.trim(), texto.trim()),
+    onSuccess: () => {
+      setTitulo("");
+      setTexto("");
+      void qc.invalidateQueries({ queryKey: ["pedidos", sistemaId] });
+    },
+  });
+  const valido = titulo.trim().length >= 3 && texto.trim().length >= 3;
+  return (
+    <section
+      aria-labelledby="titulo-pedido-dev"
+      className="rounded-lg border border-info/30 bg-info-soft p-4"
+    >
+      <h3 id="titulo-pedido-dev" className="flex items-center gap-2 font-semibold">
+        <Wrench className="size-5 text-info" aria-hidden /> Precisa de algo que não está aqui?
+      </h3>
+      <p className="mt-1 text-sm">
+        Descreva com as suas palavras. Vira um pedido ao desenvolvedor, sem prazo definido; você
+        acompanha em Pedidos ao desenvolvedor.
+      </p>
+      <form
+        className="mt-3 grid gap-3"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (valido) m.mutate();
+        }}
+      >
+        <div>
+          <Label htmlFor="pedido-titulo">Título</Label>
+          <Input
+            id="pedido-titulo"
+            className="mt-1 bg-card"
+            maxLength={120}
+            placeholder="Ex.: Desconto para cliente fiel"
+            value={titulo}
+            onChange={(e) => setTitulo(e.target.value)}
+          />
+        </div>
+        <div>
+          <Label htmlFor="pedido-texto">O que você precisa</Label>
+          <Textarea
+            id="pedido-texto"
+            className="mt-1 bg-card"
+            maxLength={2000}
+            value={texto}
+            onChange={(e) => setTexto(e.target.value)}
+          />
+        </div>
+        <Button
+          type="submit"
+          variant="outline"
+          className="justify-self-start"
+          disabled={!valido || m.isPending}
+        >
+          {m.isPending && <Loader2 className="animate-spin" aria-hidden />}
+          Registrar pedido
+        </Button>
+        <ErroApi erro={m.error} />
+      </form>
+      {(pedidos.data?.length ?? 0) > 0 && (
+        <ul className={cn("mt-4 space-y-2 border-t border-info/30 pt-3")}>
+          {pedidos.data!.map((p) => (
+            <li key={p.id} className="flex flex-wrap items-center gap-2 text-sm">
+              {p.titulo} <EstadoPedido estado={p.estado} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}

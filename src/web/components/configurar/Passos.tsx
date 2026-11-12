@@ -1,13 +1,12 @@
 import type { ReactNode } from "react";
-import { AlertTriangle, Ban, Briefcase, Check, Plus, Scissors, Store, Trash2 } from "lucide-react";
-import type { Campo, ConfigDraft, Modelo, Regra } from "@/types/nexus";
+import { AlertTriangle, Briefcase, Check, Plus, Scissors, Store, Trash2 } from "lucide-react";
+import type { Campo, ConfigDraft, Modelo } from "@/types/nexus";
 import { hexValido, textoSobre } from "@/lib/cores";
 import {
   centavosParaReais,
   entidadesDosModulos,
   MODULOS_POR_MODELO,
   novoId,
-  proximoIdRequisito,
   reaisParaCentavos,
   ROTULO_ENTIDADE,
   ROTULO_MODULO,
@@ -15,7 +14,6 @@ import {
 } from "@/lib/nexus";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -27,12 +25,6 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 
 export interface PassoProps {
   draft: ConfigDraft;
@@ -147,91 +139,6 @@ export function PassoModelo({ draft, set }: PassoProps) {
             </button>
           );
         })}
-      </div>
-    </>
-  );
-}
-
-/* 2. Requisitos */
-export function PassoRequisitos({ draft, set }: PassoProps) {
-  const add = () =>
-    set((d) => ({
-      ...d,
-      requisitos: [
-        ...d.requisitos,
-        { id: proximoIdRequisito(d.requisitos.map((r) => r.id)), texto: "", status: "pendente" },
-      ],
-    }));
-  return (
-    <>
-      <Explicacao>
-        Registre o que o negócio precisa, em frases curtas. As regras do passo 6 só podem apontar
-        para requisitos <strong className="text-foreground">confirmados</strong> — assim cada
-        comportamento do sistema tem uma justificativa rastreável.
-      </Explicacao>
-      <div className="space-y-3">
-        {draft.requisitos.length === 0 && <Vazio>Nenhum requisito ainda.</Vazio>}
-        {draft.requisitos.map((r, i) => (
-          <Bloco key={r.id} className="flex flex-col gap-3 sm:flex-row sm:items-start">
-            <span className="mt-2 w-16 shrink-0 font-mono text-sm font-semibold tabular-nums">
-              {r.id}
-            </span>
-            <div className="flex-1">
-              <Label htmlFor={`req-${r.id}`} className="sr-only">
-                Texto do {r.id}
-              </Label>
-              <Textarea
-                id={`req-${r.id}`}
-                rows={2}
-                value={r.texto}
-                placeholder="Ex.: vendas acima de R$ 1.500 contam como atacado"
-                onChange={(e) =>
-                  set((d) => ({
-                    ...d,
-                    requisitos: d.requisitos.map((x, j) =>
-                      j === i ? { ...x, texto: e.target.value } : x,
-                    ),
-                  }))
-                }
-              />
-              {!r.texto.trim() && <Erro>Descreva o requisito.</Erro>}
-            </div>
-            <div className="flex items-center gap-2">
-              <Select
-                value={r.status}
-                onValueChange={(v) =>
-                  set((d) => ({
-                    ...d,
-                    requisitos: d.requisitos.map((x, j) =>
-                      j === i ? { ...x, status: v as typeof r.status } : x,
-                    ),
-                  }))
-                }
-              >
-                <SelectTrigger className="w-36" aria-label={`Status do ${r.id}`}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="pendente">Pendente</SelectItem>
-                  <SelectItem value="confirmado">Confirmado</SelectItem>
-                </SelectContent>
-              </Select>
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label={`Remover ${r.id}`}
-                onClick={() =>
-                  set((d) => ({ ...d, requisitos: d.requisitos.filter((_, j) => j !== i) }))
-                }
-              >
-                <Trash2 aria-hidden />
-              </Button>
-            </div>
-          </Bloco>
-        ))}
-        <Button variant="outline" onClick={add}>
-          <Plus aria-hidden /> Adicionar requisito
-        </Button>
       </div>
     </>
   );
@@ -612,220 +519,8 @@ export function PassoAtendimentos({ draft, set }: PassoProps) {
   );
 }
 
-/* 6. Regras */
-const ROTULO_REGRA: Record<Regra["tipo"], string> = {
-  limite_atacado: "Limite de atacado",
-  unidades_por_caixa: "Unidades por caixa",
-  prazo_reserva: "Prazo de reserva",
-  par_atendimento: "Par de atendimentos",
-};
-
-function novaRegra(tipo: Regra["tipo"]): Regra {
-  switch (tipo) {
-    case "limite_atacado":
-      return { tipo, valor_centavos: 0, requisitos: [] };
-    case "unidades_por_caixa":
-      return { tipo, unidades: 12, requisitos: [] };
-    case "prazo_reserva":
-      return { tipo, minutos: 0, requisitos: [] };
-    case "par_atendimento":
-      return { tipo, primeiro: "", segundo: "", requisitos: [] };
-  }
-}
-
-export function PassoRegras({ draft, set, irPara }: PassoProps & { irPara: (n: number) => void }) {
-  const confirmados = draft.requisitos.filter((r) => r.status === "confirmado");
-  const temVendas = draft.modulos.includes("vendas");
-  const temAgenda = draft.modulos.includes("agenda");
-  const disponiveis = (Object.keys(ROTULO_REGRA) as Regra["tipo"][]).filter((t) =>
-    t === "par_atendimento" ? temAgenda : temVendas && !draft.regras.some((r) => r.tipo === t),
-  );
-  const up = (i: number, r: Regra) =>
-    set((d) => ({ ...d, regras: d.regras.map((x, j) => (j === i ? r : x)) }));
-
-  return (
-    <>
-      <Explicacao>
-        Regras ajustam o comportamento dos módulos. Cada regra precisa apontar para pelo menos um
-        requisito confirmado.
-        {temVendas && " Com vendas, o prazo de reserva é obrigatório e não tem valor padrão."}
-      </Explicacao>
-      {confirmados.length === 0 && (
-        <div
-          role="status"
-          className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-warning/30 bg-warning-soft p-3 text-sm"
-        >
-          <AlertTriangle className="size-4 text-warning" aria-hidden />
-          <span className="flex-1">Nenhum requisito confirmado ainda.</span>
-          <Button variant="outline" size="sm" onClick={() => irPara(2)}>
-            Ir para Requisitos
-          </Button>
-        </div>
-      )}
-      <div className="space-y-3">
-        {draft.regras.length === 0 && <Vazio>Nenhuma regra adicionada.</Vazio>}
-        {draft.regras.map((r, i) => {
-          const pid = `regra-${i}`;
-          return (
-            <Bloco key={i}>
-              <div className="mb-3 flex items-center justify-between">
-                <h3 className="font-semibold">{ROTULO_REGRA[r.tipo]}</h3>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label={`Remover ${ROTULO_REGRA[r.tipo]}`}
-                  onClick={() => set((d) => ({ ...d, regras: d.regras.filter((_, j) => j !== i) }))}
-                >
-                  <Trash2 aria-hidden />
-                </Button>
-              </div>
-              <div className="grid gap-4 md:grid-cols-2">
-                <div>
-                  {r.tipo === "limite_atacado" && (
-                    <LimiteAtacado
-                      id={pid}
-                      valor={r.valor_centavos}
-                      onChange={(v) => up(i, { ...r, valor_centavos: v })}
-                    />
-                  )}
-                  {r.tipo === "unidades_por_caixa" && (
-                    <>
-                      <Label htmlFor={pid}>Unidades por caixa (2–1000)</Label>
-                      <Input
-                        id={pid}
-                        className="mt-1 tabular-nums"
-                        type="number"
-                        min={2}
-                        max={1000}
-                        value={Number.isFinite(r.unidades) ? r.unidades : ""}
-                        onChange={(e) => up(i, { ...r, unidades: e.target.valueAsNumber })}
-                      />
-                      {!(r.unidades >= 2 && r.unidades <= 1000) && <Erro>Entre 2 e 1000.</Erro>}
-                    </>
-                  )}
-                  {r.tipo === "prazo_reserva" && (
-                    <>
-                      <Label htmlFor={pid}>Prazo de reserva (minutos)</Label>
-                      <Input
-                        id={pid}
-                        className="mt-1 tabular-nums"
-                        type="number"
-                        min={1}
-                        placeholder="Ex.: 120"
-                        value={r.minutos > 0 ? r.minutos : ""}
-                        onChange={(e) => up(i, { ...r, minutos: e.target.valueAsNumber || 0 })}
-                      />
-                      {!(r.minutos >= 1) && <Erro>Informe o prazo.</Erro>}
-                    </>
-                  )}
-                  {r.tipo === "par_atendimento" &&
-                    (draft.tipos_atendimento.length < 2 ? (
-                      <div className="text-sm text-muted-foreground">
-                        Cadastre ao menos dois tipos de atendimento.{" "}
-                        <button
-                          type="button"
-                          className="rounded font-medium text-primary underline-offset-4 hover:underline"
-                          onClick={() => irPara(5)}
-                        >
-                          Ir para Atendimentos
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        <p className="text-xs text-muted-foreground">
-                          O segundo é agendado logo após o primeiro, com o mesmo profissional.
-                        </p>
-                        {(["primeiro", "segundo"] as const).map((k) => (
-                          <div key={k}>
-                            <Label>
-                              {k === "primeiro" ? "Primeiro atendimento" : "Segundo atendimento"}
-                            </Label>
-                            <Select value={r[k]} onValueChange={(v) => up(i, { ...r, [k]: v })}>
-                              <SelectTrigger
-                                className="mt-1"
-                                aria-label={
-                                  k === "primeiro" ? "Primeiro atendimento" : "Segundo atendimento"
-                                }
-                              >
-                                <SelectValue placeholder="Escolha" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {draft.tipos_atendimento.map((t) => (
-                                  <SelectItem key={t.id} value={t.id}>
-                                    {t.rotulo || "Sem nome"}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        ))}
-                        {r.primeiro && r.primeiro === r.segundo && (
-                          <Erro>Escolha atendimentos diferentes.</Erro>
-                        )}
-                      </div>
-                    ))}
-                </div>
-                <fieldset>
-                  <legend className="text-sm font-medium">Requisitos que justificam</legend>
-                  {confirmados.length === 0 ? (
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      Nenhum requisito confirmado.
-                    </p>
-                  ) : (
-                    <div className="mt-2 space-y-2">
-                      {confirmados.map((q) => {
-                        const cid = `${pid}-${q.id}`;
-                        return (
-                          <div key={q.id} className="flex items-start gap-2">
-                            <Checkbox
-                              id={cid}
-                              checked={r.requisitos.includes(q.id)}
-                              onCheckedChange={(v) =>
-                                up(i, {
-                                  ...r,
-                                  requisitos: v
-                                    ? [...r.requisitos, q.id]
-                                    : r.requisitos.filter((x) => x !== q.id),
-                                })
-                              }
-                            />
-                            <Label htmlFor={cid} className="font-normal leading-snug">
-                              <span className="font-mono font-semibold">{q.id}</span> {q.texto}
-                            </Label>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                  {r.requisitos.length === 0 && <Erro>Selecione ao menos um requisito.</Erro>}
-                </fieldset>
-              </div>
-            </Bloco>
-          );
-        })}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" disabled={disponiveis.length === 0}>
-              <Plus aria-hidden /> Adicionar regra
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start">
-            {disponiveis.map((t) => (
-              <DropdownMenuItem
-                key={t}
-                onSelect={() => set((d) => ({ ...d, regras: [...d.regras, novaRegra(t)] }))}
-              >
-                {ROTULO_REGRA[t]}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-    </>
-  );
-}
-
-function LimiteAtacado({
+/* Valor do atacado (usado nos ajustes do modo avançado) */
+export function LimiteAtacado({
   id,
   valor,
   onChange,
@@ -846,102 +541,6 @@ function LimiteAtacado({
         onChange={(e) => onChange(reaisParaCentavos(e.target.value) ?? 0)}
       />
       {!(valor > 0) && <Erro>Informe um valor maior que zero, ex.: 1.500,00.</Erro>}
-    </>
-  );
-}
-
-/* 7. Fora do catálogo */
-export function PassoForaCatalogo({ draft, set }: PassoProps) {
-  return (
-    <>
-      <div
-        role="note"
-        className="mb-5 flex max-w-2xl gap-3 rounded-lg border border-info/30 bg-info-soft p-4 text-sm"
-      >
-        <Ban className="size-5 shrink-0 text-info" aria-hidden />
-        <p>
-          O Nexus monta sistemas a partir de um catálogo fechado de módulos. Pedidos que não cabem
-          nele ficam registrados aqui, para que todos saibam com clareza o que <strong>não</strong>{" "}
-          será feito nesta versão.
-        </p>
-      </div>
-      <div className="space-y-2">
-        {draft.fora_do_catalogo.length === 0 && <Vazio>Nenhum pedido fora do catálogo.</Vazio>}
-        {draft.fora_do_catalogo.map((f, i) => {
-          const up = (p: Partial<typeof f>) =>
-            set((d) => ({
-              ...d,
-              fora_do_catalogo: d.fora_do_catalogo.map((x, j) => (j === i ? { ...x, ...p } : x)),
-            }));
-          return (
-            <Bloco key={i} className="grid gap-3 sm:grid-cols-[1fr_12rem_auto] sm:items-start">
-              <div>
-                <Label htmlFor={`fc-${i}`}>Pedido</Label>
-                <Input
-                  id={`fc-${i}`}
-                  className="mt-1"
-                  placeholder="Ex.: emitir nota fiscal"
-                  value={f.texto}
-                  onChange={(e) => up({ texto: e.target.value })}
-                />
-                {!f.texto.trim() && <Erro>Descreva o pedido.</Erro>}
-              </div>
-              <div>
-                <Label>Requisito (opcional)</Label>
-                <Select
-                  value={f.requisito ?? "nenhum"}
-                  onValueChange={(v) =>
-                    set((d) => ({
-                      ...d,
-                      fora_do_catalogo: d.fora_do_catalogo.map((x, j) =>
-                        j === i
-                          ? v === "nenhum"
-                            ? { texto: x.texto }
-                            : { ...x, requisito: v }
-                          : x,
-                      ),
-                    }))
-                  }
-                >
-                  <SelectTrigger className="mt-1" aria-label="Requisito relacionado">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="nenhum">Nenhum</SelectItem>
-                    {draft.requisitos.map((r) => (
-                      <SelectItem key={r.id} value={r.id}>
-                        {r.id}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="sm:mt-6"
-                aria-label="Remover pedido"
-                onClick={() =>
-                  set((d) => ({
-                    ...d,
-                    fora_do_catalogo: d.fora_do_catalogo.filter((_, j) => j !== i),
-                  }))
-                }
-              >
-                <Trash2 aria-hidden />
-              </Button>
-            </Bloco>
-          );
-        })}
-        <Button
-          variant="outline"
-          onClick={() =>
-            set((d) => ({ ...d, fora_do_catalogo: [...d.fora_do_catalogo, { texto: "" }] }))
-          }
-        >
-          <Plus aria-hidden /> Adicionar pedido
-        </Button>
-      </div>
     </>
   );
 }

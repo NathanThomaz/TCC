@@ -10,11 +10,14 @@ function base(sistema: string) {
   return `/systems/${encodeURIComponent(sistema)}/criacao`;
 }
 
-function estado(r: CriacaoApiBody): EstadoCriacao {
+export function estado(r: CriacaoApiBody): EstadoCriacao {
   return {
     revisao: r.revisao ?? 0,
     mensagens: r.mensagens ?? [],
     requisitos: r.requisitos ?? [],
+    assuntoAtual: r.assuntoAtual ?? null,
+    prontoParaRevisar: r.prontoParaRevisar ?? false,
+    pedidos: r.pedidos ?? [],
     iaDisponivel: r.iaDisponivel ?? false,
     versao: r.versao ?? null,
     issues: r.issues ?? [],
@@ -71,6 +74,17 @@ export async function adicionarRequisito(
     await chamar<CriacaoApiBody>(`${base(sistema)}/requisitos`, {
       method: "POST",
       body: { texto, revisao },
+      chave,
+    }),
+  );
+}
+
+/** Confirmação única do resumo (ADR-004): confirma de uma vez o que o dono disse. */
+export async function confirmarResumo(sistema: string, revisao: number, chave: string) {
+  return estado(
+    await chamar<CriacaoApiBody>(`${base(sistema)}/confirmar`, {
+      method: "POST",
+      body: { revisao },
       chave,
     }),
   );

@@ -1,6 +1,6 @@
 import { env } from "cloudflare:workers";
 import { beforeEach, describe, expect, it } from "vitest";
-import type { CriacaoApiBody, SystemsApiBody } from "../../src/shared/api";
+import type { CriacaoApiBody, PedidoDto, SystemsApiBody } from "../../src/shared/api";
 import type { VerifiedToken } from "../../src/worker/auth/firebase-token";
 import { InvalidTokenError } from "../../src/worker/auth/firebase-token";
 import { createApp } from "../../src/worker/app";
@@ -73,14 +73,33 @@ async function call(method: string, path: string, token: string, body?: unknown,
   return { status: response.status, body: await response.json<CriacaoApiBody & SystemsApiBody>() };
 }
 
+/** Resposta da IA na entrevista; requisitos sem assunto/título viram itens do assunto "negócio". */
 const levantamento = (dados: Partial<Record<string, unknown>>) =>
   JSON.stringify({
     resposta: "Entendi.",
-    requisitos: [],
+    respostas_rapidas: [],
+    assunto_atual: "negocio",
+    pronto_para_revisar: false,
     perguntas: [],
-    fora_do_catalogo: [],
+    pedidos_desenvolvedor: [],
     ...dados,
+    requisitos: ((dados.requisitos ?? []) as Record<string, unknown>[]).map((r) => ({
+      assunto: "negocio",
+      titulo: "Item",
+      sugestao: false,
+      ...r,
+    })),
   });
+
+const NOTA_FISCAL = {
+  titulo: "Emitir nota fiscal",
+  assunto: "pedidos_estoque",
+  pedido_original: "quero nota fiscal",
+  contexto: "A distribuidora vende para empresas que pedem nota.",
+  regra_proposta: "Emitir a nota fiscal ao concluir a venda.",
+  exemplos: [{ situacao: "Venda concluída para o Bar do Zé.", esperado: "Nota emitida." }],
+  criterios_aceite: ["A nota sai com os itens e o total da venda."],
+};
 
 const TEXTOS = [
   "Vender bebidas com estoque e clientes",
@@ -135,13 +154,24 @@ describe("conversa e requisitos", () => {
     expect(r.body.error!.code).toBe("ia_nao_configurada");
   });
 
-  it("uma rodada grava as duas mensagens, os requisitos pendentes e o consumo", async () => {
+  it("uma rodada grava as mensagens, os itens do resumo, o pedido ao desenvolvedor e o consumo", async () => {
     roteiro.push(
       levantamento({
-        resposta: "Quanto tempo o pedido aberto segura o estoque?",
-        requisitos: [{ codigo: null, texto: TEXTOS[0] }],
-        perguntas: ["Quanto tempo o pedido aberto segura o estoque?"],
-        fora_do_catalogo: ["Emitir nota fiscal"],
+        resposta: "Por quanto tempo um pedido aberto segura o estoque?",
+        respostas_rapidas: ["1 hora", "2 horas"],
+        assunto_atual: "pedidos_estoque",
+        requisitos: [
+          { codigo: null, texto: TEXTOS[0], assunto: "negocio", titulo: "O que vende" },
+          {
+            codigo: null,
+            texto: "Pedido aberto segura o estoque por 2 horas",
+            assunto: "pedidos_estoque",
+            titulo: "Reserva de estoque",
+            sugestao: true,
+          },
+        ],
+        perguntas: ["Por quanto tempo um pedido aberto segura o estoque?"],
+        pedidos_desenvolvedor: [NOTA_FISCAL],
       }),
     );
     const r = await acao(c("/mensagens"), {
@@ -149,19 +179,53 @@ describe("conversa e requisitos", () => {
     });
     expect(r.status).toBe(201);
     expect(r.body.mensagens!.map((m) => m.papel)).toEqual(["usuario", "assistente"]);
+    const pedido = r.body.pedidos![0]!;
     expect(r.body.mensagens![1]).toMatchObject({
-      perguntas: ["Quanto tempo o pedido aberto segura o estoque?"],
-      foraDoCatalogo: ["Emitir nota fiscal"],
+      perguntas: ["Por quanto tempo um pedido aberto segura o estoque?"],
+      respostasRapidas: ["1 hora", "2 horas"],
+      assunto: "pedidos_estoque",
+      sugestoes: ["REQ-02"],
+      pedidos: [pedido.id],
     });
+    expect(r.body.assuntoAtual).toBe("pedidos_estoque");
+    expect(r.body.prontoParaRevisar).toBe(false);
     expect(r.body.requisitos).toEqual([
-      { codigo: "REQ-01", texto: TEXTOS[0], status: "pendente", origem: "ia" },
+      {
+        codigo: "REQ-01",
+        texto: TEXTOS[0],
+        status: "pendente",
+        origem: "ia",
+        assunto: "negocio",
+        titulo: "O que vende",
+        sugestao: false,
+      },
+      {
+        codigo: "REQ-02",
+        texto: "Pedido aberto segura o estoque por 2 horas",
+        status: "pendente",
+        origem: "ia",
+        assunto: "pedidos_estoque",
+        titulo: "Reserva de estoque",
+        sugestao: true,
+      },
     ]);
+    // O que o catálogo não cobre vira pedido com ficha, não requisito.
+    expect(pedido).toMatchObject({
+      titulo: "Emitir nota fiscal",
+      origem: "conversa",
+      estado: "aberto",
+      regraProposta: NOTA_FISCAL.regra_proposta,
+      exemplos: NOTA_FISCAL.exemplos,
+      criteriosAceite: NOTA_FISCAL.criterios_aceite,
+    });
+    expect(pedido.historico).toHaveLength(1);
     // O pedido leva o catálogo e a mensagem; a próxima rodada leva o histórico e os requisitos.
     expect(pedidos[0]!.instrucoes).toContain("CATÁLOGO FECHADO");
     roteiro.push(levantamento({}));
     await acao(c("/mensagens"), { texto: "30 minutos" });
     expect(pedidos[1]!.mensagens.map((m) => m.papel)).toEqual(["usuario", "modelo", "usuario"]);
     expect(pedidos[1]!.instrucoes).toContain("REQ-01 [pendente]");
+    expect(pedidos[1]!.instrucoes).toContain("REQ-02 [pendente, sugestão]");
     const uso = await env.DB.prepare(
       "SELECT state, cost_micro_brl FROM ai_usage ORDER BY created_at",
     ).all<{
@@ -231,21 +295,36 @@ describe("conversa e requisitos", () => {
   });
 
   it("a IA não remove nem duplica requisitos; reescrever um código gera versão pendente", () => {
+    const extra = { assunto: "negocio" as const, titulo: "T", sugestao: false };
     const vivos = [
-      { codigo: "REQ-01", texto: "A", status: "confirmado" as const, origem: "ia" as const },
-      { codigo: "REQ-02", texto: "Bbb", status: "pendente" as const, origem: "ia" as const },
+      {
+        codigo: "REQ-01",
+        texto: "A",
+        status: "confirmado" as const,
+        origem: "ia" as const,
+        ...extra,
+      },
+      {
+        codigo: "REQ-02",
+        texto: "Bbb",
+        status: "pendente" as const,
+        origem: "ia" as const,
+        ...extra,
+      },
     ];
     const m = mesclarRequisitos(
       vivos,
       [
-        { codigo: "REQ-01", texto: "A alterado" },
-        { codigo: null, texto: "bbb" }, // igual a um existente: ignorado
-        { codigo: "REQ-09", texto: "Novo" }, // código desconhecido: vira novo
+        { codigo: "REQ-01", texto: "A alterado", ...extra },
+        { codigo: null, texto: "bbb", ...extra }, // igual a um existente: ignorado
+        { codigo: "REQ-09", texto: "Novo", ...extra }, // código desconhecido: vira novo
       ],
       5,
     );
-    expect(m.reescritos).toEqual([{ codigo: "REQ-01", texto: "A alterado", eraConfirmado: true }]);
-    expect(m.novos).toEqual([{ codigo: "REQ-06", texto: "Novo" }]);
+    expect(m.reescritos).toEqual([
+      { codigo: "REQ-01", texto: "A alterado", ...extra, eraConfirmado: true },
+    ]);
+    expect(m.novos).toEqual([{ codigo: "REQ-06", texto: "Novo", ...extra }]);
   });
 });
 
@@ -504,5 +583,155 @@ describe("revisão cruzada, segunda passada", () => {
     roteiro.push(JSON.stringify(DISTRIBUIDORA));
     const g = await acao(c("/gerar"));
     expect(g.body.config!.regras).toEqual(DISTRIBUIDORA.regras);
+  });
+});
+
+// ---- Entrevista guiada (ADR-004): sugestões, confirmação única e pedidos ao desenvolvedor ----
+
+const SUGESTAO = {
+  codigo: null,
+  texto: "Pedido aberto segura o estoque por 2 horas",
+  assunto: "pedidos_estoque",
+  titulo: "Reserva de estoque",
+  sugestao: true,
+};
+
+describe("entrevista guiada", () => {
+  it("sugestão pendente impede a confirmação única; aceita, o resumo inteiro é confirmado de uma vez", async () => {
+    roteiro.push(
+      levantamento({
+        requisitos: [...TEXTOS.slice(0, 3).map((texto) => ({ codigo: null, texto })), SUGESTAO],
+        pronto_para_revisar: true,
+      }),
+    );
+    const r = await acao(c("/mensagens"), { texto: "Distribuidora" });
+    expect(r.body.prontoParaRevisar).toBe(true);
+    const bloqueado = await acao(c("/confirmar"));
+    expect(bloqueado.status).toBe(409);
+    expect(bloqueado.body.error!.code).toBe("sugestoes_pendentes");
+    // "Usar sugestão" é o ato do usuário sobre aquele item.
+    await acao(c("/requisitos/REQ-04/confirmar"));
+    const ok = await acao(c("/confirmar"));
+    expect(ok.status).toBe(200);
+    expect(ok.body.requisitos!.map((q) => q.status)).toEqual(Array(4).fill("confirmado"));
+    // A IA não confirmou nada: quem confirmou foi o usuário, registrado na auditoria.
+    const audit = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM audit_events WHERE action = 'requisito.resumo_confirmado'",
+    ).first<{ n: number }>();
+    expect(audit!.n).toBe(1);
+    // Com tudo confirmado, a geração segue o caminho de sempre (T33).
+    roteiro.push(JSON.stringify(DISTRIBUIDORA));
+    expect((await acao(c("/gerar"))).status).toBe(201);
+  });
+
+  it("confirmação única sem respostas é recusada e o estado não muda", async () => {
+    const r = await acao(c("/confirmar"));
+    expect(r.body.error!.code).toBe("sem_requisitos");
+  });
+
+  it("quando o dono diz o valor de uma sugestão, ela deixa de ser sugestão (mas segue pendente)", async () => {
+    roteiro.push(levantamento({ requisitos: [SUGESTAO] }));
+    await acao(c("/mensagens"), { texto: "Olá" });
+    roteiro.push(
+      levantamento({
+        requisitos: [{ ...SUGESTAO, codigo: "REQ-01", sugestao: false }],
+      }),
+    );
+    const r = await acao(c("/mensagens"), { texto: "Pode ser 2 horas mesmo" });
+    expect(r.body.requisitos).toEqual([
+      expect.objectContaining({ codigo: "REQ-01", status: "pendente", sugestao: false }),
+    ]);
+  });
+
+  it("a IA não transforma em sugestão o que o dono disse", async () => {
+    roteiro.push(levantamento({ requisitos: [{ codigo: null, texto: TEXTOS[3] }] }));
+    await acao(c("/mensagens"), { texto: "30 minutos" });
+    roteiro.push(
+      levantamento({
+        requisitos: [{ codigo: "REQ-01", texto: "Reserva de 1 hora", sugestao: true }],
+      }),
+    );
+    const r = await acao(c("/mensagens"), { texto: "Mude" });
+    expect(r.body.requisitos![0]).toMatchObject({ texto: "Reserva de 1 hora", sugestao: false });
+  });
+
+  it("resposta da IA sem os campos da entrevista é recusada e nada é gravado", async () => {
+    roteiro.push(JSON.stringify({ resposta: "Oi", requisitos: [], perguntas: [] }));
+    const r = await acao(c("/mensagens"), { texto: "Olá" });
+    expect(r.status).toBe(502);
+    expect((await call("GET", c(), ADMIN)).body.mensagens).toHaveLength(0);
+  });
+});
+
+type PedidosBody = { pedidos?: PedidoDto[]; pedido?: PedidoDto; error?: { code: string } };
+async function chamarPedidos(method: string, path: string, body?: unknown, token = ADMIN) {
+  const r = await call(method, `/systems/${S}/pedidos${path}`, token, body);
+  return { status: r.status, body: r.body as unknown as PedidosBody };
+}
+
+describe("pedidos ao desenvolvedor", () => {
+  async function pedidoDaConversa(): Promise<PedidoDto> {
+    roteiro.push(levantamento({ pedidos_desenvolvedor: [NOTA_FISCAL] }));
+    const r = await acao(c("/mensagens"), { texto: "quero nota fiscal" });
+    return r.body.pedidos![0]!;
+  }
+
+  it("lista, comenta e cancela um pedido aberto; cancelar de novo é recusado", async () => {
+    const p = await pedidoDaConversa();
+    expect((await chamarPedidos("GET", "")).body.pedidos!.map((x) => x.id)).toEqual([p.id]);
+    const com = await chamarPedidos("POST", `/${p.id}/comentarios`, { texto: "Urgente" });
+    expect(com.status).toBe(201);
+    expect(com.body.pedido!.comentarios).toEqual([{ texto: "Urgente", em: NOW }]);
+    const can = await chamarPedidos("POST", `/${p.id}/cancelar`, {});
+    expect(can.status).toBe(200);
+    expect(can.body.pedido!.estado).toBe("cancelado");
+    expect(can.body.pedido!.historico.map((h) => h.estado)).toEqual(["aberto", "cancelado"]);
+    const de_novo = await chamarPedidos("POST", `/${p.id}/cancelar`, {});
+    expect(de_novo.status).toBe(409);
+  });
+
+  it("em análise, só o desenvolvedor decide: o dono não cancela", async () => {
+    const p = await pedidoDaConversa();
+    await env.DB.prepare("UPDATE dev_requests SET status = 'em_analise' WHERE id = ?")
+      .bind(p.id)
+      .run();
+    expect((await chamarPedidos("POST", `/${p.id}/cancelar`, {})).status).toBe(409);
+  });
+
+  it("modo avançado cria pedido com as palavras do dono", async () => {
+    const r = await chamarPedidos("POST", "", {
+      titulo: "Desconto para cliente fiel",
+      pedido: "Quero dar 5% para quem compra toda semana",
+    });
+    expect(r.status).toBe(201);
+    expect(r.body.pedido).toMatchObject({
+      origem: "formulario",
+      estado: "aberto",
+      contexto: null,
+      exemplos: [],
+    });
+  });
+
+  it("ficha e histórico não mudam; transição inválida é recusada pelo banco", async () => {
+    const p = await pedidoDaConversa();
+    const tentar = (sql: string) => env.DB.prepare(sql).bind(p.id).run();
+    await expect(tentar("UPDATE dev_requests SET title = 'outro' WHERE id = ?")).rejects.toThrow(
+      /pedido_imutavel/,
+    );
+    await tentar("UPDATE dev_requests SET status = 'recusado' WHERE id = ?");
+    await expect(tentar("UPDATE dev_requests SET status = 'aberto' WHERE id = ?")).rejects.toThrow(
+      /transicao_de_pedido_invalida/,
+    );
+    await expect(
+      tentar("UPDATE dev_request_events SET note = 'x' WHERE request_id = ?"),
+    ).rejects.toThrow(/historico_imutavel/);
+  });
+
+  it("conta secundária não vê os pedidos; outro sistema não acha o pedido", async () => {
+    const p = await pedidoDaConversa();
+    expect((await chamarPedidos("GET", "", undefined, SEC)).status).toBe(403);
+    const outro = (await call("POST", "/systems", ADMIN, { nome: "Outro" })).body.sistema!.id;
+    const r = await call("POST", `/systems/${outro}/pedidos/${p.id}/cancelar`, ADMIN, {});
+    expect(r.status).toBe(404);
   });
 });

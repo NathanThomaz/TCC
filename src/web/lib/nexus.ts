@@ -1,4 +1,4 @@
-import type { Campo, ConfigDraft, Modelo, Modulo } from "@/types/nexus";
+import type { Campo, ConfigDraft, Modelo, Modulo, Regra } from "@/types/nexus";
 
 export const MODULOS_POR_MODELO: Record<Modelo, Modulo[]> = {
   comercio: ["clientes", "produtos", "vendas", "estoque"],
@@ -34,18 +34,10 @@ export function entidadesDosModulos(modulos: Modulo[]): Entidade[] {
   return out;
 }
 
-export const PASSOS = [
-  "Modelo",
-  "Requisitos",
-  "Aparência",
-  "Campos informativos",
-  "Atendimentos",
-  "Regras",
-  "Fora do catálogo",
-  "Revisão e validação",
-] as const;
+/** Modo avançado (ADR-004): modelo, ajustes dos módulos com padrões, revisão. */
+export const PASSOS = ["Modelo", "Ajustes", "Revisão"] as const;
 
-/** Mapeia o `path` de um diagnóstico para o passo (1–8) do assistente. */
+/** Mapeia o `path` de um diagnóstico para o passo (1–3) do modo avançado. */
 export function passoDoPath(path: string): number {
   const raiz = path.split(/[.[]/)[0];
   switch (raiz) {
@@ -53,20 +45,52 @@ export function passoDoPath(path: string): number {
     case "modulos":
       return 1;
     case "requisitos":
-      return 2;
     case "aparencia":
-      return 3;
     case "campos":
-      return 4;
     case "tipos_atendimento":
-      return 5;
     case "regras":
-      return 6;
     case "fora_do_catalogo":
-      return 7;
+      return 2;
     default:
-      return 8;
+      return 3;
   }
+}
+
+const formatarMinutos = (m: number) =>
+  m % 60 === 0 ? `${m / 60} ${m === 60 ? "hora" : "horas"}` : `${m} minutos`;
+
+/** Frase de negócio de cada regra (é o texto do requisito gerado no modo avançado). */
+export function textoDaRegra(r: Regra, d: ConfigDraft): string {
+  const rotulo = (id: string) => d.tipos_atendimento.find((t) => t.id === id)?.rotulo || id;
+  switch (r.tipo) {
+    case "limite_atacado":
+      return `Atacado a partir de R$ ${centavosParaReais(r.valor_centavos)} em produtos`;
+    case "unidades_por_caixa":
+      return `Caixa padrão com ${r.unidades} unidades`;
+    case "prazo_reserva":
+      return `Pedido aberto segura o estoque por ${formatarMinutos(r.minutos)}`;
+    case "par_atendimento":
+      return `${rotulo(r.primeiro)} seguido de ${rotulo(r.segundo)}, com o mesmo profissional`;
+  }
+}
+
+/**
+ * No modo avançado o dono ajusta valores, não requisitos: cada regra ganha um requisito gerado
+ * com a frase do ajuste, já confirmado (é o próprio dono quem define o valor), e a regra o cita.
+ * O validador continua exigindo a ligação regra → requisito confirmado (seção 6).
+ */
+export function comRequisitosGerados(d: ConfigDraft): ConfigDraft {
+  const id = (i: number) => `REQ-${String(i + 1).padStart(2, "0")}`;
+  return {
+    ...d,
+    requisitos: d.regras.map((r, i) => ({
+      id: id(i),
+      texto: textoDaRegra(r, d),
+      status: "confirmado" as const,
+    })),
+    regras: d.regras.map((r, i) => ({ ...r, requisitos: [id(i)] })),
+    fora_do_catalogo: d.fora_do_catalogo.map((f) => ({ texto: f.texto })),
+  };
 }
 
 export function validarNomeSistema(nome: string): string | null {
@@ -83,8 +107,9 @@ export function rascunhoPadrao(nome: string): ConfigDraft {
     aparencia: {
       nome,
       titulo: nome,
-      cor_primaria: "#0F5257",
-      cor_destaque: "#B7791F",
+      // Cores da marca Nexus (Padrão visual do Nexus); o dono pode trocar na aparência.
+      cor_primaria: "#1f4e79",
+      cor_destaque: "#f2a900",
       texto_boas_vindas: "",
     },
     requisitos: [],
@@ -93,11 +118,6 @@ export function rascunhoPadrao(nome: string): ConfigDraft {
     regras: [],
     fora_do_catalogo: [],
   };
-}
-
-export function proximoIdRequisito(ids: string[]): string {
-  const max = ids.reduce((m, id) => Math.max(m, Number(id.replace(/\D/g, "")) || 0), 0);
-  return `REQ-${String(max + 1).padStart(2, "0")}`;
 }
 
 export function novoId(prefixo: string) {

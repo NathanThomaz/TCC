@@ -1,7 +1,15 @@
 import { Link } from "@/lib/rotas";
 import { useParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { AppWindow, ArrowLeft, FileStack, Info, Settings2, Sparkles } from "lucide-react";
+import {
+  AppWindow,
+  ArrowLeft,
+  Bot,
+  FileStack,
+  Info,
+  SlidersHorizontal,
+  Wrench,
+} from "lucide-react";
 import { HashCurto } from "@/components/nexus/HashCurto";
 import { obterSistema } from "@/api/sistemas";
 import { formatarData } from "@/lib/nexus";
@@ -60,26 +68,34 @@ export function Detalhe() {
           </>
         }
         acoes={
-          sistema.status === "draft" ? (
-            <>
+          <>
+            {sistema.status === "draft" && (
+              <>
+                <Button asChild>
+                  <Link to="/sistemas/$id/criar" params={{ id }}>
+                    <Bot aria-hidden /> Continuar com o assistente
+                  </Link>
+                </Button>
+                <Button asChild variant="outline">
+                  <Link to="/sistemas/$id/configurar" params={{ id }}>
+                    <SlidersHorizontal aria-hidden /> Configurar sozinho
+                  </Link>
+                </Button>
+              </>
+            )}
+            {sistema.status === "active" && (
               <Button asChild>
-                <Link to="/sistemas/$id/criar" params={{ id }}>
-                  <Sparkles aria-hidden /> Criar por conversa
+                <Link to="/sistemas/$id/app" params={{ id }}>
+                  <AppWindow aria-hidden /> Abrir aplicação
                 </Link>
               </Button>
-              <Button asChild variant="outline">
-                <Link to="/sistemas/$id/configurar" params={{ id }} search={{ passo: 1 }}>
-                  <Settings2 aria-hidden /> Configurar pelo formulário
-                </Link>
-              </Button>
-            </>
-          ) : sistema.status === "active" ? (
-            <Button asChild>
-              <Link to="/sistemas/$id/app" params={{ id }}>
-                <AppWindow aria-hidden /> Abrir aplicação
+            )}
+            <Button asChild variant="outline">
+              <Link to="/sistemas/$id/pedidos" params={{ id }}>
+                <Wrench aria-hidden /> Pedidos ao desenvolvedor
               </Link>
             </Button>
-          ) : undefined
+          </>
         }
       />
 
