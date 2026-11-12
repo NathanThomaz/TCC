@@ -2,6 +2,7 @@ import { decodeJwt, exportPKCS8, generateKeyPair } from "jose";
 import { beforeAll, describe, expect, it } from "vitest";
 import {
   AccountLookupError,
+  createAccountAdmin,
   createAccountLookup,
   parseServiceAccount,
   type ServiceAccount,
@@ -138,5 +139,56 @@ describe("parseServiceAccount", () => {
       client_email: "x",
       private_key: "k",
     });
+  });
+});
+
+describe("createAccountAdmin", () => {
+  const admin = (fetcher: typeof fetch) =>
+    createAccountAdmin({
+      projectId: "projeto-ficticio",
+      serviceAccount,
+      webApiKey: "chave-web-ficticia",
+      fetch: fetcher,
+      now: () => NOW,
+    });
+
+  it("convite: cria a conta sem senha se não existir e pede o link de definir senha", async () => {
+    // Mesmo corpo para todas as chamadas: o lookup vê users vazio e a criação devolve o localId.
+    const google = fakeGoogle({ users: [], localId: "uid-novo" });
+    await expect(admin(google.fetcher).invite("novo@example.com")).resolves.toBe("uid-novo");
+    const urls = google.calls.map((c) => c.url.replace(/\?.*$/, ""));
+    expect(urls).toEqual([
+      "https://oauth2.googleapis.com/token",
+      "https://identitytoolkit.googleapis.com/v1/projects/projeto-ficticio/accounts:lookup",
+      "https://identitytoolkit.googleapis.com/v1/projects/projeto-ficticio/accounts",
+      "https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode",
+    ]);
+    expect(JSON.parse(google.calls[2]!.body)).toEqual({
+      email: "novo@example.com",
+      emailVerified: false,
+    });
+    expect(JSON.parse(google.calls[3]!.body)).toEqual({
+      requestType: "PASSWORD_RESET",
+      email: "novo@example.com",
+    });
+  });
+
+  it("convite para conta que já existe no Firebase só reenvia o link", async () => {
+    const google = fakeGoogle({ users: [{ localId: "uid-1" }] });
+    await admin(google.fetcher).invite("novo@example.com");
+    expect(google.calls.some((c) => c.url.endsWith("/accounts"))).toBe(false);
+  });
+
+  it("desativar invalida as sessões (validSince = agora) e falha vira AccountLookupError", async () => {
+    const google = fakeGoogle({});
+    await admin(google.fetcher).disable("uid-1");
+    expect(JSON.parse(google.calls.at(-1)!.body)).toEqual({
+      localId: "uid-1",
+      disableUser: true,
+      validSince: String(Math.floor(NOW / 1000)),
+    });
+    await expect(admin(fakeGoogle({}, 500).fetcher).enable("uid-1")).rejects.toThrow(
+      AccountLookupError,
+    );
   });
 });

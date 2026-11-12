@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { IssueDto, SystemDto, VersionDto } from "../../shared/api";
 import { CATALOG_VERSION } from "../../shared/contract/catalog";
-import { SCHEMA_VERSION } from "../../shared/contract/schema";
+import { SCHEMA_VERSION, type ConfigDraft } from "../../shared/contract/schema";
 import { validateDraft } from "../../shared/contract/validate";
 import { authenticate, requireAdmin, requireSystemAccess } from "../auth/session";
 import { readJson } from "../http/body";
@@ -183,44 +183,20 @@ export const createVersion: Handler = async (ctx) => {
     return json({ versao: null, issues: result.issues }, { status: 422 });
   }
 
-  const configJson = canonicalJson(result.draft);
-  const hash = await sha256Hex(configJson);
-  const blocking = result.issues.filter((issue) => issue.severity === "bloqueante").length;
   const id = crypto.randomUUID();
   const now = ctx.clock.now();
   const db = ctx.env.DB;
   try {
     await db.batch([
-      db
-        .prepare(
-          `INSERT INTO model_versions
-             (id, system_id, version, schema_version, catalog_version, config_json, hash, origin, status, created_by, created_at)
-           SELECT ?, ?, COALESCE(MAX(version), 0) + 1, ?, ?, ?, ?, ?, ?, ?, ?
-           FROM model_versions WHERE system_id = ?`,
-        )
-        .bind(
-          id,
-          systemId,
-          SCHEMA_VERSION,
-          CATALOG_VERSION,
-          configJson,
-          hash,
-          body.origem,
-          blocking === 0 ? "valid" : "invalid",
-          user.id,
-          now,
-          systemId,
-        ),
-      db
-        .prepare(
-          "INSERT INTO validation_runs (id, model_version_id, blocking_count, issues_json, created_at) VALUES (?, ?, ?, ?, ?)",
-        )
-        .bind(crypto.randomUUID(), id, blocking, JSON.stringify(result.issues), now),
-      db
-        .prepare(
-          "INSERT INTO audit_events (system_id, actor_id, action, target_type, target_id, created_at) VALUES (?, ?, 'version.created', 'model_version', ?, ?)",
-        )
-        .bind(systemId, user.id, id, now),
+      ...(await versaoStatements(ctx, {
+        id,
+        systemId,
+        userId: user.id,
+        origem: body.origem,
+        draft: result.draft,
+        issues: result.issues,
+        now,
+      })),
       recordStatement(ctx, cmd, started, id, 201, now),
     ]);
   } catch (error) {
@@ -234,8 +210,62 @@ export const createVersion: Handler = async (ctx) => {
   return versionResponse(ctx, id, 201);
 };
 
+/**
+ * Instruções que gravam uma versão já validada estruturalmente (formulário ou chat passam pelo
+ * mesmo caminho, T33): JSON canônico, hash, status pelo diagnóstico e auditoria.
+ */
+export async function versaoStatements(
+  ctx: Pick<RequestContext, "env">,
+  v: {
+    id: string;
+    systemId: string;
+    userId: string;
+    origem: VersionDto["origem"];
+    draft: ConfigDraft;
+    issues: IssueDto[];
+    now: number;
+  },
+): Promise<D1PreparedStatement[]> {
+  const db = ctx.env.DB;
+  const configJson = canonicalJson(v.draft);
+  const hash = await sha256Hex(configJson);
+  const blocking = v.issues.filter((issue) => issue.severity === "bloqueante").length;
+  return [
+    db
+      .prepare(
+        `INSERT INTO model_versions
+           (id, system_id, version, schema_version, catalog_version, config_json, hash, origin, status, created_by, created_at)
+         SELECT ?, ?, COALESCE(MAX(version), 0) + 1, ?, ?, ?, ?, ?, ?, ?, ?
+         FROM model_versions WHERE system_id = ?`,
+      )
+      .bind(
+        v.id,
+        v.systemId,
+        SCHEMA_VERSION,
+        CATALOG_VERSION,
+        configJson,
+        hash,
+        v.origem,
+        blocking === 0 ? "valid" : "invalid",
+        v.userId,
+        v.now,
+        v.systemId,
+      ),
+    db
+      .prepare(
+        "INSERT INTO validation_runs (id, model_version_id, blocking_count, issues_json, created_at) VALUES (?, ?, ?, ?, ?)",
+      )
+      .bind(crypto.randomUUID(), v.id, blocking, JSON.stringify(v.issues), v.now),
+    db
+      .prepare(
+        "INSERT INTO audit_events (system_id, actor_id, action, target_type, target_id, created_at) VALUES (?, ?, 'version.created', 'model_version', ?, ?)",
+      )
+      .bind(v.systemId, v.userId, v.id, v.now),
+  ];
+}
+
 /** Versão + o diagnóstico guardado na última validação dela. */
-async function versionResponse(
+export async function versionResponse(
   ctx: RequestContext,
   versionId: string,
   status: number,

@@ -101,6 +101,12 @@ export function Aplicacao() {
               destaque={aparencia.cor_destaque}
             />
           ))}
+          <MenuLink
+            id={id}
+            caminho="perguntar"
+            rotulo="Perguntar"
+            destaque={aparencia.cor_destaque}
+          />
         </nav>
       </div>
       <Outlet />

@@ -8,6 +8,7 @@ import { AuthProvider } from "@/lib/auth";
 import { TemaProvider } from "@/lib/tema";
 import { Agenda } from "@/pages/app/Agenda";
 import { Aplicacao } from "@/pages/app/Aplicacao";
+import { Consulta } from "@/pages/app/Consulta";
 import { Estoque } from "@/pages/app/Estoque";
 import { Painel } from "@/pages/app/Painel";
 import { Pessoas } from "@/pages/app/Pessoas";
@@ -16,6 +17,7 @@ import { VendaEditor } from "@/pages/app/VendaEditor";
 import { Vendas } from "@/pages/app/Vendas";
 import { Configuracoes } from "@/pages/Configuracoes";
 import { Configurar } from "@/pages/Configurar";
+import { Criar } from "@/pages/Criar";
 import { DetalheSistema } from "@/pages/DetalheSistema";
 import { Entrar } from "@/pages/Entrar";
 import { Inicio } from "@/pages/Inicio";
@@ -54,6 +56,7 @@ createRoot(root).render(
                 <Route path="/sistemas" element={<Sistemas />} />
                 <Route path="/sistemas/:id" element={<DetalheSistema />} />
                 <Route path="/sistemas/:id/configurar" element={<Configurar />} />
+                <Route path="/sistemas/:id/criar" element={<Criar />} />
                 <Route path="/sistemas/:id/app" element={<Aplicacao />}>
                   <Route index element={<Painel />} />
                   <Route path="clientes" element={<Pessoas tipo="clientes" />} />
@@ -63,6 +66,7 @@ createRoot(root).render(
                   <Route path="vendas" element={<Vendas />} />
                   <Route path="vendas/:venda" element={<VendaEditor />} />
                   <Route path="agenda" element={<Agenda />} />
+                  <Route path="perguntar" element={<Consulta />} />
                 </Route>
                 <Route path="/perfil" element={<Perfil />} />
                 <Route path="/configuracoes" element={<Configuracoes />} />

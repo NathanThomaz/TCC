@@ -187,6 +187,79 @@ export interface OperacaoApiBody {
   error?: ApiErrorBody["error"];
 }
 
+// ---- Chat de consulta, somente leitura (/api/v1/systems/:id/consulta, seção 15) ----
+
+export interface MensagemConsultaDto {
+  id: string;
+  papel: "usuario" | "assistente";
+  texto: string;
+  /** Na resposta: o que foi consultado, com quais filtros e de onde vieram os números. */
+  intencao: string | null;
+  filtros: string[];
+  origem: string | null;
+  criadoEm: number;
+}
+
+export interface ConsultaApiBody {
+  mensagens?: MensagemConsultaDto[];
+  iaDisponivel?: boolean;
+  error?: ApiErrorBody["error"];
+}
+
+// ---- Contas secundárias (/api/v1/contas), só do administrador (seção 7) ----
+
+export interface ContaDto {
+  id: string;
+  email: string;
+  nome: string | null;
+  /** pending = convidada, ainda sem primeiro acesso; disabled = desativada (não entra). */
+  status: "pending" | "active" | "disabled";
+  /** Sistemas do administrador e se esta conta tem acesso a cada um. */
+  sistemas: { id: string; nome: string; ativo: boolean }[];
+}
+
+export interface ContasApiBody {
+  contas?: ContaDto[];
+  conta?: ContaDto;
+  /** O convite (link de definir senha) foi pedido ao Firebase com sucesso. */
+  conviteEnviado?: boolean;
+  error?: ApiErrorBody["error"];
+}
+
+// ---- Criação por conversa (/api/v1/systems/:systemId/criacao) ----
+
+export interface MensagemDto {
+  id: string;
+  papel: "usuario" | "assistente";
+  texto: string;
+  perguntas: string[];
+  foraDoCatalogo: string[];
+  criadoEm: number;
+}
+
+export interface RequisitoDto {
+  codigo: string;
+  texto: string;
+  status: "pendente" | "confirmado" | "substituido";
+  origem: "ia" | "usuario";
+}
+
+export interface CriacaoApiBody {
+  /** Revisão do estado da criação: toda ação envia a que viu; se mudou, nada é gravado. */
+  revisao?: number;
+  mensagens?: MensagemDto[];
+  /** Requisitos vivos (pendentes e confirmados), em ordem de código. */
+  requisitos?: RequisitoDto[];
+  /** Se a IA está configurada neste ambiente (sem ela, o formulário manual continua). */
+  iaDisponivel?: boolean;
+  /** Última versão gravada (formulário ou conversa) e o diagnóstico dela. */
+  versao?: VersionDto | null;
+  issues?: IssueDto[];
+  /** Configuração exata dessa versão (a prévia mostra o que será aprovado). */
+  config?: ConfigDraft | null;
+  error?: ApiErrorBody["error"];
+}
+
 /** GET /api/v1/config — configuração pública do front. `firebase` nulo = login indisponível. */
 export interface PublicConfig {
   environment: string;
