@@ -80,16 +80,42 @@ export function textoDaRegra(r: Regra, d: ConfigDraft): string {
  * O validador continua exigindo a ligação regra → requisito confirmado (seção 6).
  */
 export function comRequisitosGerados(d: ConfigDraft): ConfigDraft {
-  const id = (i: number) => `REQ-${String(i + 1).padStart(2, "0")}`;
+  // REQ-01 registra o modelo e os módulos escolhidos (o contrato exige ao menos um requisito,
+  // mesmo sem regras); as regras vêm a partir do REQ-02.
+  const id = (i: number) => `REQ-${String(i + 2).padStart(2, "0")}`;
+  const base = {
+    id: "REQ-01",
+    texto: `Sistema com ${d.modulos.map((m) => ROTULO_MODULO[m].toLowerCase()).join(", ")}`,
+    status: "confirmado" as const,
+  };
   return {
     ...d,
-    requisitos: d.regras.map((r, i) => ({
-      id: id(i),
-      texto: textoDaRegra(r, d),
-      status: "confirmado" as const,
-    })),
+    requisitos: [
+      base,
+      ...d.regras.map((r, i) => ({
+        id: id(i),
+        texto: textoDaRegra(r, d),
+        status: "confirmado" as const,
+      })),
+    ],
     regras: d.regras.map((r, i) => ({ ...r, requisitos: [id(i)] })),
     fora_do_catalogo: d.fora_do_catalogo.map((f) => ({ texto: f.texto })),
+  };
+}
+
+const REGRAS_DE_VENDAS: Regra["tipo"][] = ["limite_atacado", "unidades_por_caixa", "prazo_reserva"];
+
+/** Ao trocar o modelo, tira as regras e os atendimentos de módulos que deixaram de existir. */
+export function reconciliarModelo(d: ConfigDraft): ConfigDraft {
+  const vendas = d.modulos.includes("vendas");
+  const agenda = d.modulos.includes("agenda");
+  return {
+    ...d,
+    regras: d.regras.filter((r) =>
+      r.tipo === "par_atendimento" ? agenda : !REGRAS_DE_VENDAS.includes(r.tipo) || vendas,
+    ),
+    tipos_atendimento: agenda ? d.tipos_atendimento : [],
+    campos: d.campos.filter((c) => entidadesDosModulos(d.modulos).includes(c.entidade)),
   };
 }
 

@@ -7,6 +7,7 @@ import {
   Lightbulb,
   MessageCircle,
   Pencil,
+  Trash2,
   RotateCw,
   Send,
   Wrench,
@@ -318,6 +319,7 @@ export function ResumoSistema({
   ocupado,
   onUsarSugestao,
   onMudar,
+  onRemover,
   onVerPedido,
 }: {
   sistema: string;
@@ -326,6 +328,8 @@ export function ResumoSistema({
   ocupado: boolean;
   onUsarSugestao: (codigo: string) => void;
   onMudar: (r: RequisitoDto) => void;
+  /** Tira o item do resumo (ato do usuário; fica no histórico como substituído). */
+  onRemover: (codigo: string) => void;
   onVerPedido: (p: PedidoDto) => void;
 }) {
   const pend = pendenciasDaEntrevista(estado);
@@ -370,6 +374,17 @@ export function ResumoSistema({
                         onClick={() => onMudar(r)}
                       >
                         <Pencil aria-hidden />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="shrink-0"
+                        title={`Tirar do resumo: ${r.titulo ?? r.texto}`}
+                        aria-label={`Tirar do resumo: ${r.titulo ?? r.texto}`}
+                        disabled={bloqueado || ocupado}
+                        onClick={() => onRemover(r.codigo)}
+                      >
+                        <Trash2 aria-hidden />
                       </Button>
                     </div>
                     <div className="mt-2 flex flex-wrap items-center gap-2">

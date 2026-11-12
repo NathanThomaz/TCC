@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, CircleCheck, Lightbulb, Loader2, Wrench } from "lucide-react";
 import { criarPedido, listarPedidos } from "@/api/pedidos";
-import { ErroApi } from "@/components/app/Comum";
+import { ErroApi, useChavePorConteudo } from "@/components/app/Comum";
 import { EstadoPedido } from "@/components/criacao/Pedido";
 import {
   LimiteAtacado,
@@ -331,8 +331,13 @@ function PedidoAoDesenvolvedor({ sistemaId }: { sistemaId: string }) {
   });
   const [titulo, setTitulo] = useState("");
   const [texto, setTexto] = useState("");
+  // Mesma chave enquanto o pedido não mudar: repetir depois de uma falha não o duplica.
+  const chave = useChavePorConteudo();
   const m = useMutation({
-    mutationFn: () => criarPedido(sistemaId, titulo.trim(), texto.trim()),
+    mutationFn: () => {
+      const corpo = { titulo: titulo.trim(), pedido: texto.trim() };
+      return criarPedido(sistemaId, corpo.titulo, corpo.pedido, chave(corpo));
+    },
     onSuccess: () => {
       setTitulo("");
       setTexto("");

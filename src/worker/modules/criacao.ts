@@ -314,7 +314,7 @@ export interface Mescla {
  * existente com texto igual fica como está; texto diferente gera versão nova pendente (T06), assim
  * como uma sugestão que o dono passou a dizer com as próprias palavras (deixa de ser sugestão, mas
  * continua pendente); sem código (ou código desconhecido) vira requisito novo, se já não houver um
- * igual. A IA não transforma em sugestão o que já era do dono.
+ * igual. Valor novo que a IA marca como sugestão continua sugestão, mesmo sobre um item do dono.
  */
 export function mesclarRequisitos(
   vivos: RequisitoDto[],
@@ -337,8 +337,9 @@ export function mesclarRequisitos(
           texto: p.texto.trim(),
           assunto: p.assunto,
           titulo: p.titulo.trim(),
-          // Reescrever pedido do dono nunca vira sugestão; sugestão só deixa de ser se ele disse.
-          sugestao: existente.sugestao ? p.sugestao : false,
+          // Na dúvida, vale como sugestão (exige o aceite do usuário): a IA não tira a marca de
+          // um valor que ela mesma propôs sem o dono ter dito, nem a de um valor novo dela.
+          sugestao: p.sugestao,
           eraConfirmado: existente.status === "confirmado",
         });
         textos.add(normalizar(p.texto));

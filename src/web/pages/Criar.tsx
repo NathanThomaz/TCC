@@ -53,6 +53,19 @@ export function Criar() {
     onSuccess: atualizar,
     onError: recarregar,
   });
+  const remover = useMutation({
+    mutationFn: (codigo: string) =>
+      acaoRequisito(
+        id,
+        codigo,
+        "descartar",
+        revisao,
+        undefined,
+        chave({ remover: codigo, revisao }),
+      ),
+    onSuccess: atualizar,
+    onError: recarregar,
+  });
 
   const voltar = (
     <Link
@@ -87,7 +100,7 @@ export function Criar() {
   const estado = q.data;
   const ativo = detalhe.data?.sistema.status === "active";
   const bloqueado = !estado.iaDisponivel || ativo;
-  const ocupado = enviar.isPending || sugestao.isPending;
+  const ocupado = enviar.isPending || sugestao.isPending || remover.isPending;
 
   const escrever = (t: string) => {
     setTexto(t);
@@ -108,7 +121,7 @@ export function Criar() {
     setResumoAberto(false);
     setPedidoAberto(p.id);
   };
-  const erroEnvio = enviar.error ?? sugestao.error;
+  const erroEnvio = enviar.error ?? sugestao.error ?? remover.error;
   const resumo = (
     <ResumoSistema
       sistema={id}
@@ -117,6 +130,7 @@ export function Criar() {
       ocupado={ocupado}
       onUsarSugestao={(codigo) => sugestao.mutate(codigo)}
       onMudar={onMudar}
+      onRemover={(codigo) => remover.mutate(codigo)}
       onVerPedido={onVerPedido}
     />
   );

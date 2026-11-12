@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, ArrowRight, Bot, Info } from "lucide-react";
 import { obterSistema } from "@/api/sistemas";
 import type { ConfigDraft } from "@/types/nexus";
-import { comRequisitosGerados, PASSOS, rascunhoPadrao } from "@/lib/nexus";
+import { comRequisitosGerados, PASSOS, rascunhoPadrao, reconciliarModelo } from "@/lib/nexus";
 import { ErrorState, PageHeader } from "@/components/nexus/Estados";
 import { StepIndicator } from "@/components/nexus/StepIndicator";
 import { PassoModelo } from "@/components/configurar/Passos";
@@ -125,11 +125,13 @@ export function Configurar() {
 
   const pendentes = pendenciasDosAjustes(draft, sugestoes);
   const faltas = passo === 2 ? pendentes : [];
-  const modeloMudou = (n: ConfigDraft) => {
-    // Trocar o modelo pode trazer vendas: o prazo de reserva volta como sugestão.
-    const r = comPadroes(n);
-    if (r.sugestoes.length) setSugestoes([...new Set([...sugestoes, ...r.sugestoes])]);
-    return r.draft;
+  // Trocar o modelo tira regras de módulos que saíram (com as sugestões delas) e, se entrar
+  // vendas, traz o prazo de reserva como sugestão.
+  const trocarModelo = (fn: (d: ConfigDraft) => ConfigDraft) => {
+    const r = comPadroes(reconciliarModelo(fn(draft)));
+    const ficam = sugestoes.filter((s) => r.draft.regras.some((x) => x.tipo === s));
+    set(() => r.draft);
+    setSugestoes([...new Set([...ficam, ...r.sugestoes])]);
   };
 
   return (
@@ -172,9 +174,7 @@ export function Configurar() {
           {PASSOS[passo - 1]}
         </h2>
         <div className="mt-3">
-          {passo === 1 && (
-            <PassoModelo draft={draft} set={(fn) => set((d) => modeloMudou(fn(d)))} />
-          )}
+          {passo === 1 && <PassoModelo draft={draft} set={trocarModelo} />}
           {passo === 2 && (
             <PassoAjustes
               draft={draft}

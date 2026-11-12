@@ -41,6 +41,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ORDEM_ASSUNTOS, pendenciasDaEntrevista, ROTULO_ASSUNTO } from "@/lib/criacao";
+import { ROTULO_MODULO, textoDaRegra } from "@/lib/nexus";
 import { Link, useNavigate } from "@/lib/rotas";
 
 // Revisão da criação guiada (ADR-004): o dono confere em linguagem de negócio o que fica pronto e
@@ -53,7 +54,9 @@ export function CriarRevisao() {
   const navigate = useNavigate();
   const q = useQuery({ queryKey: ["criacao", id], queryFn: () => obterCriacao(id) });
   const detalhe = useQuery({ queryKey: ["sistema", id], queryFn: () => obterSistema(id) });
-  const [conferido, setConferido] = useState(false);
+  // O aceite vale para a revisão do estado que o dono conferiu: se outra tela mudar algo, ele
+  // precisa conferir e marcar de novo.
+  const [conferidoEm, setConferidoEm] = useState<number | null>(null);
   const [estrutural, setEstrutural] = useState(false);
   const chave = useChavePorConteudo();
 
@@ -72,9 +75,11 @@ export function CriarRevisao() {
   };
   const criar = useMutation({
     mutationFn: async () => {
+      // Confirma exatamente a revisão que o dono conferiu: se algo mudou, o backend recusa.
+      const vista = conferidoEm!;
       let e = q.data!;
       if (e.requisitos.some((r) => r.status === "pendente")) {
-        e = await confirmarResumo(id, e.revisao, chave({ confirmar: true, revisao: e.revisao }));
+        e = await confirmarResumo(id, vista, chave({ confirmar: true, revisao: vista }));
         qc.setQueryData(["criacao", id], e);
       }
       return gerarConfiguracao(id, e.revisao, chave({ gerar: true, revisao: e.revisao }));
@@ -145,6 +150,7 @@ export function CriarRevisao() {
     { id: "outros", rotulo: "Outros", itens: e.requisitos.filter((r) => !r.assunto) },
   ].filter((g) => g.itens.length > 0);
   const ocupado = criar.isPending || corrigir.isPending;
+  const conferido = conferidoEm !== null && conferidoEm === e.revisao;
 
   return (
     <>
@@ -232,6 +238,43 @@ export function CriarRevisao() {
           </ul>
         )}
       </section>
+
+      {e.config && pronto && (
+        <section aria-labelledby="como-ficou" className="mb-8">
+          <h2 id="como-ficou" className="mb-1 text-lg font-semibold">
+            Como o sistema foi montado
+          </h2>
+          <p className="mb-4 text-sm text-muted-foreground">
+            Estes são os valores que entram em vigor ao ativar. Confira se batem com o que você
+            disse; se algo estiver diferente, mude na conversa antes de ativar.
+          </p>
+          <dl className="divide-y rounded-lg border bg-card text-sm shadow-card">
+            {[
+              ["Módulos", e.config.modulos.map((m) => ROTULO_MODULO[m]).join(", ")],
+              [
+                "Regras",
+                e.config.regras.map((r) => textoDaRegra(r, e.config!)).join(" · ") || "Nenhuma",
+              ],
+              ["Informações extras", e.config.campos.map((c) => c.rotulo).join(", ") || "Nenhuma"],
+              ...(e.config.tipos_atendimento.length
+                ? [
+                    [
+                      "Atendimentos",
+                      e.config.tipos_atendimento
+                        .map((t) => `${t.rotulo} (${t.duracao_minutos} min)`)
+                        .join(", "),
+                    ],
+                  ]
+                : []),
+            ].map(([k, v]) => (
+              <div key={k} className="grid gap-1 px-4 py-3 sm:grid-cols-3">
+                <dt className="text-muted-foreground">{k}</dt>
+                <dd className="font-medium sm:col-span-2">{v}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+      )}
 
       {e.config && pronto && (
         <section aria-labelledby="previa" className="mb-8">
@@ -336,11 +379,21 @@ export function CriarRevisao() {
                   <CircleAlert className="size-5 text-destructive" aria-hidden /> Falta resolver
                   antes de criar
                 </p>
-                <ul className="mt-2 list-disc space-y-1 pl-5">
-                  {bloqueantes.map((i, n) => (
-                    <li key={n}>{i.message}</li>
-                  ))}
-                </ul>
+                <p className="mt-1">
+                  O sistema montado não passou na conferência do Nexus.{" "}
+                  {bloqueantes.length === 1
+                    ? "Há 1 ponto a resolver."
+                    : `Há ${bloqueantes.length} pontos a resolver.`}{" "}
+                  Converse com o assistente sobre isso ou peça a ele para corrigir.
+                </p>
+                <details className="mt-2">
+                  <summary className="cursor-pointer font-medium">Detalhes técnicos</summary>
+                  <ul className="mt-2 list-disc space-y-1 pl-5">
+                    {bloqueantes.map((i, n) => (
+                      <li key={n}>{i.message}</li>
+                    ))}
+                  </ul>
+                </details>
                 <div className="mt-3 flex flex-wrap gap-2">
                   <Button asChild variant="outline" size="sm">
                     <Link to="/sistemas/$id/criar" params={{ id }}>
@@ -373,7 +426,7 @@ export function CriarRevisao() {
                 id="conferi"
                 checked={conferido}
                 disabled={!pend.podeRevisar || ativo}
-                onCheckedChange={(c) => setConferido(c === true)}
+                onCheckedChange={(c) => setConferidoEm(c === true ? e.revisao : null)}
               />
               <Label htmlFor="conferi" className="font-normal leading-snug">
                 Conferi o resumo e é isso que eu quero

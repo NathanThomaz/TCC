@@ -643,7 +643,7 @@ describe("entrevista guiada", () => {
     ]);
   });
 
-  it("a IA não transforma em sugestão o que o dono disse", async () => {
+  it("valor novo proposto pela IA sobre um item do dono continua sugestão (exige aceite)", async () => {
     roteiro.push(levantamento({ requisitos: [{ codigo: null, texto: TEXTOS[3] }] }));
     await acao(c("/mensagens"), { texto: "30 minutos" });
     roteiro.push(
@@ -651,8 +651,9 @@ describe("entrevista guiada", () => {
         requisitos: [{ codigo: "REQ-01", texto: "Reserva de 1 hora", sugestao: true }],
       }),
     );
-    const r = await acao(c("/mensagens"), { texto: "Mude" });
-    expect(r.body.requisitos![0]).toMatchObject({ texto: "Reserva de 1 hora", sugestao: false });
+    const r = await acao(c("/mensagens"), { texto: "O que você recomenda?" });
+    expect(r.body.requisitos![0]).toMatchObject({ texto: "Reserva de 1 hora", sugestao: true });
+    expect((await acao(c("/confirmar"))).body.error!.code).toBe("sugestoes_pendentes");
   });
 
   it("resposta da IA sem os campos da entrevista é recusada e nada é gravado", async () => {

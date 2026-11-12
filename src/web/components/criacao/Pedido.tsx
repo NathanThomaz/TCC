@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import type { EstadoPedidoDto, PedidoDto } from "../../../shared/api";
 import { cancelarPedido, comentarPedido } from "@/api/pedidos";
-import { ErroApi } from "@/components/app/Comum";
+import { ErroApi, useChavePorConteudo } from "@/components/app/Comum";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -93,19 +93,22 @@ function Secao({ titulo, children }: { titulo: string; children: ReactNode }) {
 function Ficha({ pedido, sistema }: { pedido: PedidoDto; sistema: string | undefined }) {
   const qc = useQueryClient();
   const [comentario, setComentario] = useState("");
+  // Mesma chave enquanto o conteúdo não mudar: repetir depois de uma falha não duplica.
+  const chave = useChavePorConteudo();
   const atualizar = () => {
     void qc.invalidateQueries({ queryKey: ["pedidos", sistema] });
     void qc.invalidateQueries({ queryKey: ["criacao", sistema] });
   };
   const comentar = useMutation({
-    mutationFn: (texto: string) => comentarPedido(sistema!, pedido.id, texto),
+    mutationFn: (texto: string) =>
+      comentarPedido(sistema!, pedido.id, texto, chave({ comentar: pedido.id, texto })),
     onSuccess: () => {
       setComentario("");
       atualizar();
     },
   });
   const cancelar = useMutation({
-    mutationFn: () => cancelarPedido(sistema!, pedido.id),
+    mutationFn: () => cancelarPedido(sistema!, pedido.id, chave({ cancelar: pedido.id })),
     onSuccess: atualizar,
   });
 
