@@ -292,7 +292,11 @@ export function CriarRevisao() {
             ))}
           </dl>
           <div className="mt-4">
-            <ModulosProntos modulos={e.config.modulos} titulo="O que cada módulo já traz pronto" />
+            <ModulosProntos
+              modulos={e.config.modulos}
+              regras={e.config.regras}
+              titulo="O que cada módulo já traz pronto"
+            />
           </div>
         </section>
       )}

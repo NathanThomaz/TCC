@@ -463,14 +463,18 @@ export function PassoCampos({ draft, set }: PassoProps) {
                           value={c.rotulo}
                           maxLength={60}
                           onChange={(ev) => upd(c.id, { rotulo: ev.target.value })}
+                          aria-invalid={!!nativo || repetido || !c.rotulo.trim()}
+                          aria-describedby={`${c.id}-r-erro`}
                         />
-                        {!c.rotulo.trim() && <Erro>Informe o rótulo.</Erro>}
-                        {nativo && (
-                          <Erro>
-                            Já vem pronto no cadastro ({nativo}); não precisa deste campo.
-                          </Erro>
-                        )}
-                        {repetido && <Erro>Já existe outro campo com este nome aqui.</Erro>}
+                        <div id={`${c.id}-r-erro`} role="status">
+                          {!c.rotulo.trim() && <Erro>Informe o rótulo.</Erro>}
+                          {nativo && (
+                            <Erro>
+                              Já vem pronto no cadastro ({nativo}); não precisa deste campo.
+                            </Erro>
+                          )}
+                          {repetido && <Erro>Já existe outro campo com este nome aqui.</Erro>}
+                        </div>
                         {c.tipo === "lista" && (
                           <div className="mt-2">
                             <Label htmlFor={`${c.id}-o`} className="text-xs text-muted-foreground">

@@ -58,48 +58,50 @@ export const NATIVE_FIELDS: Record<
   FieldEntity,
   readonly { label: string; aliases: readonly string[] }[]
 > = {
+  // Só sinônimos inequívocos: "Razão social", "Descrição", "Valor" ou "Quantidade" podem ser
+  // campos legítimos e não são barrados.
   clientes: [
-    { label: "Nome", aliases: ["nome do cliente", "cliente", "razao social"] },
-    { label: "Situação (ativo ou inativo)", aliases: ["situacao", "status", "ativo", "inativo"] },
+    { label: "Nome", aliases: ["nome do cliente"] },
+    { label: "Situação (ativo ou inativo)", aliases: ["situacao", "status"] },
   ],
   produtos: [
-    { label: "Nome", aliases: ["nome do produto", "produto", "descricao"] },
-    { label: "Preço de varejo", aliases: ["preco", "valor", "preco unitario", "varejo"] },
-    { label: "Preço de atacado", aliases: ["atacado", "valor de atacado"] },
-    { label: "Unidades por caixa", aliases: ["caixa", "quantidade por caixa", "unidades"] },
+    { label: "Nome", aliases: ["nome do produto"] },
+    { label: "Preço de varejo", aliases: ["preco", "preco de varejo", "preco varejo"] },
+    { label: "Preço de atacado", aliases: ["preco de atacado", "preco atacado"] },
+    { label: "Unidades por caixa", aliases: ["quantidade por caixa", "unidades na caixa"] },
     {
       label: "Estoque (físico, reservado e disponível)",
-      aliases: ["estoque", "quantidade", "saldo", "quantidade em estoque", "disponivel"],
+      aliases: ["estoque", "quantidade em estoque", "saldo em estoque", "estoque disponivel"],
     },
-    { label: "Situação (ativo ou inativo)", aliases: ["situacao", "status", "ativo", "inativo"] },
+    { label: "Situação (ativo ou inativo)", aliases: ["situacao", "status"] },
   ],
   profissionais: [
-    { label: "Nome", aliases: ["nome do profissional", "profissional", "tecnico"] },
-    { label: "Situação (ativo ou inativo)", aliases: ["situacao", "status", "ativo", "inativo"] },
+    { label: "Nome", aliases: ["nome do profissional"] },
+    { label: "Situação (ativo ou inativo)", aliases: ["situacao", "status"] },
   ],
   vendas: [
-    { label: "Cliente", aliases: ["nome do cliente", "comprador"] },
-    { label: "Itens (produto e quantidade)", aliases: ["itens", "produtos", "quantidade"] },
-    { label: "Total", aliases: ["valor total", "subtotal", "valor", "preco total"] },
-    { label: "Faixa de preço (varejo ou atacado)", aliases: ["faixa de preco", "tipo de preco"] },
+    { label: "Cliente", aliases: ["nome do cliente"] },
+    { label: "Itens (produto e quantidade)", aliases: ["itens", "itens da venda"] },
+    { label: "Total", aliases: ["valor total", "total da venda"] },
+    { label: "Faixa de preço (varejo ou atacado)", aliases: ["faixa de preco"] },
     { label: "Situação (rascunho, concluída ou cancelada)", aliases: ["situacao", "status"] },
-    { label: "Validade da reserva", aliases: ["reserva", "vencimento da reserva"] },
-    { label: "Motivo do cancelamento", aliases: ["motivo", "cancelamento"] },
+    { label: "Validade da reserva", aliases: ["vencimento da reserva"] },
+    { label: "Motivo do cancelamento", aliases: [] },
   ],
   agendamentos: [
     { label: "Cliente", aliases: ["nome do cliente"] },
-    { label: "Profissional", aliases: ["tecnico", "responsavel"] },
-    { label: "Tipo de atendimento", aliases: ["servico", "tipo", "atendimento"] },
+    { label: "Profissional", aliases: ["profissional responsavel"] },
+    { label: "Tipo de atendimento", aliases: ["tipo de servico"] },
     {
       label: "Data e hora de início",
-      aliases: ["data", "hora", "horario", "inicio", "data do atendimento"],
+      aliases: ["data e hora", "data do atendimento", "horario do atendimento", "inicio"],
     },
-    { label: "Término", aliases: ["fim", "hora de termino", "duracao"] },
+    { label: "Término", aliases: ["hora de termino"] },
     {
       label: "Situação (agendado, em atendimento, concluído ou cancelado)",
       aliases: ["situacao", "status"],
     },
-    { label: "Venda vinculada", aliases: ["venda", "pedido"] },
+    { label: "Venda vinculada", aliases: [] },
   ],
 };
 
@@ -117,8 +119,12 @@ export function normalizarRotulo(texto: string): string {
 export function campoNativoDuplicado(entidade: FieldEntity, rotulo: string): string | null {
   const r = normalizarRotulo(rotulo);
   if (!r) return null;
+  // Vale o rótulo completo, o rótulo sem o detalhe entre parênteses e os sinônimos.
   const achado = NATIVE_FIELDS[entidade].find(
-    (n) => normalizarRotulo(n.label.replace(/\(.*\)/, "")) === r || n.aliases.includes(r),
+    (n) =>
+      normalizarRotulo(n.label) === r ||
+      normalizarRotulo(n.label.replace(/\(.*\)/, "")) === r ||
+      n.aliases.includes(r),
   );
   return achado?.label ?? null;
 }
