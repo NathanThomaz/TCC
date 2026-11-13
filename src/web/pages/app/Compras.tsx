@@ -215,6 +215,9 @@ function NovaCompraDialog({ onFechar, onCriada }: { onFechar: () => void; onCria
 
   const mudar = (chaveLinha: string, campo: keyof Linha, valor: string) =>
     setLinhas((ls) => ls.map((l) => (l.chave === chaveLinha ? { ...l, [campo]: valor } : l)));
+  // Trocar o produto zera as caixas: o novo pode não ter caixa (e o campo some da tela).
+  const trocarProduto = (chaveLinha: string, produto: string) =>
+    setLinhas((ls) => ls.map((l) => (l.chave === chaveLinha ? { ...l, produto, caixas: "" } : l)));
   const total = linhas.reduce((soma, l) => {
     const p = produtosAtivos.find((x) => x.id === l.produto);
     const unidades = Number(l.caixas || 0) * (p?.unidadesPorCaixa ?? 0) + Number(l.unidades || 0);
@@ -308,7 +311,7 @@ function NovaCompraDialog({ onFechar, onCriada }: { onFechar: () => void; onCria
                     <Label htmlFor={`item-produto-${i}`} className="text-xs">
                       Produto
                     </Label>
-                    <Select value={l.produto} onValueChange={(v) => mudar(l.chave, "produto", v)}>
+                    <Select value={l.produto} onValueChange={(v) => trocarProduto(l.chave, v)}>
                       <SelectTrigger id={`item-produto-${i}`}>
                         <SelectValue placeholder="Escolha" />
                       </SelectTrigger>
