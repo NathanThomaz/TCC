@@ -10,7 +10,8 @@ import { ROTULO_MODULO } from "@/lib/nexus";
 const FUNCOES: Record<Modulo, { texto: string; regra?: Regra["tipo"] }[]> = {
   clientes: [{ texto: "Cadastro de clientes, com inativação sem apagar o histórico" }],
   produtos: [
-    { texto: "Preço de varejo e de atacado por produto" },
+    { texto: "Preço de varejo por produto" },
+    { texto: "Preço de atacado por produto", regra: "limite_atacado" },
     { texto: "Venda por caixa", regra: "unidades_por_caixa" },
   ],
   vendas: [
