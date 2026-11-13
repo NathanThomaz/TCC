@@ -54,6 +54,7 @@ export function CriarSistemaDialog({ gatilho }: { gatilho: ReactNode }) {
     },
     onSuccess: (s) => {
       void qc.invalidateQueries({ queryKey: ["sistemas"] });
+      void qc.invalidateQueries({ queryKey: ["inicio"] });
       toast.success(`Sistema "${s.nome}" criado.`);
       setAberto(false);
       setNome("");

@@ -1,4 +1,4 @@
-import type { SystemsApiBody } from "../../shared/api";
+import type { InicioDto, SystemsApiBody } from "../../shared/api";
 import type { ConfigDraft, Issue, Sistema, Versao } from "@/types/nexus";
 import { ApiError, chamar, novaChave } from "./cliente";
 
@@ -13,6 +13,11 @@ function exigir<T>(valor: T | undefined | null, campo: string): T {
 
 export async function listarSistemas(): Promise<Sistema[]> {
   return exigir((await chamar<SystemsApiBody>("/systems")).sistemas, "sistemas");
+}
+
+/** Resumo da tela inicial: sistemas com os números do painel, pedidos e uso da IA. */
+export async function obterInicio(): Promise<InicioDto> {
+  return exigir((await chamar<SystemsApiBody>("/inicio")).inicio, "resumo");
 }
 
 export async function criarSistema(nome: string, chave = novaChave()): Promise<Sistema> {

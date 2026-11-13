@@ -45,6 +45,7 @@ export interface SystemsApiBody {
   /** Configuração da versão mais recente (só para o administrador), ponto de partida do assistente. */
   ultimaConfig?: ConfigDraft | null;
   issues?: IssueDto[];
+  inicio?: InicioDto;
   error?: ApiErrorBody["error"];
 }
 
@@ -376,6 +377,25 @@ export interface PainelDto {
     profissionaisAtivos: number;
     proximos: { id: string; inicio: number; tipo: string; cliente: string; profissional: string }[];
   };
+}
+
+/** Resumo da tela inicial do Nexus: cada sistema do usuário com os números do seu painel. */
+export interface InicioDto {
+  /** Hoje no fuso do Nexus (AAAA-MM-DD). */
+  hoje: string;
+  sistemas: {
+    sistema: SystemDto;
+    /** Da versão ativa (sistema ativo) ou da última versão salva (rascunho). */
+    modelo: ConfigDraft["modelo"] | null;
+    modulos: ConfigDraft["modulos"];
+    corPrimaria: string | null;
+    /** Só para sistema ativo. */
+    painel: PainelDto | null;
+    pedidosAbertos: number;
+  }[];
+  pedidos: { abertos: number; emAnalise: number; implementados: number };
+  /** Só para o administrador: o teto é do Nexus inteiro. */
+  ia: { gastoCentavos: number; tetoCentavos: number } | null;
 }
 
 /** Assuntos da entrevista guiada (ADR-004), na ordem em que a IA conduz. */

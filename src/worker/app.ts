@@ -90,6 +90,7 @@ import {
   createVersion,
   getSystem,
   listSystems,
+  obterInicio,
 } from "./modules/systems";
 
 /** Base das rotas (seção 20): recursos de negócio ficam em `/api/v1/systems/:systemId/...`. */
@@ -152,6 +153,7 @@ export function createApp(
       { method: "POST", path: `${API_BASE}/contas/:id/convite`, handler: reenviarConvite },
       { method: "POST", path: `${API_BASE}/contas/:id/acessos`, handler: definirAcesso },
       { method: "POST", path: `${API_BASE}/contas/:id/status`, handler: definirStatusConta },
+      { method: "GET", path: `${API_BASE}/inicio`, handler: obterInicio },
       { method: "GET", path: S, handler: listSystems },
       { method: "POST", path: S, handler: createSystem },
       { method: "GET", path: `${S}/:systemId`, handler: getSystem },

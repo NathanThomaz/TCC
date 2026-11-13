@@ -1,6 +1,7 @@
 import { z } from "zod";
-import type { IssueDto, SystemDto, VersionDto } from "../../shared/api";
+import type { InicioDto, IssueDto, SystemDto, VersionDto } from "../../shared/api";
 import { CATALOG_VERSION } from "../../shared/contract/catalog";
+import { paraCampoLocal } from "../../shared/dominio/agenda";
 import { SCHEMA_VERSION, type ConfigDraft } from "../../shared/contract/schema";
 import { validateDraft } from "../../shared/contract/validate";
 import { authenticate, requireAdmin, requireSystemAccess } from "../auth/session";
@@ -9,7 +10,9 @@ import { beginIdempotent, recordStatement, replayAfterRace } from "../http/idemp
 import { AppError, conflict, notFound } from "../http/errors";
 import { json } from "../http/responses";
 import type { Handler, RequestContext } from "../http/router";
+import { consumoDoMes } from "../ia/orcamento";
 import { canonicalJson, sha256Hex } from "../lib/hash";
+import { calcularPainel } from "./operacao/painel";
 import { isUnique, parse, triggerConflict } from "./comum";
 
 // Sistemas e o ciclo de configuração (seção 8): rascunho → versão validada → aprovação da versão
@@ -114,8 +117,11 @@ export const createSystem: Handler = async (ctx) => {
   return json({ sistema: publicSystem(await loadSystem(ctx, id)) }, { status: 201 });
 };
 
-export const listSystems: Handler = async (ctx) => {
-  const user = await authenticate(ctx, ctx.auth);
+/** Sistemas que o usuário vê: os do administrador; os liberados para a conta secundária. */
+async function sistemasDoUsuario(
+  ctx: RequestContext,
+  user: Awaited<ReturnType<typeof authenticate>>,
+) {
   const db = ctx.env.DB;
   const { results } =
     user.role === "admin"
@@ -131,7 +137,83 @@ export const listSystems: Handler = async (ctx) => {
           )
           .bind(user.id, user.adminId)
           .all<SystemRow>();
-  return json({ sistemas: results.map(publicSystem) });
+  return results;
+}
+
+export const listSystems: Handler = async (ctx) => {
+  const user = await authenticate(ctx, ctx.auth);
+  return json({ sistemas: (await sistemasDoUsuario(ctx, user)).map(publicSystem) });
+};
+
+/**
+ * GET /inicio — resumo da tela inicial: cada sistema com modelo, módulos, cor e, se ativo, os
+ * números do painel (mesmo cálculo da aplicação); pedidos ao desenvolvedor e, para o
+ * administrador, o consumo de IA do mês.
+ */
+export const obterInicio: Handler = async (ctx) => {
+  const user = await authenticate(ctx, ctx.auth);
+  const db = ctx.env.DB;
+  const agora = ctx.clock.now();
+  const linhas = await sistemasDoUsuario(ctx, user);
+  const ids = JSON.stringify(linhas.map((s) => s.id));
+  const [configs, pedidos, ia] = await Promise.all([
+    // Configuração ativa do sistema ativo; a última versão salva do rascunho.
+    db
+      .prepare(
+        `SELECT s.id, COALESCE(
+           (SELECT config_json FROM model_versions WHERE id = s.active_version_id),
+           (SELECT config_json FROM model_versions WHERE system_id = s.id ORDER BY version DESC LIMIT 1)
+         ) AS config_json
+         FROM systems s WHERE s.id IN (SELECT value FROM json_each(?))`,
+      )
+      .bind(ids)
+      .all<{ id: string; config_json: string | null }>(),
+    db
+      .prepare(
+        `SELECT system_id, status, COUNT(*) AS n FROM dev_requests
+         WHERE system_id IN (SELECT value FROM json_each(?)) GROUP BY system_id, status`,
+      )
+      .bind(ids)
+      .all<{ system_id: string; status: string; n: number }>(),
+    user.role === "admin" ? consumoDoMes(ctx.env, agora) : Promise.resolve(null),
+  ]);
+  const configDe = new Map(
+    configs.results.map((c) => [
+      c.id,
+      c.config_json ? (JSON.parse(c.config_json) as ConfigDraft) : null,
+    ]),
+  );
+  const contar = (status: string, sistema?: string) =>
+    pedidos.results
+      .filter((p) => p.status === status && (!sistema || p.system_id === sistema))
+      .reduce((soma, p) => soma + p.n, 0);
+  const sistemas: InicioDto["sistemas"] = await Promise.all(
+    linhas.map(async (row) => {
+      const config = configDe.get(row.id) ?? null;
+      return {
+        sistema: publicSystem(row),
+        modelo: config?.modelo ?? null,
+        modulos: config?.modulos ?? [],
+        corPrimaria: config?.aparencia.cor_primaria ?? null,
+        painel:
+          row.status === "active" && config
+            ? await calcularPainel(db, row.id, config, agora)
+            : null,
+        pedidosAbertos: contar("aberto", row.id) + contar("em_analise", row.id),
+      };
+    }),
+  );
+  const resumo: InicioDto = {
+    hoje: paraCampoLocal(agora).slice(0, 10),
+    sistemas,
+    pedidos: {
+      abertos: contar("aberto"),
+      emAnalise: contar("em_analise"),
+      implementados: contar("implementado"),
+    },
+    ia,
+  };
+  return json({ inicio: resumo });
 };
 
 export const getSystem: Handler = async (ctx) => {
