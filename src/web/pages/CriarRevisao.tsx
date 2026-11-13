@@ -41,7 +41,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ORDEM_ASSUNTOS, pendenciasDaEntrevista, ROTULO_ASSUNTO } from "@/lib/criacao";
-import { ROTULO_ENTIDADE, ROTULO_MODULO, textoDaRegra } from "@/lib/nexus";
+import { NATIVE_FIELDS } from "../../shared/contract/catalog";
+import { ModulosProntos } from "@/components/nexus/ModulosProntos";
+import { entidadesDosModulos, ROTULO_ENTIDADE, ROTULO_MODULO, textoDaRegra } from "@/lib/nexus";
 
 const TIPO_CAMPO = { texto: "texto", numero: "número", data: "data", lista: "lista" } as const;
 import { Link, useNavigate } from "@/lib/rotas";
@@ -257,16 +259,21 @@ export function CriarRevisao() {
                 "Regras",
                 e.config.regras.map((r) => textoDaRegra(r, e.config!)).join(" · ") || "Nenhuma",
               ],
-              [
-                "Informações extras",
-                e.config.campos
+              // Um cadastro por linha: o que já vem pronto e os extras pedidos, sem duplicidade.
+              ...entidadesDosModulos(e.config.modulos).map((ent) => {
+                const extras = e
+                  .config!.campos.filter((c) => c.entidade === ent)
                   .map((c) => {
                     const opcoes = c.tipo === "lista" && c.opcoes ? `: ${c.opcoes.join(", ")}` : "";
                     const obrigatorio = c.obrigatorio ? ", obrigatório" : "";
-                    return `${c.rotulo} (${ROTULO_ENTIDADE[c.entidade].toLowerCase()}, ${TIPO_CAMPO[c.tipo]}${opcoes}${obrigatorio})`;
-                  })
-                  .join(" · ") || "Nenhuma",
-              ],
+                    return `${c.rotulo} (${TIPO_CAMPO[c.tipo]}${opcoes}${obrigatorio})`;
+                  });
+                const prontos = NATIVE_FIELDS[ent].map((n) => n.label).join(", ");
+                return [
+                  `Cadastro de ${ROTULO_ENTIDADE[ent].toLowerCase()}`,
+                  `${prontos}${extras.length ? ` + extras: ${extras.join(", ")}` : ""}`,
+                ];
+              }),
               ...(e.config.tipos_atendimento.length
                 ? [
                     [
@@ -284,6 +291,9 @@ export function CriarRevisao() {
               </div>
             ))}
           </dl>
+          <div className="mt-4">
+            <ModulosProntos modulos={e.config.modulos} titulo="O que cada módulo já traz pronto" />
+          </div>
         </section>
       )}
 

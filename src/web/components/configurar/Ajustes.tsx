@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, CircleCheck, Lightbulb, Loader2, Wrench } from "lucide-react";
+import { campoNativoDuplicado, normalizarRotulo } from "../../../shared/contract/catalog";
 import { criarPedido, listarPedidos } from "@/api/pedidos";
 import { ErroApi, useChavePorConteudo } from "@/components/app/Comum";
 import { EstadoPedido } from "@/components/criacao/Pedido";
@@ -49,6 +50,19 @@ export function pendenciasDosAjustes(d: PassoProps["draft"], sugestoes: Sugerive
   }
   const atacado = regra("limite_atacado");
   if (atacado && !(atacado.valor_centavos > 0)) faltas.push("Informe o valor do atacado.");
+  const duplicados = d.campos.filter(
+    (c) =>
+      campoNativoDuplicado(c.entidade, c.rotulo) ||
+      d.campos.some(
+        (x) =>
+          x.id !== c.id &&
+          x.entidade === c.entidade &&
+          normalizarRotulo(x.rotulo) === normalizarRotulo(c.rotulo),
+      ),
+  );
+  if (duplicados.length) {
+    faltas.push("Há campo extra que repete um campo que já existe; renomeie ou remova.");
+  }
   if (d.modulos.includes("agenda") && d.tipos_atendimento.length === 0) {
     faltas.push("Cadastre ao menos um tipo de atendimento.");
   }

@@ -1,7 +1,7 @@
 // Catálogo fechado do Nexus (seção 5 da especificação). Tudo o que uma configuração pode usar
 // está aqui; o que não está não é criado silenciosamente — vira necessidade fora do catálogo.
 
-export const CATALOG_VERSION = "2026.11.1";
+export const CATALOG_VERSION = "2026.11.2";
 
 export const MODULES = [
   "clientes",
@@ -48,6 +48,80 @@ export const FIELD_ENTITIES = {
   agendamentos: "agenda",
 } as const satisfies Record<string, ModuleId>;
 export type FieldEntity = keyof typeof FIELD_ENTITIES;
+
+/**
+ * Campos que cada cadastro já tem de fábrica (colunas da operação, migration 0003). Campo
+ * informativo com o mesmo nome (ou sinônimo) duplicaria a informação: o validador recusa, o
+ * formulário avisa e a IA recebe a lista para não propor.
+ */
+export const NATIVE_FIELDS: Record<
+  FieldEntity,
+  readonly { label: string; aliases: readonly string[] }[]
+> = {
+  clientes: [
+    { label: "Nome", aliases: ["nome do cliente", "cliente", "razao social"] },
+    { label: "Situação (ativo ou inativo)", aliases: ["situacao", "status", "ativo", "inativo"] },
+  ],
+  produtos: [
+    { label: "Nome", aliases: ["nome do produto", "produto", "descricao"] },
+    { label: "Preço de varejo", aliases: ["preco", "valor", "preco unitario", "varejo"] },
+    { label: "Preço de atacado", aliases: ["atacado", "valor de atacado"] },
+    { label: "Unidades por caixa", aliases: ["caixa", "quantidade por caixa", "unidades"] },
+    {
+      label: "Estoque (físico, reservado e disponível)",
+      aliases: ["estoque", "quantidade", "saldo", "quantidade em estoque", "disponivel"],
+    },
+    { label: "Situação (ativo ou inativo)", aliases: ["situacao", "status", "ativo", "inativo"] },
+  ],
+  profissionais: [
+    { label: "Nome", aliases: ["nome do profissional", "profissional", "tecnico"] },
+    { label: "Situação (ativo ou inativo)", aliases: ["situacao", "status", "ativo", "inativo"] },
+  ],
+  vendas: [
+    { label: "Cliente", aliases: ["nome do cliente", "comprador"] },
+    { label: "Itens (produto e quantidade)", aliases: ["itens", "produtos", "quantidade"] },
+    { label: "Total", aliases: ["valor total", "subtotal", "valor", "preco total"] },
+    { label: "Faixa de preço (varejo ou atacado)", aliases: ["faixa de preco", "tipo de preco"] },
+    { label: "Situação (rascunho, concluída ou cancelada)", aliases: ["situacao", "status"] },
+    { label: "Validade da reserva", aliases: ["reserva", "vencimento da reserva"] },
+    { label: "Motivo do cancelamento", aliases: ["motivo", "cancelamento"] },
+  ],
+  agendamentos: [
+    { label: "Cliente", aliases: ["nome do cliente"] },
+    { label: "Profissional", aliases: ["tecnico", "responsavel"] },
+    { label: "Tipo de atendimento", aliases: ["servico", "tipo", "atendimento"] },
+    {
+      label: "Data e hora de início",
+      aliases: ["data", "hora", "horario", "inicio", "data do atendimento"],
+    },
+    { label: "Término", aliases: ["fim", "hora de termino", "duracao"] },
+    {
+      label: "Situação (agendado, em atendimento, concluído ou cancelado)",
+      aliases: ["situacao", "status"],
+    },
+    { label: "Venda vinculada", aliases: ["venda", "pedido"] },
+  ],
+};
+
+/** Minúsculas, sem acento nem espaços repetidos: "Preço  Unitário" → "preco unitario". */
+export function normalizarRotulo(texto: string): string {
+  return texto
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+/** Campo nativo que um rótulo de campo extra duplicaria, se houver. */
+export function campoNativoDuplicado(entidade: FieldEntity, rotulo: string): string | null {
+  const r = normalizarRotulo(rotulo);
+  if (!r) return null;
+  const achado = NATIVE_FIELDS[entidade].find(
+    (n) => normalizarRotulo(n.label.replace(/\(.*\)/, "")) === r || n.aliases.includes(r),
+  );
+  return achado?.label ?? null;
+}
 
 export const FIELD_TYPES = ["texto", "numero", "data", "lista"] as const;
 

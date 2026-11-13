@@ -218,6 +218,48 @@ describe("validateDraft — erros bloqueantes (T07)", () => {
 
     expect(codes(draft)).toEqual(["modulo_inativo"]);
   });
+
+  it("recusa campo extra que repete um campo que o cadastro já tem (inclusive sinônimo)", () => {
+    const draft = distribuidora();
+    draft.campos = [
+      { id: "nome_cli", entidade: "clientes", rotulo: "Nome", tipo: "texto", obrigatorio: false },
+      { id: "preco", entidade: "produtos", rotulo: "Preço", tipo: "numero", obrigatorio: false },
+      {
+        id: "qtd",
+        entidade: "produtos",
+        rotulo: "Quantidade em estoque",
+        tipo: "numero",
+        obrigatorio: false,
+      },
+    ];
+    expect(codes(draft)).toEqual(["campo_ja_existe", "campo_ja_existe", "campo_ja_existe"]);
+  });
+
+  it("recusa dois campos com o mesmo rótulo no mesmo cadastro (sem acento nem caixa)", () => {
+    const draft = distribuidora();
+    draft.campos = [
+      { id: "end1", entidade: "clientes", rotulo: "Endereço", tipo: "texto", obrigatorio: false },
+      { id: "end2", entidade: "clientes", rotulo: "endereco", tipo: "texto", obrigatorio: false },
+      // Mesmo rótulo em outro cadastro é permitido.
+      {
+        id: "end3",
+        entidade: "agendamentos",
+        rotulo: "Endereço",
+        tipo: "texto",
+        obrigatorio: false,
+      },
+    ];
+    expect(codes(draft)).toEqual(["rotulo_repetido"]);
+  });
+
+  it("campo extra que não existe no cadastro passa", () => {
+    const draft = distribuidora();
+    draft.campos = [
+      { id: "tel", entidade: "clientes", rotulo: "Telefone", tipo: "texto", obrigatorio: false },
+      { id: "marca", entidade: "produtos", rotulo: "Marca", tipo: "texto", obrigatorio: false },
+    ];
+    expect(codes(draft)).toEqual([]);
+  });
 });
 
 describe("schema para o Gemini", () => {
