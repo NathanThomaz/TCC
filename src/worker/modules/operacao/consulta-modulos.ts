@@ -21,6 +21,39 @@ export interface Resposta {
 }
 
 const LISTA = 15;
+
+/** Letras acentuadas do português e a letra base (para a busca no SQL). */
+const ACENTOS: [string, string][] = [
+  ..."áàâãä".split("").map((l): [string, string] => [l, "a"]),
+  ..."éèêë".split("").map((l): [string, string] => [l, "e"]),
+  ..."íìîï".split("").map((l): [string, string] => [l, "i"]),
+  ..."óòôõö".split("").map((l): [string, string] => [l, "o"]),
+  ..."úùûü".split("").map((l): [string, string] => [l, "u"]),
+  ["ç", "c"],
+  ["ñ", "n"],
+];
+
+/**
+ * Coluna em minúsculas e sem acento, em SQL. O lower() do SQLite só converte letras ASCII
+ * ("Água" continuaria "Água"), então as acentuadas, maiúsculas e minúsculas, viram a letra base.
+ */
+export function semAcentoSql(coluna: string): string {
+  let sql = `lower(${coluna})`;
+  for (const [acento, base] of ACENTOS) {
+    sql = `replace(replace(${sql}, '${acento}', '${base}'), '${acento.toUpperCase()}', '${base}')`;
+  }
+  return sql;
+}
+
+/** O termo da pergunta no mesmo formato (minúsculas, sem acento). */
+export const termoBusca = (t: string | null | undefined): string | null =>
+  t
+    ? t
+        .normalize("NFD")
+        .replace(/\p{Diacritic}/gu, "")
+        .toLowerCase()
+    : null;
+
 const dataBr = (iso: string) => iso.split("-").reverse().join("/");
 const plural = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um : varios}`;
 const tem = (config: ConfigDraft, m: ModuleId) => config.modulos.includes(m);
@@ -35,6 +68,13 @@ export const semModulo = (nome: string): Resposta => ({
  * Período da pergunta ou, sem ele, o mês corrente (dito nos filtros). Devolve o intervalo em ms
  * [de, ate) no fuso do Nexus e o texto do filtro.
  */
+/** Data AAAA-MM-DD que existe no calendário (31/02 não vira 03/03). */
+export function dataExiste(iso: string): boolean {
+  const [a, m, d] = iso.split("-").map(Number) as [number, number, number];
+  const data = new Date(Date.UTC(a, m - 1, d));
+  return data.getUTCFullYear() === a && data.getUTCMonth() === m - 1 && data.getUTCDate() === d;
+}
+
 export function periodoOuMes(
   c: Consulta,
   agora: number,
@@ -45,6 +85,7 @@ export function periodoOuMes(
     new Date(Date.UTC(a, m - 1, d)).toISOString().slice(0, 10);
   const deIso = c.periodo?.de ?? iso(ano, mes, 1);
   const ateIso = c.periodo?.ate ?? iso(ano, mes + 1, 0);
+  if (!dataExiste(deIso) || !dataExiste(ateIso)) return null;
   const [a2, m2, d2] = ateIso.split("-").map(Number) as [number, number, number];
   const de = deCampoLocal(`${deIso}T00:00`);
   const ate = deCampoLocal(`${iso(a2, m2, d2 + 1)}T00:00`);
@@ -113,37 +154,57 @@ export async function resumoGeral(ctx: RequestContext, op: Operacao): Promise<Re
   };
 }
 
-/** Clientes: um cliente citado (compras, total, última compra) ou os que mais compraram. */
+/** Clientes: um cliente citado (compras no período, total, última compra) ou os que mais compraram. */
 export async function clientes(ctx: RequestContext, op: Operacao, c: Consulta): Promise<Resposta> {
   if (!tem(op.config, "clientes")) return semModulo("clientes");
   const db = ctx.env.DB;
   const vendas = tem(op.config, "vendas");
+  const situacao = (status: string) => (status === "active" ? "ativo" : "inativo");
+  if (c.cliente && !vendas) {
+    // Sem o módulo de vendas, só o cadastro (nenhuma consulta às vendas).
+    const { results } = await db
+      .prepare(
+        `SELECT name, status FROM customers WHERE system_id = ?1 AND instr(${semAcentoSql("name")}, ?2) > 0
+         ORDER BY name COLLATE NOCASE LIMIT ${LISTA}`,
+      )
+      .bind(op.systemId, termoBusca(c.cliente))
+      .all<{ name: string; status: string }>();
+    return {
+      texto: results.length
+        ? results.map((r) => `${r.name} (${situacao(r.status)})`).join("\n")
+        : `Nenhum cliente com “${c.cliente}” no nome.`,
+      filtros: [`Cliente: contém “${c.cliente}”`],
+      origem: "cadastro de clientes",
+    };
+  }
   if (c.cliente) {
+    const per = periodoOuMes(c, ctx.clock.now());
+    if (!per) return periodoInvalido;
     const { results } = await db
       .prepare(
         `SELECT c.name, c.status,
-           (SELECT COUNT(*) FROM sales s WHERE s.customer_id = c.id AND s.status = 'completed') AS n,
-           (SELECT COALESCE(SUM(total_cents), 0) FROM sales s WHERE s.customer_id = c.id AND s.status = 'completed') AS total,
+           (SELECT COUNT(*) FROM sales s WHERE s.customer_id = c.id AND s.status = 'completed'
+              AND s.completed_at >= ?3 AND s.completed_at < ?4) AS n,
+           (SELECT COALESCE(SUM(total_cents), 0) FROM sales s WHERE s.customer_id = c.id
+              AND s.status = 'completed' AND s.completed_at >= ?3 AND s.completed_at < ?4) AS total,
            (SELECT MAX(completed_at) FROM sales s WHERE s.customer_id = c.id AND s.status = 'completed') AS ultima
-         FROM customers c WHERE c.system_id = ?1 AND instr(lower(c.name), lower(?2)) > 0
+         FROM customers c WHERE c.system_id = ?1 AND instr(${semAcentoSql("c.name")}, ?2) > 0
          ORDER BY c.name COLLATE NOCASE LIMIT ${LISTA}`,
       )
-      .bind(op.systemId, c.cliente)
+      .bind(op.systemId, termoBusca(c.cliente), per.de, per.ate)
       .all<{ name: string; status: string; n: number; total: number; ultima: number | null }>();
     return {
       texto: results.length
         ? results
             .map(
               (r) =>
-                `${r.name} (${r.status === "active" ? "ativo" : "inativo"})` +
-                (vendas
-                  ? `: ${plural(r.n, "compra", "compras")}, total ${formatarCentavos(r.total)}${r.ultima ? `, última em ${formatarDataHora(r.ultima).slice(0, 10)}` : ""}`
-                  : ""),
+                `${r.name} (${situacao(r.status)}): ${plural(r.n, "compra", "compras")} no período, total ${formatarCentavos(r.total)}` +
+                (r.ultima ? `; última compra em ${formatarDataHora(r.ultima).slice(0, 10)}` : ""),
             )
             .join("\n")
         : `Nenhum cliente com “${c.cliente}” no nome.`,
-      filtros: [`Cliente: contém “${c.cliente}”`],
-      origem: vendas ? "cadastro de clientes e vendas concluídas (sem canceladas)" : "cadastro",
+      filtros: [`Cliente: contém “${c.cliente}”`, per.texto],
+      origem: "cadastro de clientes e vendas concluídas (sem canceladas)",
     };
   }
   const contagem = await db
@@ -183,10 +244,10 @@ export async function produtos(ctx: RequestContext, op: Operacao, c: Consulta): 
   if (!tem(op.config, "produtos")) return semModulo("produtos");
   const { results } = await ctx.env.DB.prepare(
     `SELECT name, retail_cents, wholesale_cents, units_per_box, last_cost_cents FROM products
-     WHERE system_id = ?1 AND status = 'active' AND (?2 IS NULL OR instr(lower(name), lower(?2)) > 0)
+     WHERE system_id = ?1 AND status = 'active' AND (?2 IS NULL OR instr(${semAcentoSql("name")}, ?2) > 0)
      ORDER BY name COLLATE NOCASE LIMIT ${LISTA + 1}`,
   )
-    .bind(op.systemId, c.produto)
+    .bind(op.systemId, termoBusca(c.produto))
     .all<{
       name: string;
       retail_cents: number;
@@ -291,26 +352,35 @@ export async function compras(ctx: RequestContext, op: Operacao, c: Consulta): P
   if (!tem(op.config, "fornecedores")) return semModulo("fornecedores e compras");
   const per = periodoOuMes(c, ctx.clock.now());
   if (!per) return periodoInvalido;
-  const { results } = await ctx.env.DB.prepare(
-    `SELECT s.name AS fornecedor, COUNT(*) AS n, SUM(p.total_cents) AS total FROM purchases p
-     JOIN suppliers s ON s.id = p.supplier_id
+  const db = ctx.env.DB;
+  const filtro = `FROM purchases p JOIN suppliers s ON s.id = p.supplier_id
      WHERE p.system_id = ?1 AND p.status = 'completed' AND p.created_at >= ?2 AND p.created_at < ?3
-       AND (?4 IS NULL OR instr(lower(s.name), lower(?4)) > 0)
-     GROUP BY s.id ORDER BY total DESC LIMIT ${LISTA}`,
-  )
-    .bind(op.systemId, per.de, per.ate, c.fornecedor ?? null)
-    .all<{ fornecedor: string; n: number; total: number }>();
-  const total = results.reduce((s, r) => s + r.total, 0);
+       AND (?4 IS NULL OR instr(${semAcentoSql("s.name")}, ?4) > 0)`;
+  const args = [op.systemId, per.de, per.ate, termoBusca(c.fornecedor)] as const;
+  // O total soma todas as compras do filtro; só a lista por fornecedor tem limite.
+  const [soma, lista] = await db.batch([
+    db.prepare(`SELECT COALESCE(SUM(p.total_cents), 0) AS total ${filtro}`).bind(...args),
+    db
+      .prepare(
+        `SELECT s.name AS fornecedor, COUNT(*) AS n, SUM(p.total_cents) AS total ${filtro}
+         GROUP BY s.id ORDER BY total DESC LIMIT ${LISTA + 1}`,
+      )
+      .bind(...args),
+  ]);
+  const total = Number((soma?.results[0] as { total?: number } | undefined)?.total ?? 0);
+  const todos = (lista?.results ?? []) as { fornecedor: string; n: number; total: number }[];
+  const mostrados = todos.slice(0, LISTA);
   const filtros = [per.texto, ...(c.fornecedor ? [`Fornecedor: contém “${c.fornecedor}”`] : [])];
   return {
-    texto: results.length
+    texto: mostrados.length
       ? `Total comprado: ${formatarCentavos(total)}.\n` +
-        results
+        mostrados
           .map(
             (r) =>
               `${r.fornecedor}: ${plural(r.n, "compra", "compras")}, ${formatarCentavos(r.total)}`,
           )
-          .join("\n")
+          .join("\n") +
+        (todos.length > LISTA ? `\n(Mostrando os ${LISTA} maiores fornecedores.)` : "")
       : "Nenhuma compra registrada no período.",
     filtros,
     origem: "compras concluídas (sem canceladas)",
@@ -389,10 +459,10 @@ export async function profissionais(
        SUM(a.status = 'done') AS feitos, SUM(a.status IN ('scheduled', 'in_progress')) AS marcados
      FROM professionals p LEFT JOIN appointments a ON a.professional_id = p.id
        AND a.start_at >= ?2 AND a.start_at < ?3 AND a.status <> 'cancelled'
-     WHERE p.system_id = ?1 AND (?4 IS NULL OR instr(lower(p.name), lower(?4)) > 0)
+     WHERE p.system_id = ?1 AND (?4 IS NULL OR instr(${semAcentoSql("p.name")}, ?4) > 0)
      GROUP BY p.id ORDER BY p.name COLLATE NOCASE LIMIT ${LISTA}`,
   )
-    .bind(op.systemId, per.de, per.ate, c.profissional)
+    .bind(op.systemId, per.de, per.ate, termoBusca(c.profissional))
     .all<{ name: string; status: string; feitos: number | null; marcados: number | null }>();
   return {
     texto: results.length

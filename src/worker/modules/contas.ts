@@ -127,23 +127,68 @@ async function criarAcesso(
 ): Promise<boolean> {
   const contas = ctx.auth?.contas;
   if (!contas) return false;
+  const db = ctx.env.DB;
+  const now = ctx.clock.now();
+  // Reserva o provisionamento: só uma requisição cria o acesso. Uma repetição atrasada (mesma
+  // chave, corrida) encontra a reserva e não sobrescreve uma senha definida depois.
+  const reserva = await db
+    .prepare(
+      "UPDATE users SET invite_sent_at = ?, updated_at = max(updated_at, ?) WHERE id = ? AND invite_sent_at IS NULL AND status = 'pending'",
+    )
+    .bind(now, now, conta.id)
+    .run();
+  if (reserva.meta.changes !== 1) {
+    const atual = await db
+      .prepare("SELECT invite_sent_at FROM users WHERE id = ?")
+      .bind(conta.id)
+      .first<{ invite_sent_at: number | null }>();
+    return atual?.invite_sent_at !== null && atual?.invite_sent_at !== undefined;
+  }
+  const liberar = () =>
+    db.prepare("UPDATE users SET invite_sent_at = NULL WHERE id = ?").bind(conta.id).run();
   try {
+    const existente = await contas.findUid(conta.email);
+    if (existente && (await uidDeOutraConta(ctx, existente, conta.id))) {
+      await liberar();
+      throw loginDeOutraConta();
+    }
     const uid = await contas.createWithPassword(
       conta.email,
       senha,
       conta.display_name ?? undefined,
+      existente,
     );
-    await ctx.env.DB.prepare(
-      "UPDATE users SET invited_uid = COALESCE(invited_uid, ?), invite_sent_at = ?, updated_at = max(updated_at, ?) WHERE id = ?",
-    )
-      .bind(uid, ctx.clock.now(), ctx.clock.now(), conta.id)
+    await db
+      .prepare(
+        "UPDATE users SET invited_uid = COALESCE(invited_uid, ?), updated_at = max(updated_at, ?) WHERE id = ?",
+      )
+      .bind(uid, now, conta.id)
       .run();
     return true;
   } catch (error) {
+    if (error instanceof AppError) throw error;
     ctx.log.warn("conta.acesso_falhou", { error });
+    await liberar();
     return false;
   }
 }
+
+/** O uid do Firebase já pertence a outra conta do Nexus (vinculada ou convidada)? */
+async function uidDeOutraConta(ctx: RequestContext, uid: string, conta: string | null) {
+  const dono = await ctx.env.DB.prepare(
+    "SELECT id FROM users WHERE (firebase_uid = ?1 OR invited_uid = ?1) AND (?2 IS NULL OR id <> ?2) LIMIT 1",
+  )
+    .bind(uid, conta)
+    .first<{ id: string }>();
+  return dono !== null;
+}
+
+const loginDeOutraConta = () =>
+  new AppError(
+    409,
+    "email_em_uso",
+    "Este e-mail já é o login de outra conta do Nexus. Use outro e-mail.",
+  );
 
 /**
  * Repetição do convite: se o acesso não saiu (falha ou interrupção), tenta de novo agora, com a
@@ -195,12 +240,30 @@ const ConviteBody = z.object({
 export const convidarConta: Handler = async (ctx) => {
   const admin = await administrador(ctx);
   const body = parse(ConviteBody, await readJson(ctx.request));
-  const cmd = { scope: "global", actorId: admin.id, command: "conta.convidar", body };
+  // A senha não entra no registro de idempotência (nem o hash dela): só o fato de ter sido definida.
+  const cmd = {
+    scope: "global",
+    actorId: admin.id,
+    command: "conta.convidar",
+    body: { ...body, senha: body.senha ? "definida" : null },
+  };
   const started = await beginIdempotent(ctx, cmd);
   if (started.kind === "replay") {
     return respostaDoConvite(ctx, admin, started.resourceId, started.statusCode, body.senha);
   }
   if (!ctx.auth?.contas) throw conviteIndisponivel();
+  // Login do Firebase que já pertence a outra conta do Nexus não é reaproveitado (nem a senha dele
+  // trocada): o e-mail no Firebase pode ter mudado sem o D1 saber.
+  if (body.senha) {
+    let existente: string | null;
+    try {
+      existente = await ctx.auth.contas.findUid(body.email);
+    } catch (error) {
+      ctx.log.warn("conta.consulta_login_falhou", { error });
+      throw unavailable("Não foi possível conferir o login agora. Tente de novo.");
+    }
+    if (existente && (await uidDeOutraConta(ctx, existente, null))) throw loginDeOutraConta();
+  }
   const novoAdmin = body.papel === "admin";
   if (novoAdmin) {
     if (!(await ehDonoDoNexus(ctx.env.DB, admin))) {
@@ -290,6 +353,7 @@ export const definirSenha: Handler = async (ctx) => {
     if (uid) await contas.setPassword(uid, nova);
     else if (!(await criarAcesso(ctx, conta, nova))) throw new Error("acesso não criado");
   } catch (error) {
+    if (error instanceof AppError) throw error;
     ctx.log.warn("conta.senha_falhou", { error });
     throw unavailable("Não foi possível trocar a senha agora. Tente de novo.");
   }

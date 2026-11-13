@@ -288,7 +288,7 @@ function CampoSenha({ valor, onChange }: { valor: string; onChange: (v: string) 
 
 function SenhaDialog({ conta, onFechar }: { conta: ContaDto; onFechar: () => void }) {
   const [senha, setSenha] = useState(gerarSenha);
-  const m = useMutation({ mutationFn: () => definirSenhaConta(conta.id, senha) });
+  const m = useMutation({ mutationFn: (nova: string) => definirSenhaConta(conta.id, nova) });
   return (
     <Dialog open onOpenChange={(a) => !a && onFechar()}>
       <DialogContent>
@@ -299,16 +299,18 @@ function SenhaDialog({ conta, onFechar }: { conta: ContaDto; onFechar: () => voi
           </DialogDescription>
         </DialogHeader>
         {m.isSuccess ? (
-          <Credenciais email={conta.email} senha={senha} />
+          <Credenciais email={conta.email} senha={m.variables} />
         ) : (
           <form
             className="space-y-4"
             onSubmit={(e) => {
               e.preventDefault();
-              m.mutate();
+              m.mutate(senha);
             }}
           >
-            <CampoSenha valor={senha} onChange={setSenha} />
+            <fieldset disabled={m.isPending}>
+              <CampoSenha valor={senha} onChange={setSenha} />
+            </fieldset>
             <ErroApi erro={m.error} />
             <DialogFooter>
               <Button type="button" variant="outline" onClick={onFechar}>
@@ -341,16 +343,14 @@ function ConvidarDialog({ onFechar }: { onFechar: () => void }) {
   const [marcados, setMarcados] = useState<string[]>([]);
   const chave = useChavePorConteudo();
   const m = useMutation({
-    mutationFn: () => {
-      const dados = {
-        email: email.trim(),
-        nome: nome.trim() || undefined,
-        sistemas: papel === "admin" ? [] : marcados,
-        senha,
-        papel,
-      };
-      return convidarConta(dados, chave(dados));
-    },
+    // Os dados enviados ficam em m.variables: a confirmação mostra exatamente o que foi criado.
+    mutationFn: (dados: {
+      email: string;
+      nome: string | undefined;
+      sistemas: string[];
+      senha: string;
+      papel: ContaDto["papel"];
+    }) => convidarConta(dados, chave(dados)),
     onSuccess: ({ acessoCriado }) => {
       void qc.invalidateQueries({ queryKey: ["contas"] });
       if (!acessoCriado) {
@@ -371,10 +371,10 @@ function ConvidarDialog({ onFechar }: { onFechar: () => void }) {
             <DialogHeader>
               <DialogTitle>Conta criada</DialogTitle>
               <DialogDescription>
-                Envie os dados abaixo para {nome.trim() || "a pessoa"}. Ela já pode entrar.
+                Envie os dados abaixo para {m.variables.nome ?? "a pessoa"}. Ela já pode entrar.
               </DialogDescription>
             </DialogHeader>
-            <Credenciais email={email.trim()} senha={senha} />
+            <Credenciais email={m.variables.email} senha={m.variables.senha} />
             <DialogFooter>
               <Button onClick={onFechar}>Concluir</Button>
             </DialogFooter>
@@ -384,92 +384,100 @@ function ConvidarDialog({ onFechar }: { onFechar: () => void }) {
             className="space-y-4"
             onSubmit={(e) => {
               e.preventDefault();
-              m.mutate();
+              m.mutate({
+                email: email.trim(),
+                nome: nome.trim() || undefined,
+                sistemas: papel === "admin" ? [] : marcados,
+                senha,
+                papel,
+              });
             }}
           >
-            <DialogHeader>
-              <DialogTitle>Nova conta</DialogTitle>
-              <DialogDescription>
-                Você define a senha e manda para a pessoa; ela entra direto, sem confirmar e-mail.
-              </DialogDescription>
-            </DialogHeader>
-            {usuario?.dono && (
-              <fieldset className="space-y-2">
-                <legend className="text-sm font-medium">Tipo de conta</legend>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {(
-                    [
-                      ["secondary", "Operador", "Opera os sistemas que você marcar."],
-                      ["admin", "Administrador", "Cria e configura os próprios sistemas."],
-                    ] as const
-                  ).map(([valor, rotulo, texto]) => (
-                    <label
-                      key={valor}
-                      className={cn(
-                        "flex cursor-pointer gap-2 rounded-lg border p-3 text-sm",
-                        papel === valor && "border-primary ring-2 ring-primary/30",
-                      )}
-                    >
-                      <input
-                        type="radio"
-                        name="papel"
-                        className="mt-0.5 accent-[var(--primary)]"
-                        checked={papel === valor}
-                        onChange={() => setPapel(valor)}
-                      />
-                      <span>
-                        <span className="block font-medium">{rotulo}</span>
-                        <span className="block text-muted-foreground">{texto}</span>
-                      </span>
-                    </label>
-                  ))}
+            <fieldset disabled={m.isPending} className="space-y-4">
+              <DialogHeader>
+                <DialogTitle>Nova conta</DialogTitle>
+                <DialogDescription>
+                  Você define a senha e manda para a pessoa; ela entra direto, sem confirmar e-mail.
+                </DialogDescription>
+              </DialogHeader>
+              {usuario?.dono && (
+                <fieldset className="space-y-2">
+                  <legend className="text-sm font-medium">Tipo de conta</legend>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {(
+                      [
+                        ["secondary", "Operador", "Opera os sistemas que você marcar."],
+                        ["admin", "Administrador", "Cria e configura os próprios sistemas."],
+                      ] as const
+                    ).map(([valor, rotulo, texto]) => (
+                      <label
+                        key={valor}
+                        className={cn(
+                          "flex cursor-pointer gap-2 rounded-lg border p-3 text-sm",
+                          papel === valor && "border-primary ring-2 ring-primary/30",
+                        )}
+                      >
+                        <input
+                          type="radio"
+                          name="papel"
+                          className="mt-0.5 accent-[var(--primary)]"
+                          checked={papel === valor}
+                          onChange={() => setPapel(valor)}
+                        />
+                        <span>
+                          <span className="block font-medium">{rotulo}</span>
+                          <span className="block text-muted-foreground">{texto}</span>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+              )}
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="convite-nome">Nome</Label>
+                  <Input
+                    id="convite-nome"
+                    value={nome}
+                    maxLength={120}
+                    autoFocus
+                    onChange={(e) => setNome(e.target.value)}
+                  />
                 </div>
-              </fieldset>
-            )}
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label htmlFor="convite-nome">Nome</Label>
-                <Input
-                  id="convite-nome"
-                  value={nome}
-                  maxLength={120}
-                  autoFocus
-                  onChange={(e) => setNome(e.target.value)}
-                />
+                <div className="space-y-1.5">
+                  <Label htmlFor="convite-email">E-mail (usuário de acesso)</Label>
+                  <Input
+                    id="convite-email"
+                    type="email"
+                    required
+                    value={email}
+                    maxLength={320}
+                    onChange={(e) => setEmail(e.target.value)}
+                  />
+                </div>
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="convite-email">E-mail (usuário de acesso)</Label>
-                <Input
-                  id="convite-email"
-                  type="email"
-                  required
-                  value={email}
-                  maxLength={320}
-                  onChange={(e) => setEmail(e.target.value)}
-                />
-              </div>
-            </div>
-            <CampoSenha valor={senha} onChange={setSenha} />
-            {papel === "secondary" && (
-              <fieldset className="space-y-2">
-                <legend className="text-sm font-medium">Sistemas que a conta opera</legend>
-                {disponiveis.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
-                    Crie um sistema antes de dar acesso.
-                  </p>
-                ) : (
-                  disponiveis.map((s) => (
-                    <label key={s.id} className="flex items-center gap-2 text-sm">
-                      <Checkbox
-                        checked={marcados.includes(s.id)}
-                        onCheckedChange={(v) => alternar(s.id, v === true)}
-                      />
-                      {s.nome}
-                    </label>
-                  ))
-                )}
-              </fieldset>
-            )}
+              <CampoSenha valor={senha} onChange={setSenha} />
+              {papel === "secondary" && (
+                <fieldset className="space-y-2">
+                  <legend className="text-sm font-medium">Sistemas que a conta opera</legend>
+                  {disponiveis.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      Crie um sistema antes de dar acesso.
+                    </p>
+                  ) : (
+                    disponiveis.map((s) => (
+                      <label key={s.id} className="flex items-center gap-2 text-sm">
+                        <Checkbox
+                          checked={marcados.includes(s.id)}
+                          onCheckedChange={(v) => alternar(s.id, v === true)}
+                        />
+                        {s.nome}
+                      </label>
+                    ))
+                  )}
+                </fieldset>
+              )}
+            </fieldset>
             <ErroApi erro={m.error} />
             <DialogFooter>
               <Button type="button" variant="outline" onClick={onFechar}>

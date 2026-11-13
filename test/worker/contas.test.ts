@@ -49,6 +49,8 @@ let falharDesativar = false;
 let falharLookup = false;
 let aoConsultar: (() => Promise<unknown>) | undefined;
 let firebaseDesativado = new Set<string>();
+/** Logins que já existem no Firebase (e-mail → uid). */
+let loginsExistentes = new Map<string, string>();
 
 const app = createApp({
   clock: { now: () => agora },
@@ -78,10 +80,17 @@ const app = createApp({
         firebaseDesativado.delete(uid);
         return Promise.resolve();
       },
-      createWithPassword: (email, senha, nome) => {
+      findUid: (email) => Promise.resolve(loginsExistentes.get(email) ?? null),
+      createWithPassword: (email, senha, nome, existente) => {
         // A senha não entra no registro, só o tamanho (o teste confere que chegou).
-        chamadas.push(`criar:${email}:${senha.length}:${nome ?? ""}`);
-        return falharConvite ? Promise.reject(new Error("rede")) : Promise.resolve(`fb-${email}`);
+        chamadas.push(
+          existente
+            ? `atualizar:${existente}:${senha.length}`
+            : `criar:${email}:${senha.length}:${nome ?? ""}`,
+        );
+        return falharConvite
+          ? Promise.reject(new Error("rede"))
+          : Promise.resolve(existente ?? `fb-${email}`);
       },
       setPassword: (uid, senha) => {
         chamadas.push(`senha:${uid}:${senha.length}`);
@@ -133,6 +142,7 @@ beforeEach(async () => {
   falharLookup = false;
   aoConsultar = undefined;
   firebaseDesativado = new Set();
+  loginsExistentes = new Map();
   await limparBanco();
   const T = NOW - 1000;
   await env.DB.prepare(
@@ -413,6 +423,49 @@ describe("contas com senha e administradores (pedido do dono, 2026-11-13)", () =
     expect(contas.map((c) => c.papel)).toEqual(["admin"]);
     await call("POST", `/contas/${r.body.conta!.id}/status`, ADMIN, { status: "disabled" });
     expect((await call("GET", "/systems", NOVO)).status).toBe(403);
+  });
+
+  it("login do Firebase de outra conta do Nexus não é tomado (e-mail mudou só no Firebase)", async () => {
+    // O dono (uid-a) trocou o e-mail no Firebase; o D1 ainda tem o antigo.
+    loginsExistentes.set("novo-do-dono@example.com", "uid-a");
+    const r = await call("POST", "/contas", ADMIN2, {
+      email: "novo-do-dono@example.com",
+      senha: SENHA,
+    });
+    expect(r.status).toBe(409);
+    expect(r.body.error!.code).toBe("email_em_uso");
+    expect(chamadas).toEqual([]); // nenhuma senha trocada
+  });
+
+  it("login órfão no Firebase (sem conta no Nexus) é reaproveitado com a senha nova", async () => {
+    loginsExistentes.set("novo@example.com", "fb-antigo");
+    const r = await call("POST", "/contas", ADMIN, { email: "novo@example.com", senha: SENHA });
+    expect(r.body.acessoCriado).toBe(true);
+    expect(chamadas).toEqual([`atualizar:fb-antigo:${SENHA.length}`]);
+  });
+
+  it("repetição atrasada não cria o acesso de novo nem volta a senha inicial", async () => {
+    const chave = crypto.randomUUID();
+    const corpo = { email: "novo@example.com", senha: SENHA };
+    const primeira = await call("POST", "/contas", ADMIN, corpo, chave);
+    await call("POST", `/contas/${primeira.body.conta!.id}/senha`, ADMIN, {
+      senha: "Senha-nova-789",
+    });
+    chamadas = [];
+    // Mesma chave, até com outra senha: é repetição; nada vai ao Firebase.
+    const repetida = await call(
+      "POST",
+      "/contas",
+      ADMIN,
+      { ...corpo, senha: "Outra-123456" },
+      chave,
+    );
+    expect(repetida.status).toBe(201);
+    expect(repetida.body.acessoCriado).toBe(true);
+    expect(chamadas).toEqual([]);
+    // A senha não fica no registro de idempotência.
+    const registros = await env.DB.prepare("SELECT * FROM operation_requests").all();
+    expect(JSON.stringify(registros.results)).not.toContain(SENHA);
   });
 
   it("o administrador redefine a senha de uma conta sua; de outra, não", async () => {
