@@ -73,6 +73,10 @@ export function Configurar() {
       const inicial = comPadroes(q.data.ultimaConfig ?? rascunhoPadrao(q.data.sistema.nome));
       setDraft(inicial.draft);
       setSugestoesEstado(inicial.sugestoes);
+      // Grava rascunho e sugestões juntos: recarregar depois de mexer em outro ajuste não pode
+      // transformar a sugestão inicial em valor "definido" pelo dono.
+      gravar(chave, inicial.draft);
+      gravar(chaveSugestoes, inicial.sugestoes);
     }
   }
 

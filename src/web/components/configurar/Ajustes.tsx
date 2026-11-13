@@ -251,7 +251,23 @@ export function PassoAjustes({
           titulo="Agenda"
           resumo={`${draft.tipos_atendimento.length} tipo(s) de atendimento${par ? " · em par" : ""}`}
         >
-          <PassoAtendimentos draft={draft} set={set} />
+          <PassoAtendimentos
+            draft={draft}
+            set={(fn) =>
+              // Apagar um tipo usado no par tira o par junto (senão sobra referência inexistente).
+              set((d) => {
+                const n = fn(d);
+                const ids = new Set(n.tipos_atendimento.map((t) => t.id));
+                return {
+                  ...n,
+                  regras: n.regras.filter(
+                    (r) =>
+                      r.tipo !== "par_atendimento" || (ids.has(r.primeiro) && ids.has(r.segundo)),
+                  ),
+                };
+              })
+            }
+          />
           {draft.tipos_atendimento.length >= 2 && (
             <div className="space-y-3">
               <div className="flex items-center gap-3">
