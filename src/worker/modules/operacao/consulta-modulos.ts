@@ -38,7 +38,11 @@ const ACENTOS: [string, string][] = [
  * ("Água" continuaria "Água"), então as acentuadas, maiúsculas e minúsculas, viram a letra base.
  */
 export function semAcentoSql(coluna: string): string {
+  // Acentos gravados como caractere separado (forma decomposta, "A" + U+0301) também saem.
   let sql = `lower(${coluna})`;
+  for (const codigo of [0x300, 0x301, 0x302, 0x303, 0x308, 0x327]) {
+    sql = `replace(${sql}, char(${codigo}), '')`;
+  }
   for (const [acento, base] of ACENTOS) {
     sql = `replace(replace(${sql}, '${acento}', '${base}'), '${acento.toUpperCase()}', '${base}')`;
   }
@@ -199,7 +203,9 @@ export async function clientes(ctx: RequestContext, op: Operacao, c: Consulta): 
             .map(
               (r) =>
                 `${r.name} (${situacao(r.status)}): ${plural(r.n, "compra", "compras")} no período, total ${formatarCentavos(r.total)}` +
-                (r.ultima ? `; última compra em ${formatarDataHora(r.ultima).slice(0, 10)}` : ""),
+                (r.ultima
+                  ? `; última compra (em qualquer data) em ${formatarDataHora(r.ultima).slice(0, 10)}`
+                  : ""),
             )
             .join("\n")
         : `Nenhum cliente com “${c.cliente}” no nome.`,

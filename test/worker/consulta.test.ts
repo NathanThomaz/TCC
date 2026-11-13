@@ -340,6 +340,42 @@ describe("chat de consulta: módulos opcionais e bordas (revisão do Codex)", ()
     expect((await ultima({ intencao: "compras" })).texto).toContain("não tem o módulo");
   });
 
+  it("mais de 15 fornecedores: o total soma todos; cliente com compra fora do período", async () => {
+    await comModulos();
+    const prod = (await call("GET", p("/produtos"), ADMIN)).body.produtos![0]!.id;
+    for (let i = 0; i < 16; i++) {
+      const f = (await call("POST", p("/fornecedores"), ADMIN, { nome: `F${i}` })).body.fornecedor!
+        .id;
+      await call("POST", p("/compras"), ADMIN, {
+        fornecedor: f,
+        itens: [{ produto: prod, unidades: 1, custoUnitarioCentavos: 1000 }],
+        vencimento: "2026-11-30",
+      });
+    }
+    const compras = await ultima({ intencao: "compras" });
+    // 2 compras de R$ 20,00 do comModulos + 16 de R$ 10,00.
+    expect(compras.texto).toContain("Total comprado: R$ 200,00.");
+    expect(compras.texto).toContain("(Mostrando os 15 maiores fornecedores.)");
+    const outubro = await ultima({
+      intencao: "clientes",
+      cliente: "ana",
+      periodo: { de: "2026-10-01", ate: "2026-10-31" },
+    });
+    expect(outubro.texto).toContain("Ana (ativo): 0 compras no período, total R$ 0,00");
+    expect(outubro.texto).toContain("última compra (em qualquer data)");
+  });
+
+  it("busca sem acento acha nome gravado com acento separado (forma decomposta)", async () => {
+    await call("POST", p("/produtos"), ADMIN, {
+      nome: "Água tônica",
+      varejoCentavos: 500,
+      atacadoCentavos: 400,
+      unidadesPorCaixa: 12,
+    });
+    const r = await ultima({ intencao: "produtos", produto: "agua" });
+    expect(r.texto).toContain("tônica");
+  });
+
   it("profissionais, ticket médio e data inexistente", async () => {
     const prof = await ultima({ intencao: "profissionais" });
     expect(prof.texto).toBe("Nenhum profissional encontrado.");

@@ -468,6 +468,24 @@ describe("contas com senha e administradores (pedido do dono, 2026-11-13)", () =
     expect(JSON.stringify(registros.results)).not.toContain(SENHA);
   });
 
+  it("provisionamento interrompido: a reserva expira e a repetição cria o acesso", async () => {
+    const chave = crypto.randomUUID();
+    const corpo = { email: "novo@example.com", senha: SENHA };
+    const r = await call("POST", "/contas", ADMIN, corpo, chave);
+    // Simula a requisição que morreu depois de reservar e antes de criar o login.
+    await env.DB.prepare("UPDATE users SET invited_uid = NULL, invite_sent_at = ? WHERE id = ?")
+      .bind(agora, r.body.conta!.id)
+      .run();
+    chamadas = [];
+    const reservada = await call("POST", "/contas", ADMIN, corpo, chave);
+    expect(reservada.body.acessoCriado).toBe(false); // em andamento, não "concluído"
+    expect(chamadas).toEqual([]);
+    agora += 3 * 60_000;
+    const retomada = await call("POST", "/contas", ADMIN, corpo, chave);
+    expect(retomada.body.acessoCriado).toBe(true);
+    expect(chamadas).toEqual([`criar:novo@example.com:${SENHA.length}:`]);
+  });
+
   it("o administrador redefine a senha de uma conta sua; de outra, não", async () => {
     const id = (await call("POST", "/contas", ADMIN, { email: "novo@example.com", senha: SENHA }))
       .body.conta!.id;

@@ -120,6 +120,9 @@ async function enviarConvite(
  * Cria o acesso no Firebase com a senha definida pelo administrador (e-mail dado como confirmado)
  * e grava o uid, para a conta poder ser desativada antes do primeiro acesso. A senha não é gravada.
  */
+/** Tempo depois do qual uma reserva de provisionamento sem conclusão pode ser retomada. */
+const RESERVA_MS = 2 * 60_000;
+
 async function criarAcesso(
   ctx: RequestContext,
   conta: { id: string; email: string; display_name: string | null },
@@ -129,20 +132,24 @@ async function criarAcesso(
   if (!contas) return false;
   const db = ctx.env.DB;
   const now = ctx.clock.now();
-  // Reserva o provisionamento: só uma requisição cria o acesso. Uma repetição atrasada (mesma
-  // chave, corrida) encontra a reserva e não sobrescreve uma senha definida depois.
+  // Reserva o provisionamento: só uma requisição cria o acesso por vez. Concluído = uid gravado
+  // (invited_uid); reservado = invite_sent_at sem uid, que expira se a requisição morrer no meio.
+  // Uma repetição atrasada encontra o acesso concluído e não sobrescreve senha definida depois.
   const reserva = await db
     .prepare(
-      "UPDATE users SET invite_sent_at = ?, updated_at = max(updated_at, ?) WHERE id = ? AND invite_sent_at IS NULL AND status = 'pending'",
+      `UPDATE users SET invite_sent_at = ?1, updated_at = max(updated_at, ?1)
+       WHERE id = ?2 AND status = 'pending' AND invited_uid IS NULL
+         AND (invite_sent_at IS NULL OR invite_sent_at < ?1 - ${RESERVA_MS})`,
     )
-    .bind(now, now, conta.id)
+    .bind(now, conta.id)
     .run();
   if (reserva.meta.changes !== 1) {
     const atual = await db
-      .prepare("SELECT invite_sent_at FROM users WHERE id = ?")
+      .prepare("SELECT invited_uid FROM users WHERE id = ?")
       .bind(conta.id)
-      .first<{ invite_sent_at: number | null }>();
-    return atual?.invite_sent_at !== null && atual?.invite_sent_at !== undefined;
+      .first<{ invited_uid: string | null }>();
+    // Com uid, o acesso já existe; sem uid, outra requisição está criando agora.
+    return (atual?.invited_uid ?? null) !== null;
   }
   const liberar = () =>
     db.prepare("UPDATE users SET invite_sent_at = NULL WHERE id = ?").bind(conta.id).run();
@@ -202,7 +209,8 @@ async function respostaDoConvite(
   senha?: string,
 ) {
   const conta = await carregarConta(ctx, admin, id);
-  const pronto = conta.invite_sent_at !== null;
+  // Com senha, pronto é o acesso criado (uid gravado); sem senha, o link de e-mail ter saído.
+  const pronto = senha ? conta.invited_uid !== null : conta.invite_sent_at !== null;
   const feito =
     pronto ||
     (conta.status === "pending" &&
