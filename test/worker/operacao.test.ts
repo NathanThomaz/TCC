@@ -1482,6 +1482,22 @@ describe("módulos opcionais (ADR-006)", () => {
     expect(await custo()).toBe(100);
   });
 
+  it("compras: filtro por período da compra (para chegar às além das 200 últimas)", async () => {
+    await ativarModulos(["fornecedores"]);
+    const f = await fornecedor();
+    const prod = await produto();
+    for (const dia of [3, 4, 5]) {
+      agora = Date.UTC(2026, 10, dia, 15, 0); // meio-dia em São Paulo
+      await comprar({
+        fornecedor: f,
+        itens: [{ produto: prod, unidades: dia, custoUnitarioCentavos: 100 }],
+      });
+    }
+    const lista = (await call("GET", p("/compras?de=2026-11-04&ate=2026-11-04"), ADMIN)).body
+      .compras!;
+    expect(lista.map((c) => c.itens[0]!.unidades)).toEqual([4]);
+  });
+
   it("financeiro: filtro por período do vencimento", async () => {
     await ativarModulos(["financeiro"]);
     for (const vencimento of ["2026-10-31", "2026-11-15", "2026-12-01"]) {

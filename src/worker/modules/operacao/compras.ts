@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { CompraDto, ItemCompraDto } from "../../../shared/api";
+import { deCampoLocal } from "../../../shared/dominio/agenda";
 import { unidadesDoItem } from "../../../shared/dominio/precos";
 import { readJson } from "../../http/body";
 import { AppError, conflict, notFound, validationFailed } from "../../http/errors";
@@ -29,6 +30,9 @@ const CompraBody = z.object({
   vencimento: dataLocal.optional(),
 });
 const CancelarBody = z.object({ motivo: z.string().trim().min(3).max(300) });
+
+/** Compras por listagem; as mais antigas aparecem filtrando pelo período. */
+export const LIMITE_COMPRAS = 200;
 
 /** Mesmo teto de uma conta no financeiro (CHECK de financial_entries). */
 const TETO_COMPRA_CENTAVOS = 10_000_000_000;
@@ -125,12 +129,19 @@ async function carregarCompra(ctx: RequestContext, systemId: string, id: string)
 
 export const listarCompras: Handler = async (ctx) => {
   const op = await abrirOperacao(ctx, "fornecedores");
-  const fornecedor = ctx.url.searchParams.get("fornecedor");
+  const q = ctx.url.searchParams;
+  const fornecedor = q.get("fornecedor");
+  // Período pela data local da compra (inclusive), para chegar às compras além das 200 últimas.
+  const de = dataLocal.safeParse(q.get("de")).data;
+  const ate = dataLocal.safeParse(q.get("ate")).data;
+  const inicio = de ? deCampoLocal(`${de}T00:00`) : null;
+  const fim = ate ? (deCampoLocal(`${ate}T00:00`) ?? 0) + 86_400_000 : null;
   const { results } = await ctx.env.DB.prepare(
     `${SELECT_COMPRA} WHERE c.system_id = ?1 AND (?2 IS NULL OR c.supplier_id = ?2)
-     ORDER BY c.created_at DESC LIMIT 200`,
+       AND (?3 IS NULL OR c.created_at >= ?3) AND (?4 IS NULL OR c.created_at < ?4)
+     ORDER BY c.created_at DESC LIMIT ${LIMITE_COMPRAS}`,
   )
-    .bind(op.systemId, fornecedor)
+    .bind(op.systemId, fornecedor, inicio, fim)
     .all<CompraRow>();
   const itens = await itensDe(
     ctx,

@@ -243,8 +243,14 @@ export interface NovaCompra {
   vencimento?: string;
 }
 
-export async function listarCompras(sistema: string): Promise<CompraDto[]> {
-  const r = await chamar<OperacaoApiBody>(`${base(sistema)}/compras`);
+export async function listarCompras(
+  sistema: string,
+  periodo: { de?: string; ate?: string } = {},
+): Promise<CompraDto[]> {
+  const q = new URLSearchParams(
+    Object.entries(periodo).filter((e): e is [string, string] => !!e[1]),
+  ).toString();
+  const r = await chamar<OperacaoApiBody>(`${base(sistema)}/compras${q ? `?${q}` : ""}`);
   return exigir(r.compras, "compras");
 }
 
