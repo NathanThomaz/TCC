@@ -4,6 +4,7 @@ import {
   LIMITS,
   MODULE_INFO,
   MODULES,
+  NATIVE_FIELDS,
   TEMPLATE_LABELS,
   TEMPLATE_MODULES,
   TEMPLATES,
@@ -15,7 +16,7 @@ import type { ConfigDraft } from "../../shared/contract/schema";
 // das constantes do contrato, para nunca divergir do que o validador aceita. Prompts versionados:
 // mudar o texto é mudar a configuração congelada do experimento (seção 25).
 
-export const VERSAO_PROMPTS = "2026-11-12.1";
+export const VERSAO_PROMPTS = "2026-11-13.1";
 
 type Json = Parameters<typeof adaptForGemini>[0];
 
@@ -27,12 +28,17 @@ const catalogo = (): string => {
     const dep = MODULE_INFO[m].dependsOn;
     return `- ${m}${dep.length ? ` (depende de ${dep.join(", ")})` : ""}`;
   }).join("\n");
+  const camposNativos = (Object.keys(NATIVE_FIELDS) as (keyof typeof NATIVE_FIELDS)[])
+    .map((e) => `- ${e}: ${NATIVE_FIELDS[e].map((n) => n.label).join("; ")}`)
+    .join("\n");
   return `CATÁLOGO FECHADO DO NEXUS (nada fora dele é criado):
 Modelos (cada um define exatamente os módulos):
 ${modelos}
 Módulos:
 ${modulos}
-Campos informativos: tipos ${FIELD_TYPES.join(", ")}; até ${LIMITS.fieldsPerEntity} por entidade (clientes, produtos, profissionais, vendas, agendamentos); lista com ${LIMITS.listOptions.min} a ${LIMITS.listOptions.max} opções.
+Campos que cada cadastro JÁ TEM (nunca crie campo informativo para eles nem para sinônimos):
+${camposNativos}
+Campos informativos (extras, só o que não está acima): tipos ${FIELD_TYPES.join(", ")}; até ${LIMITS.fieldsPerEntity} por entidade (clientes, produtos, profissionais, vendas, agendamentos); lista com ${LIMITS.listOptions.min} a ${LIMITS.listOptions.max} opções.
 Tipos de atendimento: id, rótulo e duração em minutos (15 a 480).
 Regras parametrizáveis:
 - limite_atacado: valor em centavos a partir do qual vale o preço de atacado, inclusive; a base é o subtotal dos produtos a preço de varejo.
@@ -133,7 +139,7 @@ export function instrucoesLevantamento(
 ${catalogo()}
 
 COMO CONDUZIR A ENTREVISTA:
-1. UM assunto por vez, UMA pergunta por mensagem, nesta ordem: negocio (o que vende e como: atacado, varejo, serviços) → produtos_precos (atacado a partir de quanto, venda por caixa) → pedidos_estoque (por quanto tempo um pedido aberto segura o estoque) → clientes (informações extras a guardar) → atendimentos (só se houver serviços agendados: tipos, duração, atendimentos em par) → aparencia (nome e cores). Pule o que não se aplica ao negócio.
+1. UM assunto por vez, UMA pergunta por mensagem, nesta ordem: negocio (o que vende e como: atacado, varejo, serviços) → produtos_precos (atacado a partir de quanto, venda por caixa) → pedidos_estoque (por quanto tempo um pedido aberto segura o estoque) → clientes (informações extras a guardar; antes de perguntar, diga o que o cadastro já tem, para o dono não repetir) → atendimentos (só se houver serviços agendados: tipos, duração, atendimentos em par) → aparencia (nome e cores). Pule o que não se aplica ao negócio.
 2. Sempre que a resposta couber em opções curtas, ofereça de 2 a 4 respostas_rapidas (ex.: "Atacado e varejo", "Só varejo"). Elas viram botões; o dono também pode escrever.
 3. Extraia requisitos curtos, um por item, com os valores explícitos que o dono disse (ex.: titulo "Preço de atacado a partir de", texto "Atacado a partir de R$ 1.500,00 em produtos").
 4. Quando faltar um valor necessário, você pode SUGERIR um valor comum, mas só como sugestão: crie o requisito com sugestao true e diga na resposta que é uma sugestão para o dono confirmar ou mudar. Nunca marque sugestao false para um valor que o dono não disse. Se o dono depois disser o valor, reescreva o requisito com sugestao false.

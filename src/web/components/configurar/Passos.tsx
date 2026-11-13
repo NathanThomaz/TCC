@@ -1,5 +1,19 @@
 import type { ReactNode } from "react";
-import { AlertTriangle, Briefcase, Check, Plus, Scissors, Store, Trash2 } from "lucide-react";
+import {
+  AlertTriangle,
+  Briefcase,
+  Check,
+  CircleCheck,
+  Plus,
+  Scissors,
+  Store,
+  Trash2,
+} from "lucide-react";
+import {
+  campoNativoDuplicado,
+  NATIVE_FIELDS,
+  normalizarRotulo,
+} from "../../../shared/contract/catalog";
 import type { Campo, ConfigDraft, Modelo } from "@/types/nexus";
 import { hexValido, textoSobre } from "@/lib/cores";
 import {
@@ -13,6 +27,7 @@ import {
   type Entidade,
 } from "@/lib/nexus";
 import { cn } from "@/lib/utils";
+import { ModulosProntos } from "@/components/nexus/ModulosProntos";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -83,8 +98,8 @@ export function PassoModelo({ draft, set }: PassoProps) {
   return (
     <>
       <Explicacao>
-        O modelo define quais módulos o sistema terá. Os módulos não podem ser editados
-        individualmente nesta versão.
+        O modelo define quais módulos o sistema terá. Abaixo, o que cada módulo já traz pronto: no
+        próximo passo você só ajusta valores e acrescenta o que faltar.
       </Explicacao>
       <div
         role="radiogroup"
@@ -139,6 +154,12 @@ export function PassoModelo({ draft, set }: PassoProps) {
             </button>
           );
         })}
+      </div>
+      <div className="mt-6">
+        <ModulosProntos
+          modulos={draft.modulos}
+          titulo={`O que já vem pronto em ${MODELOS.find((m) => m.id === draft.modelo)?.nome ?? "este modelo"}`}
+        />
       </div>
     </>
   );
@@ -294,6 +315,35 @@ export function PassoAparencia({ draft, set }: PassoProps) {
 }
 
 /* 4. Campos informativos */
+type SugestaoCampo = Pick<Campo, "rotulo" | "tipo"> & { opcoes?: string[] };
+
+/** Extras comuns por cadastro: atalhos de um clique (nenhum repete campo nativo). */
+const SUGESTOES_CAMPOS: Record<Entidade, SugestaoCampo[]> = {
+  clientes: [
+    { rotulo: "Telefone", tipo: "texto" },
+    { rotulo: "Endereço de entrega", tipo: "texto" },
+    { rotulo: "E-mail", tipo: "texto" },
+    { rotulo: "CPF ou CNPJ", tipo: "texto" },
+  ],
+  produtos: [
+    { rotulo: "Marca", tipo: "texto" },
+    { rotulo: "Volume (ml)", tipo: "numero" },
+    { rotulo: "Validade", tipo: "data" },
+  ],
+  profissionais: [
+    { rotulo: "Telefone", tipo: "texto" },
+    { rotulo: "Especialidade", tipo: "texto" },
+  ],
+  vendas: [
+    { rotulo: "Forma de pagamento", tipo: "lista", opcoes: ["Dinheiro", "Pix", "Cartão"] },
+    { rotulo: "Observação", tipo: "texto" },
+  ],
+  agendamentos: [
+    { rotulo: "Endereço do atendimento", tipo: "texto" },
+    { rotulo: "Observação", tipo: "texto" },
+  ],
+};
+
 const TIPOS_CAMPO: Record<Campo["tipo"], string> = {
   texto: "Texto",
   numero: "Número",
@@ -305,31 +355,37 @@ export function PassoCampos({ draft, set }: PassoProps) {
   const ents = entidadesDosModulos(draft.modulos);
   const upd = (id: string, p: Partial<Campo>) =>
     set((d) => ({ ...d, campos: d.campos.map((c) => (c.id === id ? { ...c, ...p } : c)) }));
-  const add = (e: Entidade) =>
+  const add = (e: Entidade, modelo?: SugestaoCampo) =>
     set((d) => ({
       ...d,
       campos: [
         ...d.campos,
-        { id: novoId("cmp"), entidade: e, rotulo: "", tipo: "texto", obrigatorio: false },
+        modelo
+          ? { id: novoId("cmp"), entidade: e, obrigatorio: false, ...modelo }
+          : { id: novoId("cmp"), entidade: e, rotulo: "", tipo: "texto", obrigatorio: false },
       ],
     }));
 
   return (
     <>
       <Explicacao>
-        Campos extras que aparecem nos cadastros. Apenas as entidades dos módulos do modelo estão
-        disponíveis. Máximo de 10 campos por entidade.
+        Cada cadastro já vem com os campos essenciais. Acrescente só o que faltar para o seu negócio
+        (até 10 por cadastro); o Nexus avisa se um campo repetir algo que já existe.
       </Explicacao>
       <div className="space-y-6">
         {ents.map((e) => {
           const lista = draft.campos.filter((c) => c.entidade === e);
+          const existentes = new Set(lista.map((c) => normalizarRotulo(c.rotulo)));
+          const atalhos = SUGESTOES_CAMPOS[e].filter(
+            (s) => !existentes.has(normalizarRotulo(s.rotulo)),
+          );
           return (
             <section key={e} aria-labelledby={`ent-${e}`}>
               <div className="mb-2 flex items-center justify-between">
                 <h3 id={`ent-${e}`} className="font-semibold">
                   {ROTULO_ENTIDADE[e]}{" "}
                   <span className="text-sm font-normal text-muted-foreground tabular-nums">
-                    ({lista.length}/10)
+                    ({lista.length}/10 extras)
                   </span>
                 </h3>
                 <Button
@@ -341,11 +397,57 @@ export function PassoCampos({ draft, set }: PassoProps) {
                   <Plus aria-hidden /> Adicionar campo
                 </Button>
               </div>
+              <div className="mb-3 rounded-lg bg-muted p-3">
+                <p className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                  <CircleCheck className="size-4 text-success" aria-hidden /> Já vem pronto no
+                  cadastro
+                </p>
+                <ul
+                  className="flex flex-wrap gap-1.5"
+                  aria-label={`Campos de ${ROTULO_ENTIDADE[e]}`}
+                >
+                  {NATIVE_FIELDS[e].map((n) => (
+                    <li
+                      key={n.label}
+                      className="rounded-full border bg-card px-2.5 py-0.5 text-xs text-foreground"
+                    >
+                      {n.label}
+                    </li>
+                  ))}
+                </ul>
+                {atalhos.length > 0 && lista.length < 10 && (
+                  <>
+                    <p className="mb-2 mt-3 text-xs font-medium text-muted-foreground">
+                      Extras comuns (um clique para adicionar)
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {atalhos.map((s) => (
+                        <Button
+                          key={s.rotulo}
+                          variant="outline"
+                          size="sm"
+                          className="h-7 rounded-full px-2.5 text-xs"
+                          onClick={() => add(e, s)}
+                        >
+                          <Plus className="size-3.5" aria-hidden /> {s.rotulo}
+                        </Button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
               <div className="space-y-2">
                 {lista.length === 0 && <Vazio>Sem campos extras.</Vazio>}
                 {lista.map((c) => {
                   const ops = (c.opcoes ?? []).map((o) => o.trim()).filter(Boolean);
                   const dup = new Set(ops.map((o) => o.toLowerCase())).size !== ops.length;
+                  const nativo = campoNativoDuplicado(e, c.rotulo);
+                  const repetido =
+                    !!c.rotulo.trim() &&
+                    lista.some(
+                      (x) =>
+                        x.id !== c.id && normalizarRotulo(x.rotulo) === normalizarRotulo(c.rotulo),
+                    );
                   return (
                     <Bloco
                       key={c.id}
@@ -361,8 +463,18 @@ export function PassoCampos({ draft, set }: PassoProps) {
                           value={c.rotulo}
                           maxLength={60}
                           onChange={(ev) => upd(c.id, { rotulo: ev.target.value })}
+                          aria-invalid={!!nativo || repetido || !c.rotulo.trim()}
+                          aria-describedby={`${c.id}-r-erro`}
                         />
-                        {!c.rotulo.trim() && <Erro>Informe o rótulo.</Erro>}
+                        <div id={`${c.id}-r-erro`} role="status">
+                          {!c.rotulo.trim() && <Erro>Informe o rótulo.</Erro>}
+                          {nativo && (
+                            <Erro>
+                              Já vem pronto no cadastro ({nativo}); não precisa deste campo.
+                            </Erro>
+                          )}
+                          {repetido && <Erro>Já existe outro campo com este nome aqui.</Erro>}
+                        </div>
                         {c.tipo === "lista" && (
                           <div className="mt-2">
                             <Label htmlFor={`${c.id}-o`} className="text-xs text-muted-foreground">

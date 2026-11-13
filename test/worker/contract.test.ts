@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { campoNativoDuplicado, NATIVE_FIELDS } from "../../src/shared/contract/catalog";
 import { adaptForGemini, configDraftGeminiSchema } from "../../src/shared/contract/gemini-schema";
 import type { ConfigDraft } from "../../src/shared/contract/schema";
 import { validateDraft } from "../../src/shared/contract/validate";
@@ -217,6 +218,71 @@ describe("validateDraft — erros bloqueantes (T07)", () => {
     ];
 
     expect(codes(draft)).toEqual(["modulo_inativo"]);
+  });
+
+  it("recusa campo extra que repete um campo que o cadastro já tem (inclusive sinônimo)", () => {
+    const draft = distribuidora();
+    draft.campos = [
+      { id: "nome_cli", entidade: "clientes", rotulo: "Nome", tipo: "texto", obrigatorio: false },
+      { id: "preco", entidade: "produtos", rotulo: "Preço", tipo: "numero", obrigatorio: false },
+      {
+        id: "qtd",
+        entidade: "produtos",
+        rotulo: "Quantidade em estoque",
+        tipo: "numero",
+        obrigatorio: false,
+      },
+    ];
+    expect(codes(draft)).toEqual(["campo_ja_existe", "campo_ja_existe", "campo_ja_existe"]);
+  });
+
+  it("recusa dois campos com o mesmo rótulo no mesmo cadastro (sem acento nem caixa)", () => {
+    const draft = distribuidora();
+    draft.campos = [
+      { id: "end1", entidade: "clientes", rotulo: "Endereço", tipo: "texto", obrigatorio: false },
+      { id: "end2", entidade: "clientes", rotulo: "endereco", tipo: "texto", obrigatorio: false },
+      // Mesmo rótulo em outro cadastro é permitido.
+      {
+        id: "end3",
+        entidade: "agendamentos",
+        rotulo: "Endereço",
+        tipo: "texto",
+        obrigatorio: false,
+      },
+    ];
+    expect(codes(draft)).toEqual(["rotulo_repetido"]);
+  });
+
+  it("todo rótulo do catálogo, exatamente como mostrado, é reconhecido como já existente", () => {
+    for (const entidade of Object.keys(NATIVE_FIELDS) as (keyof typeof NATIVE_FIELDS)[]) {
+      for (const n of NATIVE_FIELDS[entidade]) {
+        expect(campoNativoDuplicado(entidade, n.label), `${entidade}: ${n.label}`).toBe(n.label);
+      }
+    }
+  });
+
+  it("campos legítimos parecidos com os nativos não são barrados", () => {
+    const legitimos: [keyof typeof NATIVE_FIELDS, string][] = [
+      ["clientes", "Razão social"],
+      ["clientes", "Nome fantasia"],
+      ["produtos", "Descrição"],
+      ["produtos", "Preço de custo"],
+      ["produtos", "Valor do frete"],
+      ["vendas", "Quantidade de volumes"],
+      ["agendamentos", "Data de retorno"],
+    ];
+    for (const [entidade, rotulo] of legitimos) {
+      expect(campoNativoDuplicado(entidade, rotulo), `${entidade}: ${rotulo}`).toBeNull();
+    }
+  });
+
+  it("campo extra que não existe no cadastro passa", () => {
+    const draft = distribuidora();
+    draft.campos = [
+      { id: "tel", entidade: "clientes", rotulo: "Telefone", tipo: "texto", obrigatorio: false },
+      { id: "marca", entidade: "produtos", rotulo: "Marca", tipo: "texto", obrigatorio: false },
+    ];
+    expect(codes(draft)).toEqual([]);
   });
 });
 

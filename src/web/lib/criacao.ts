@@ -1,4 +1,5 @@
 import type { AssuntoDto, CriacaoApiBody, EstadoPedidoDto, RequisitoDto } from "../../shared/api";
+import type { FieldEntity } from "../../shared/contract/catalog";
 
 // Criação guiada (ADR-004): como o estado da entrevista vira trilha de assuntos e resumo em
 // linguagem de negócio. Cores e ícones seguem o Padrão visual do Nexus (Vault).
@@ -19,6 +20,13 @@ export const ROTULO_ASSUNTO: Record<AssuntoDto, string> = {
   clientes: "Clientes",
   atendimentos: "Atendimentos",
   aparencia: "Aparência",
+};
+
+/** Cadastro ligado a cada assunto: o resumo mostra o que já vem pronto nele. */
+export const ENTIDADE_DO_ASSUNTO: Partial<Record<AssuntoDto, FieldEntity>> = {
+  produtos_precos: "produtos",
+  clientes: "clientes",
+  atendimentos: "agendamentos",
 };
 
 export type EstadoAssunto = "feito" | "atual" | "pendente";

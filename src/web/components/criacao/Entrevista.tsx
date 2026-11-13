@@ -13,11 +13,13 @@ import {
   Wrench,
 } from "lucide-react";
 import type { AssuntoDto, PedidoDto, RequisitoDto } from "../../../shared/api";
+import { NATIVE_FIELDS } from "../../../shared/contract/catalog";
 import type { EstadoCriacao } from "@/api/criacao";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
   assuntosDaEntrevista,
+  ENTIDADE_DO_ASSUNTO,
   estadoDoItem,
   pendenciasDaEntrevista,
   type EstadoAssunto,
@@ -345,76 +347,85 @@ export function ResumoSistema({
 
   return (
     <div className="space-y-6">
-      {grupos.map((g) => (
-        <section key={g.id} aria-label={g.rotulo}>
-          <h3 className="mb-3 text-sm font-semibold">{g.rotulo}</h3>
-          {g.itens.length === 0 ? (
-            <p className="inline-flex items-center gap-1.5 rounded-md bg-neutral-soft px-2 py-1 text-xs text-muted-foreground">
-              <CircleDashed className="size-4" aria-hidden /> Falta responder
-            </p>
-          ) : (
-            <ul className="space-y-4">
-              {g.itens.map((r) => {
-                const e = estadoDoItem(r);
-                const { texto, Icone, classe } = VISUAL_ITEM[e];
-                return (
-                  <li key={r.codigo} className="min-w-0 border-b pb-4 last:border-0 last:pb-0">
-                    <div className="flex items-start gap-2">
-                      <div className="min-w-0 flex-1">
-                        {r.titulo && <p className="text-sm text-muted-foreground">{r.titulo}</p>}
-                        <p className="mt-1 break-words text-sm font-medium">{r.texto}</p>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="shrink-0"
-                        title={`Mudar: ${r.titulo ?? r.texto}`}
-                        aria-label={`Mudar: ${r.titulo ?? r.texto}`}
-                        disabled={bloqueado || ocupado}
-                        onClick={() => onMudar(r)}
-                      >
-                        <Pencil aria-hidden />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="shrink-0"
-                        title={`Tirar do resumo: ${r.titulo ?? r.texto}`}
-                        aria-label={`Tirar do resumo: ${r.titulo ?? r.texto}`}
-                        disabled={bloqueado || ocupado}
-                        onClick={() => onRemover(r.codigo)}
-                      >
-                        <Trash2 aria-hidden />
-                      </Button>
-                    </div>
-                    <div className="mt-2 flex flex-wrap items-center gap-2">
-                      <span
-                        className={cn(
-                          "inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs",
-                          classe,
-                        )}
-                      >
-                        <Icone className="size-4" aria-hidden />
-                        {texto}
-                      </span>
-                      {e === "sugestao" && (
+      {grupos.map((g) => {
+        const entidade = ENTIDADE_DO_ASSUNTO[g.id as AssuntoDto];
+        return (
+          <section key={g.id} aria-label={g.rotulo}>
+            <h3 className="mb-1 text-sm font-semibold">{g.rotulo}</h3>
+            {entidade && (
+              <p className="mb-3 text-xs text-muted-foreground">
+                Já vem pronto: {NATIVE_FIELDS[entidade].map((n) => n.label).join(" · ")}
+              </p>
+            )}
+            {!entidade && <div className="mb-2" />}
+            {g.itens.length === 0 ? (
+              <p className="inline-flex items-center gap-1.5 rounded-md bg-neutral-soft px-2 py-1 text-xs text-muted-foreground">
+                <CircleDashed className="size-4" aria-hidden /> Falta responder
+              </p>
+            ) : (
+              <ul className="space-y-4">
+                {g.itens.map((r) => {
+                  const e = estadoDoItem(r);
+                  const { texto, Icone, classe } = VISUAL_ITEM[e];
+                  return (
+                    <li key={r.codigo} className="min-w-0 border-b pb-4 last:border-0 last:pb-0">
+                      <div className="flex items-start gap-2">
+                        <div className="min-w-0 flex-1">
+                          {r.titulo && <p className="text-sm text-muted-foreground">{r.titulo}</p>}
+                          <p className="mt-1 break-words text-sm font-medium">{r.texto}</p>
+                        </div>
                         <Button
-                          variant="outline"
-                          size="sm"
+                          variant="ghost"
+                          size="icon"
+                          className="shrink-0"
+                          title={`Mudar: ${r.titulo ?? r.texto}`}
+                          aria-label={`Mudar: ${r.titulo ?? r.texto}`}
                           disabled={bloqueado || ocupado}
-                          onClick={() => onUsarSugestao(r.codigo)}
+                          onClick={() => onMudar(r)}
                         >
-                          Confirmar
+                          <Pencil aria-hidden />
                         </Button>
-                      )}
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </section>
-      ))}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="shrink-0"
+                          title={`Tirar do resumo: ${r.titulo ?? r.texto}`}
+                          aria-label={`Tirar do resumo: ${r.titulo ?? r.texto}`}
+                          disabled={bloqueado || ocupado}
+                          onClick={() => onRemover(r.codigo)}
+                        >
+                          <Trash2 aria-hidden />
+                        </Button>
+                      </div>
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <span
+                          className={cn(
+                            "inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs",
+                            classe,
+                          )}
+                        >
+                          <Icone className="size-4" aria-hidden />
+                          {texto}
+                        </span>
+                        {e === "sugestao" && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={bloqueado || ocupado}
+                            onClick={() => onUsarSugestao(r.codigo)}
+                          >
+                            Confirmar
+                          </Button>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
+        );
+      })}
       <section className="border-t pt-4">
         <h3 className="flex items-center gap-2 text-sm font-semibold">
           <Wrench className="size-4 text-info" aria-hidden />

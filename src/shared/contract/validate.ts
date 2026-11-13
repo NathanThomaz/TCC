@@ -1,6 +1,8 @@
 import {
+  campoNativoDuplicado,
   FIELD_ENTITIES,
   LIMITS,
+  normalizarRotulo,
   MODULE_INFO,
   REQUIRED_RULES,
   RULE_MODULES,
@@ -121,10 +123,33 @@ export function semanticIssues(draft: ConfigDraft): ValidationIssue[] {
   for (const dup of duplicates(draft.campos, (f) => `${f.entidade}.${f.id}`)) {
     issues.push(block("id_repetido", "campos", `Campo repetido: ${dup}.`));
   }
+  // Mesmo rótulo (sem acento e caixa) duas vezes no mesmo cadastro também é duplicidade.
+  for (const dup of duplicates(
+    draft.campos,
+    (f) => `${f.entidade}.${normalizarRotulo(f.rotulo)}`,
+  )) {
+    issues.push(
+      block(
+        "rotulo_repetido",
+        "campos",
+        `Há dois campos "${dup.split(".")[1]}" no mesmo cadastro.`,
+      ),
+    );
+  }
   const perEntity = new Map<string, number>();
   draft.campos.forEach((field, index) => {
     const path = `campos.${index}`;
     const module = FIELD_ENTITIES[field.entidade];
+    const nativo = campoNativoDuplicado(field.entidade, field.rotulo);
+    if (nativo) {
+      issues.push(
+        block(
+          "campo_ja_existe",
+          `${path}.rotulo`,
+          `"${field.rotulo}" já vem pronto no cadastro (${nativo}); não precisa de campo extra.`,
+        ),
+      );
+    }
     if (!active.has(module)) {
       issues.push(
         block(
