@@ -90,6 +90,12 @@ export function TrilhaAssuntos({
   );
 }
 
+const PRIMEIRAS_SUGESTOES = [
+  "Vendo produtos",
+  "Atendo com hora marcada",
+  "Vendo produtos e atendo com hora marcada",
+];
+
 export function Conversa({
   estado,
   bloqueado,
@@ -120,6 +126,13 @@ export function Conversa({
     fim.current?.scrollIntoView?.({ block: "nearest" });
   }, [estado.mensagens.length, ocupado]);
   const ultima = estado.mensagens.at(-1);
+  // Antes da primeira resposta, sugestões fixas para a primeira pergunta; depois, as da IA.
+  const sugestoes =
+    estado.mensagens.length === 0
+      ? PRIMEIRAS_SUGESTOES
+      : ultima?.papel === "assistente"
+        ? ultima.respostasRapidas
+        : [];
   const porCodigo = new Map(estado.requisitos.map((r) => [r.codigo, r]));
   const porId = new Map(estado.pedidos.map((p) => [p.id, p]));
   const desativado = bloqueado || ocupado;
@@ -138,8 +151,7 @@ export function Conversa({
               <Bot className="size-4 text-primary" aria-hidden /> Assistente Nexus
             </p>
             <p className="text-sm leading-relaxed">
-              Olá! Vou montar o seu sistema com você, uma pergunta de cada vez. Para começar: o que
-              o seu negócio vende ou faz, e como você vende?
+              Olá! Vou montar o seu sistema com você, uma pergunta por vez. Qual é o seu negócio?
             </p>
           </div>
         )}
@@ -218,9 +230,9 @@ export function Conversa({
             </div>
           ),
         )}
-        {ultima?.papel === "assistente" && ultima.respostasRapidas.length > 0 && !bloqueado && (
-          <div className="flex flex-wrap gap-2">
-            {ultima.respostasRapidas.map((r) => (
+        {sugestoes.length > 0 && !bloqueado && (
+          <div className="flex flex-wrap gap-2" aria-label="Sugestões de resposta">
+            {sugestoes.map((r) => (
               <Button
                 key={r}
                 variant="outline"

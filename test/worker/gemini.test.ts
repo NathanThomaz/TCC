@@ -63,4 +63,35 @@ describe("cliente do Gemini", () => {
       )!.gerar(pedido),
     ).rejects.toMatchObject({ motivo: "vazia_SAFETY" });
   });
+
+  it("4xx guarda código e explicação do provedor e vale como falha sem custo; 5xx fica incerto", async () => {
+    const recusa = comResposta(400, {
+      error: { status: "FAILED_PRECONDITION", message: "User location is not supported." },
+    });
+    await expect(geminiDoAmbiente(env, recusa.fetcher)!.gerar(pedido)).rejects.toMatchObject({
+      motivo: "http_400_FAILED_PRECONDITION: User location is not supported.",
+      tokens: { entrada: 0, saida: 0 },
+    });
+    await expect(
+      geminiDoAmbiente(env, comResposta(503, {}).fetcher)!.gerar(pedido),
+    ).rejects.toMatchObject({ motivo: "http_503", tokens: undefined });
+    // Nada com cara de credencial é gravado; status fora do padrão é descartado; cabe em 300.
+    const vazamento = comResposta(400, {
+      error: {
+        status: "x".repeat(100),
+        message: `API key chave-ficticia invalid; also AIzaSyA1234567890abcdefghijklmnopqrstu ${"y".repeat(400)}`,
+      },
+    });
+    let falha: IaIndisponivel | undefined;
+    try {
+      await geminiDoAmbiente(env, vazamento.fetcher)!.gerar(pedido);
+    } catch (e) {
+      falha = e as IaIndisponivel;
+    }
+    const motivo = falha?.motivo ?? "";
+    expect(motivo).not.toContain("chave-ficticia");
+    expect(motivo).not.toMatch(/AIza/);
+    expect(motivo.startsWith("http_400: ")).toBe(true);
+    expect(motivo.length).toBeLessThanOrEqual(300);
+  });
 });
