@@ -1,6 +1,12 @@
 -- Migration 0008: módulos opcionais (ADR-006) — formas de pagamento, fornecedores e compras,
 -- financeiro. Aditiva: só cria tabelas, colunas e gatilhos; nenhuma tabela existente é refeita.
 
+-- ---- Contas criadas com senha (pedido do dono, 2026-11-13) ----
+
+-- Administrador independente criado pelo dono do Nexus (o primeiro administrador): guarda quem
+-- criou, para listar, desativar e redefinir a senha dessas contas.
+ALTER TABLE users ADD COLUMN created_by TEXT REFERENCES users (id);
+
 -- ---- Formas de pagamento ----
 
 -- Forma registrada na conclusão da venda (NULL em sistema sem o módulo e em vendas antigas).

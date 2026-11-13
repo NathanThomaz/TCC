@@ -1,7 +1,13 @@
 import { z } from "zod";
-import type { InicioDto, IssueDto, SystemDto, VersionDto } from "../../shared/api";
+import type {
+  InicioDto,
+  IssueDto,
+  ResumoSistemaDto,
+  SystemDto,
+  VersionDto,
+} from "../../shared/api";
 import { CATALOG_VERSION } from "../../shared/contract/catalog";
-import { paraCampoLocal } from "../../shared/dominio/agenda";
+import { deCampoLocal, paraCampoLocal } from "../../shared/dominio/agenda";
 import { SCHEMA_VERSION, type ConfigDraft } from "../../shared/contract/schema";
 import { validateDraft } from "../../shared/contract/validate";
 import { authenticate, requireAdmin, requireSystemAccess } from "../auth/session";
@@ -12,7 +18,6 @@ import { json } from "../http/responses";
 import type { Handler, RequestContext } from "../http/router";
 import { consumoDoMes } from "../ia/orcamento";
 import { canonicalJson, sha256Hex } from "../lib/hash";
-import { calcularPainel } from "./operacao/painel";
 import { isUnique, parse, triggerConflict } from "./comum";
 
 // Sistemas e o ciclo de configuração (seção 8): rascunho → versão validada → aprovação da versão
@@ -145,73 +150,205 @@ export const listSystems: Handler = async (ctx) => {
   return json({ sistemas: (await sistemasDoUsuario(ctx, user)).map(publicSystem) });
 };
 
+const LIMITE_INICIO = 100;
+
 /**
- * GET /inicio — resumo da tela inicial: cada sistema com modelo, módulos, cor e, se ativo, os
- * números do painel (mesmo cálculo da aplicação); pedidos ao desenvolvedor e, para o
- * administrador, o consumo de IA do mês.
+ * GET /inicio — resumo da tela inicial: cada sistema com modelo, módulos, cor, última atividade e,
+ * se ativo, os números principais. As consultas são agrupadas por sistema e vão num único lote:
+ * a quantidade não cresce com o número de sistemas (limite de consultas por requisição do D1).
+ * Pedidos ao desenvolvedor e consumo da IA são só do administrador.
  */
 export const obterInicio: Handler = async (ctx) => {
   const user = await authenticate(ctx, ctx.auth);
   const db = ctx.env.DB;
   const agora = ctx.clock.now();
-  const linhas = await sistemasDoUsuario(ctx, user);
-  const ids = JSON.stringify(linhas.map((s) => s.id));
-  const [configs, pedidos, ia] = await Promise.all([
-    // Configuração ativa do sistema ativo; a última versão salva do rascunho.
-    db
-      .prepare(
-        `SELECT s.id, COALESCE(
-           (SELECT config_json FROM model_versions WHERE id = s.active_version_id),
-           (SELECT config_json FROM model_versions WHERE system_id = s.id ORDER BY version DESC LIMIT 1)
-         ) AS config_json
-         FROM systems s WHERE s.id IN (SELECT value FROM json_each(?))`,
-      )
-      .bind(ids)
-      .all<{ id: string; config_json: string | null }>(),
-    db
-      .prepare(
-        `SELECT system_id, status, COUNT(*) AS n FROM dev_requests
-         WHERE system_id IN (SELECT value FROM json_each(?)) GROUP BY system_id, status`,
-      )
-      .bind(ids)
-      .all<{ system_id: string; status: string; n: number }>(),
-    user.role === "admin" ? consumoDoMes(ctx.env, agora) : Promise.resolve(null),
-  ]);
+  const admin = user.role === "admin";
+  // Ativos primeiro, para os números de hoje não sumirem atrás de rascunhos recentes.
+  const { results: linhas } = admin
+    ? await db
+        .prepare(
+          `SELECT * FROM systems WHERE owner_id = ?
+           ORDER BY status = 'active' DESC, created_at DESC LIMIT ${LIMITE_INICIO + 1}`,
+        )
+        .bind(user.id)
+        .all<SystemRow>()
+    : await db
+        .prepare(
+          `SELECT s.* FROM systems s JOIN system_access a ON a.system_id = s.id
+           WHERE a.user_id = ? AND a.status = 'active' AND s.owner_id = ? AND s.status <> 'archived'
+           ORDER BY s.status = 'active' DESC, s.created_at DESC LIMIT ${LIMITE_INICIO + 1}`,
+        )
+        .bind(user.id, user.adminId)
+        .all<SystemRow>();
+  const truncado = linhas.length > LIMITE_INICIO;
+  const sistemas = linhas.slice(0, LIMITE_INICIO);
+  const ids = JSON.stringify(sistemas.map((s) => s.id));
+
+  const configs = await db
+    .prepare(
+      `SELECT s.id, COALESCE(
+         (SELECT config_json FROM model_versions WHERE id = s.active_version_id),
+         (SELECT config_json FROM model_versions WHERE system_id = s.id ORDER BY version DESC LIMIT 1)
+       ) AS config_json,
+       max(s.updated_at,
+         COALESCE((SELECT MAX(created_at) FROM model_versions WHERE system_id = s.id), 0),
+         COALESCE((SELECT MAX(m.created_at) FROM messages m JOIN conversations c ON c.id = m.conversation_id
+                   WHERE c.system_id = s.id AND c.kind = 'criacao'), 0)) AS atividade
+       FROM systems s WHERE s.id IN (SELECT value FROM json_each(?))`,
+    )
+    .bind(ids)
+    .all<{ id: string; config_json: string | null; atividade: number }>();
   const configDe = new Map(
     configs.results.map((c) => [
       c.id,
-      c.config_json ? (JSON.parse(c.config_json) as ConfigDraft) : null,
+      {
+        config: c.config_json ? (JSON.parse(c.config_json) as ConfigDraft) : null,
+        atividade: c.atividade,
+      },
     ]),
   );
+  const ativos = sistemas.filter((s) => s.status === "active" && configDe.get(s.id)?.config);
+  const tem = (s: SystemRow, m: string) =>
+    configDe.get(s.id)?.config?.modulos.includes(m as never) ?? false;
+  const idsCom = (m: string) => JSON.stringify(ativos.filter((s) => tem(s, m)).map((s) => s.id));
+  // Estoque mínimo de cada sistema (regra estoque_minimo), para contar os críticos no SQL.
+  const minimoDe: Record<string, number | null> = Object.fromEntries(
+    ativos.map((s) => {
+      const regra = configDe
+        .get(s.id)
+        ?.config?.regras.find((r) => (r.tipo as string) === "estoque_minimo") as
+        { unidades: number } | undefined;
+      return [s.id, regra?.unidades ?? null];
+    }),
+  );
+  const minimos = JSON.stringify(minimoDe);
+  const hoje = paraCampoLocal(agora).slice(0, 10);
+  const [ano, mes] = hoje.split("-").map(Number) as [number, number];
+  const iso = (a: number, m: number, d: number) =>
+    new Date(Date.UTC(a, m - 1, d)).toISOString().slice(0, 10);
+  const dia = Number(hoje.slice(8, 10));
+  const inicioHoje = deCampoLocal(`${hoje}T00:00`)!;
+  const inicioAmanha = deCampoLocal(`${iso(ano, mes, dia + 1)}T00:00`)!;
+  const inicioMes = deCampoLocal(`${iso(ano, mes, 1)}T00:00`)!;
+  const inicioProximoMes = deCampoLocal(`${iso(ano, mes + 1, 1)}T00:00`)!;
+
+  const [vendas, clientes, estoque, agenda, contas, pedidos] = await db.batch([
+    db
+      .prepare(
+        `SELECT system_id AS id,
+           SUM(completed_at >= ?2 AND completed_at < ?3) AS hq,
+           COALESCE(SUM(CASE WHEN completed_at >= ?2 AND completed_at < ?3 THEN total_cents END), 0) AS ht,
+           SUM(completed_at >= ?4 AND completed_at < ?5) AS mq,
+           COALESCE(SUM(CASE WHEN completed_at >= ?4 AND completed_at < ?5 THEN total_cents END), 0) AS mt
+         FROM sales WHERE status = 'completed' AND system_id IN (SELECT value FROM json_each(?1))
+         GROUP BY system_id`,
+      )
+      .bind(idsCom("vendas"), inicioHoje, inicioAmanha, inicioMes, inicioProximoMes),
+    db
+      .prepare(
+        `SELECT system_id AS id, COUNT(*) AS n FROM customers
+         WHERE status = 'active' AND system_id IN (SELECT value FROM json_each(?)) GROUP BY system_id`,
+      )
+      .bind(idsCom("clientes")),
+    db
+      .prepare(
+        `WITH m AS (SELECT key AS system_id, value AS minimo FROM json_each(?2)),
+         d AS (SELECT p.system_id, p.physical - (SELECT COALESCE(SUM(r.quantity), 0) FROM reservations r
+                 WHERE r.product_id = p.id AND r.status = 'active' AND r.expires_at > ?3) AS disp
+               FROM products p WHERE p.status = 'active'
+                 AND p.system_id IN (SELECT value FROM json_each(?1)))
+         SELECT d.system_id AS id,
+           SUM(CASE WHEN m.minimo IS NULL THEN d.disp <= 0 ELSE d.disp < m.minimo END) AS n
+         FROM d LEFT JOIN m ON m.system_id = d.system_id GROUP BY d.system_id`,
+      )
+      .bind(idsCom("produtos"), minimos, agora),
+    db
+      .prepare(
+        `SELECT system_id AS id, COUNT(*) AS n FROM appointments
+         WHERE status IN ('scheduled', 'in_progress', 'done') AND start_at >= ?2 AND start_at < ?3
+           AND system_id IN (SELECT value FROM json_each(?1)) GROUP BY system_id`,
+      )
+      .bind(idsCom("agenda"), inicioHoje, inicioAmanha),
+    db
+      .prepare(
+        `SELECT system_id AS id, COUNT(*) AS n, SUM(amount_cents) AS t FROM financial_entries
+         WHERE status = 'pendente' AND due_date < ?2
+           AND system_id IN (SELECT value FROM json_each(?1)) GROUP BY system_id`,
+      )
+      .bind(idsCom("financeiro"), hoje),
+    db
+      .prepare(
+        `SELECT system_id AS id, status, COUNT(*) AS n FROM dev_requests
+         WHERE ?2 = 1 AND system_id IN (SELECT value FROM json_each(?1)) GROUP BY system_id, status`,
+      )
+      .bind(ids, admin ? 1 : 0),
+  ]);
+  type Linha = Record<string, number | string | null> & { id: string };
+  const porId = (r: D1Result | undefined) =>
+    new Map<string, Linha>(
+      (r?.results ?? []).map((x) => {
+        const linha = x as Linha;
+        return [linha.id, linha];
+      }),
+    );
+  const [v, c, e, a, f] = [vendas, clientes, estoque, agenda, contas].map(porId);
+  const num = (x: Linha | undefined, k: string) => Number(x?.[k] ?? 0);
+  const listaPedidos = (pedidos?.results ?? []) as { id: string; status: string; n: number }[];
   const contar = (status: string, sistema?: string) =>
-    pedidos.results
-      .filter((p) => p.status === status && (!sistema || p.system_id === sistema))
+    listaPedidos
+      .filter((p) => p.status === status && (!sistema || p.id === sistema))
       .reduce((soma, p) => soma + p.n, 0);
-  const sistemas: InicioDto["sistemas"] = await Promise.all(
-    linhas.map(async (row) => {
-      const config = configDe.get(row.id) ?? null;
+
+  const resumoDe = (s: SystemRow): ResumoSistemaDto => {
+    const r: ResumoSistemaDto = {};
+    if (tem(s, "vendas")) {
+      const x = v!.get(s.id);
+      r.vendas = {
+        hoje: { quantidade: num(x, "hq"), totalCentavos: num(x, "ht") },
+        mes: { quantidade: num(x, "mq"), totalCentavos: num(x, "mt") },
+      };
+    }
+    if (tem(s, "clientes")) r.clientesAtivos = num(c!.get(s.id), "n");
+    if (tem(s, "produtos")) {
+      r.estoque = {
+        criticos: num(e!.get(s.id), "n"),
+        comMinimo: (minimoDe[s.id] ?? null) !== null,
+      };
+    }
+    if (tem(s, "agenda")) r.atendimentosHoje = num(a!.get(s.id), "n");
+    if (tem(s, "financeiro")) {
+      r.contasVencidas = {
+        quantidade: num(f!.get(s.id), "n"),
+        totalCentavos: num(f!.get(s.id), "t"),
+      };
+    }
+    return r;
+  };
+
+  const resumo: InicioDto = {
+    hoje,
+    sistemas: sistemas.map((row) => {
+      const dados = configDe.get(row.id);
+      const config = dados?.config ?? null;
       return {
         sistema: publicSystem(row),
         modelo: config?.modelo ?? null,
         modulos: config?.modulos ?? [],
         corPrimaria: config?.aparencia.cor_primaria ?? null,
-        painel:
-          row.status === "active" && config
-            ? await calcularPainel(db, row.id, config, agora)
-            : null,
+        resumo: row.status === "active" && config ? resumoDe(row) : null,
         pedidosAbertos: contar("aberto", row.id) + contar("em_analise", row.id),
+        ultimaAtividade: dados?.atividade ?? row.updated_at,
       };
     }),
-  );
-  const resumo: InicioDto = {
-    hoje: paraCampoLocal(agora).slice(0, 10),
-    sistemas,
-    pedidos: {
-      abertos: contar("aberto"),
-      emAnalise: contar("em_analise"),
-      implementados: contar("implementado"),
-    },
-    ia,
+    truncado,
+    pedidos: admin
+      ? {
+          abertos: contar("aberto"),
+          emAnalise: contar("em_analise"),
+          implementados: contar("implementado"),
+        }
+      : null,
+    ia: admin ? await consumoDoMes(ctx.env, agora) : null,
   };
   return json({ inicio: resumo });
 };

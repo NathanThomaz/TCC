@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { InicioDto, PainelDto } from "../../shared/api";
+import type { InicioDto, ResumoSistemaDto } from "../../shared/api";
 import { alertasDoInicio, totaisDoInicio } from "./Inicio";
 
 // Tela inicial: o que precisa de atenção e os totais do dia vêm dos painéis de cada sistema.
@@ -14,26 +14,13 @@ const sistema = (id: string, status: "draft" | "active", atualizadoEm = AGORA) =
   criadoEm: 1,
   atualizadoEm,
 });
-const painel: PainelDto = {
-  hoje: "2026-11-13",
+const resumo: ResumoSistemaDto = {
   vendas: {
     hoje: { quantidade: 2, totalCentavos: 3000 },
     mes: { quantidade: 5, totalCentavos: 9000 },
-    abertas: 0,
-    canceladasNoMes: 0,
-    clientesNoMes: 2,
-    ultimas: [],
   },
-  estoque: {
-    produtosAtivos: 4,
-    semEstoque: 0,
-    minimo: 10,
-    abaixoDoMinimo: 2,
-    criticos: [],
-    unidades: 5,
-    valorVarejoCentavos: 100,
-  },
-  clientes: { ativos: 7, inativos: 0, novosNoMes: 1 },
+  clientesAtivos: 7,
+  estoque: { criticos: 2, comMinimo: true },
 };
 const dados: InicioDto = {
   hoje: "2026-11-13",
@@ -43,26 +30,30 @@ const dados: InicioDto = {
       modelo: "comercio",
       modulos: ["clientes", "produtos", "vendas", "estoque"],
       corPrimaria: "#1f4e79",
-      painel,
+      resumo,
       pedidosAbertos: 1,
+      ultimaAtividade: AGORA,
     },
     {
       sistema: sistema("b", "active"),
       modelo: "comercio",
       modulos: ["clientes", "produtos", "vendas", "estoque"],
       corPrimaria: null,
-      painel: { ...painel, estoque: { ...painel.estoque!, abaixoDoMinimo: 0 } },
+      resumo: { ...resumo, estoque: { criticos: 0, comMinimo: true } },
       pedidosAbertos: 0,
+      ultimaAtividade: AGORA,
     },
     {
-      sistema: sistema("c", "draft", AGORA - 5 * DIA),
+      sistema: sistema("c", "draft", AGORA - 10 * DIA),
       modelo: null,
       modulos: [],
       corPrimaria: null,
-      painel: null,
+      resumo: null,
       pedidosAbertos: 0,
+      ultimaAtividade: AGORA - 5 * DIA,
     },
   ],
+  truncado: false,
   pedidos: { abertos: 1, emAnalise: 0, implementados: 0 },
   ia: null,
 };
@@ -88,7 +79,8 @@ describe("tela inicial", () => {
   it("rascunho recente não vira alerta", () => {
     const recente = {
       ...dados,
-      sistemas: [{ ...dados.sistemas[2]!, sistema: sistema("c", "draft", AGORA - DIA) }],
+      // Criado há 10 dias, mas a configuração mexeu ontem: não está parado.
+      sistemas: [{ ...dados.sistemas[2]!, ultimaAtividade: AGORA - DIA }],
     };
     expect(alertasDoInicio(recente, AGORA)).toEqual([]);
   });

@@ -13,6 +13,8 @@ export interface AuthUser {
   role: "admin" | "secondary";
   /** Administrador responsável: o próprio id para admin, o dono para secundário. */
   adminId: string;
+  /** Nome cadastrado (display_name); null usa o e-mail. */
+  nome: string | null;
 }
 
 interface UserRow {
@@ -22,6 +24,7 @@ interface UserRow {
   role: "admin" | "secondary";
   status: "pending" | "active" | "disabled";
   owner_id: string | null;
+  display_name: string | null;
   valid_since: number | null;
   valid_since_checked_at: number | null;
 }
@@ -194,6 +197,7 @@ function toAuthUser(user: UserRow): AuthUser {
     email: user.email,
     role: user.role,
     adminId: user.role === "admin" ? user.id : (user.owner_id ?? user.id),
+    nome: user.display_name,
   };
 }
 
@@ -233,4 +237,18 @@ export async function requireSystemAccess(
     .first<{ status: string }>();
   if (access?.status !== "active") throw notFound();
   return system;
+}
+
+/**
+ * Dono do Nexus: o primeiro administrador provisionado (não criado por outro). Só ele cria
+ * administradores independentes (pedido do dono, 2026-11-13).
+ */
+export async function ehDonoDoNexus(db: D1Database, user: AuthUser): Promise<boolean> {
+  if (user.role !== "admin") return false;
+  const dono = await db
+    .prepare(
+      "SELECT id FROM users WHERE role = 'admin' AND created_by IS NULL ORDER BY created_at, rowid LIMIT 1",
+    )
+    .first<{ id: string }>();
+  return dono?.id === user.id;
 }

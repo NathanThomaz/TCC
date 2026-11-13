@@ -53,13 +53,14 @@ import {
   obterVenda,
   salvarItens,
 } from "./modules/operacao/vendas";
-import { getSession } from "./modules/session";
+import { editarPerfil, getSession } from "./modules/session";
 import {
   convidarConta,
   definirAcesso,
   definirStatusConta,
   listarContas,
   reenviarConvite,
+  definirSenha,
 } from "./modules/contas";
 import {
   adicionarRequisito,
@@ -147,12 +148,14 @@ export function createApp(
       { method: "GET", path: `${API_BASE}/health`, handler: getHealth },
       { method: "GET", path: `${API_BASE}/config`, handler: getPublicConfig },
       { method: "GET", path: `${API_BASE}/session`, handler: getSession },
+      { method: "PATCH", path: `${API_BASE}/session`, handler: editarPerfil },
       // Contas secundárias, só do administrador (seção 7).
       { method: "GET", path: `${API_BASE}/contas`, handler: listarContas },
       { method: "POST", path: `${API_BASE}/contas`, handler: convidarConta },
       { method: "POST", path: `${API_BASE}/contas/:id/convite`, handler: reenviarConvite },
       { method: "POST", path: `${API_BASE}/contas/:id/acessos`, handler: definirAcesso },
       { method: "POST", path: `${API_BASE}/contas/:id/status`, handler: definirStatusConta },
+      { method: "POST", path: `${API_BASE}/contas/:id/senha`, handler: definirSenha },
       { method: "GET", path: `${API_BASE}/inicio`, handler: obterInicio },
       { method: "GET", path: S, handler: listSystems },
       { method: "POST", path: S, handler: createSystem },

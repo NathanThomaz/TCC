@@ -6,16 +6,41 @@ import { ApiError, chamar } from "./cliente";
 
 export interface Usuario {
   email: string;
+  /** Nome cadastrado ou, sem ele, o início do e-mail com letra maiúscula. */
   nome: string;
+  /** A pessoa já cadastrou o nome (senão, o perfil sugere cadastrar). */
+  temNome: boolean;
   papel: "administrador" | "secundario";
+  /** Dono do Nexus: cria administradores independentes. */
+  dono: boolean;
+}
+
+/** "maria.souza@x.com" → "Maria Souza" (só enquanto a pessoa não cadastra o nome). */
+export function nomeDoEmail(email: string): string {
+  const local = email.split("@")[0] ?? email;
+  return local
+    .split(/[._-]+/)
+    .filter(Boolean)
+    .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
+    .join(" ");
 }
 
 export function paraUsuario(s: SessionResponse): Usuario {
+  const nome = s.usuario.nome?.trim();
   return {
     email: s.usuario.email,
-    nome: s.usuario.email.split("@")[0] ?? s.usuario.email,
+    nome: nome || nomeDoEmail(s.usuario.email),
+    temNome: !!nome,
     papel: s.usuario.papel === "admin" ? "administrador" : "secundario",
+    dono: s.usuario.dono,
   };
+}
+
+/** A pessoa ajusta o próprio nome. */
+export async function salvarNome(nome: string): Promise<Usuario> {
+  return paraUsuario(
+    await chamar<SessionResponse>("/session", { method: "PATCH", body: { nome } }),
+  );
 }
 
 async function exigirAuth() {

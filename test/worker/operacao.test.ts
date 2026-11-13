@@ -1691,14 +1691,25 @@ describe("módulos opcionais (ADR-006)", () => {
       pedidosAbertos: 0,
     });
     expect(deste.modulos).toContain("financeiro");
-    expect(deste.painel!.financeiro!.vencidosPagar).toEqual({ quantidade: 1, totalCentavos: 9000 });
-    expect(deste.painel!.estoque!.semEstoque).toBe(0);
+    expect(deste.resumo).toEqual({
+      vendas: {
+        hoje: { quantidade: 0, totalCentavos: 0 },
+        mes: { quantidade: 0, totalCentavos: 0 },
+      },
+      clientesAtivos: 0,
+      estoque: { criticos: 0, comMinimo: false },
+      atendimentosHoje: 0,
+      contasVencidas: { quantidade: 1, totalCentavos: 9000 },
+    });
+    expect(inicio.truncado).toBe(false);
+    expect(inicio.pedidos).toEqual({ abertos: 0, emAnalise: 0, implementados: 0 });
     const doRascunho = inicio.sistemas.find((x) => x.sistema.id === rascunho.id)!;
-    expect(doRascunho).toMatchObject({ painel: null, modelo: null, modulos: [] });
+    expect(doRascunho).toMatchObject({ resumo: null, modelo: null, modulos: [] });
 
     const sec = ((await call("GET", "/inicio", SEC)).body as unknown as { inicio: InicioDto })
       .inicio;
     expect(sec.ia).toBeNull();
+    expect(sec.pedidos).toBeNull();
     expect(sec.sistemas.map((x) => x.sistema.id)).toEqual([doSecundario]);
   });
 

@@ -1,22 +1,25 @@
 import { z } from "zod";
 import type { ContaDto, ContasApiBody } from "../../shared/api";
-import { authenticate, requireAdmin, type AuthUser } from "../auth/session";
+import { authenticate, ehDonoDoNexus, requireAdmin, type AuthUser } from "../auth/session";
 import { readJson } from "../http/body";
-import { AppError, conflict, notFound, unavailable } from "../http/errors";
+import { AppError, conflict, notFound, unavailable, validationFailed } from "../http/errors";
 import { beginIdempotent, recordStatement, replayAfterRace } from "../http/idempotency";
 import { json } from "../http/responses";
 import type { Handler, RequestContext } from "../http/router";
 import { isUnique, parse, triggerConflict } from "./comum";
 
-// Contas secundárias mínimas (seção 7 e ADR-002, P0): o administrador convida por e-mail, define
-// os sistemas que cada conta opera, revoga acessos e desativa contas. Não há cadastro público
-// nem senha conhecida pelo administrador: o Firebase envia o link de definir senha (que também
-// confirma o e-mail). Desativar bloqueia o login, invalida as sessões e revoga os acessos, então
-// reativar exige revisar os acessos de novo (seção 7). Secundário nunca gerencia contas (T02).
+// Contas secundárias mínimas (seção 7 e ADR-002, P0): o administrador cria a conta, define os
+// sistemas que ela opera, revoga acessos e desativa contas. Não há cadastro público. Desde
+// 2026-11-13 (pedido do dono), o administrador pode definir a senha e mandá-la à pessoa, sem
+// validação por e-mail; o link de definir senha por e-mail continua como alternativa. O dono do
+// Nexus (primeiro administrador) também cria administradores independentes, com dados próprios.
+// Desativar bloqueia o login, invalida as sessões e revoga os acessos, então reativar exige
+// revisar os acessos de novo (seção 7). Secundário nunca gerencia contas (T02).
 
 interface ContaRow {
   id: string;
   email: string;
+  role: ContaDto["papel"];
   display_name: string | null;
   status: ContaDto["status"];
   firebase_uid: string | null;
@@ -34,8 +37,9 @@ async function administrador(ctx: RequestContext): Promise<AuthUser> {
 async function carregarConta(ctx: RequestContext, admin: AuthUser, id: string): Promise<ContaRow> {
   // Conta de outro administrador responde 404 (não revela que existe).
   const row = await ctx.env.DB.prepare(
-    `SELECT id, email, display_name, status, firebase_uid, invited_uid, invite_sent_at, provider_sync
-     FROM users WHERE id = ? AND owner_id = ? AND role = 'secondary'`,
+    `SELECT id, email, role, display_name, status, firebase_uid, invited_uid, invite_sent_at, provider_sync
+     FROM users WHERE id = ?1
+       AND ((owner_id = ?2 AND role = 'secondary') OR (created_by = ?2 AND role = 'admin'))`,
   )
     .bind(id, admin.id)
     .first<ContaRow>();
@@ -47,9 +51,10 @@ async function listar(ctx: RequestContext, admin: AuthUser, so?: string): Promis
   const db = ctx.env.DB;
   const { results: contas } = await db
     .prepare(
-      `SELECT id, email, display_name, status, firebase_uid FROM users
-       WHERE owner_id = ?1 AND role = 'secondary' AND (?2 IS NULL OR id = ?2)
-       ORDER BY email COLLATE NOCASE LIMIT 200`,
+      `SELECT id, email, role, display_name, status, firebase_uid FROM users
+       WHERE ((owner_id = ?1 AND role = 'secondary') OR (created_by = ?1 AND role = 'admin'))
+         AND (?2 IS NULL OR id = ?2)
+       ORDER BY role DESC, email COLLATE NOCASE LIMIT 200`,
     )
     .bind(admin.id, so ?? null)
     .all<ContaRow>();
@@ -71,6 +76,7 @@ async function listar(ctx: RequestContext, admin: AuthUser, so?: string): Promis
     id: c.id,
     email: c.email,
     nome: c.display_name,
+    papel: c.role,
     status: c.status,
     sistemas: sistemas.map((s) => ({
       id: s.id,
@@ -110,13 +116,56 @@ async function enviarConvite(
   }
 }
 
-/** Repetição do convite: se o envio não saiu (falha ou interrupção), tenta de novo agora. */
-async function respostaDoConvite(ctx: RequestContext, admin: AuthUser, id: string, status: number) {
+/**
+ * Cria o acesso no Firebase com a senha definida pelo administrador (e-mail dado como confirmado)
+ * e grava o uid, para a conta poder ser desativada antes do primeiro acesso. A senha não é gravada.
+ */
+async function criarAcesso(
+  ctx: RequestContext,
+  conta: { id: string; email: string; display_name: string | null },
+  senha: string,
+): Promise<boolean> {
+  const contas = ctx.auth?.contas;
+  if (!contas) return false;
+  try {
+    const uid = await contas.createWithPassword(
+      conta.email,
+      senha,
+      conta.display_name ?? undefined,
+    );
+    await ctx.env.DB.prepare(
+      "UPDATE users SET invited_uid = COALESCE(invited_uid, ?), invite_sent_at = ?, updated_at = max(updated_at, ?) WHERE id = ?",
+    )
+      .bind(uid, ctx.clock.now(), ctx.clock.now(), conta.id)
+      .run();
+    return true;
+  } catch (error) {
+    ctx.log.warn("conta.acesso_falhou", { error });
+    return false;
+  }
+}
+
+/**
+ * Repetição do convite: se o acesso não saiu (falha ou interrupção), tenta de novo agora, com a
+ * senha do próprio pedido (que nunca é gravada) ou, sem senha, pelo link por e-mail.
+ */
+async function respostaDoConvite(
+  ctx: RequestContext,
+  admin: AuthUser,
+  id: string,
+  status: number,
+  senha?: string,
+) {
   const conta = await carregarConta(ctx, admin, id);
-  const enviado =
-    conta.invite_sent_at !== null ||
-    (conta.status === "pending" && (await enviarConvite(ctx, conta)));
-  const body: ContasApiBody = { conta: await uma(ctx, admin, id), conviteEnviado: enviado };
+  const pronto = conta.invite_sent_at !== null;
+  const feito =
+    pronto ||
+    (conta.status === "pending" &&
+      (senha ? await criarAcesso(ctx, conta, senha) : await enviarConvite(ctx, conta)));
+  const body: ContasApiBody = {
+    conta: await uma(ctx, admin, id),
+    ...(senha ? { acessoCriado: feito } : { conviteEnviado: feito }),
+  };
   return json(body, { status });
 }
 
@@ -129,10 +178,14 @@ export const listarContas: Handler = async (ctx) => {
   return json(body);
 };
 
+const senha = z.string().min(8, "A senha precisa de pelo menos 8 caracteres.").max(128);
 const ConviteBody = z.object({
   email: z.string().trim().toLowerCase().email().max(320),
   nome: z.string().trim().min(1).max(120).optional(),
   sistemas: z.array(z.string().min(1).max(100)).max(50).default([]),
+  /** Senha definida pelo administrador; sem ela, vai o link de definir senha por e-mail. */
+  senha: senha.optional(),
+  papel: z.enum(["secondary", "admin"]).default("secondary"),
 });
 
 /**
@@ -145,9 +198,18 @@ export const convidarConta: Handler = async (ctx) => {
   const cmd = { scope: "global", actorId: admin.id, command: "conta.convidar", body };
   const started = await beginIdempotent(ctx, cmd);
   if (started.kind === "replay") {
-    return respostaDoConvite(ctx, admin, started.resourceId, started.statusCode);
+    return respostaDoConvite(ctx, admin, started.resourceId, started.statusCode, body.senha);
   }
   if (!ctx.auth?.contas) throw conviteIndisponivel();
+  const novoAdmin = body.papel === "admin";
+  if (novoAdmin) {
+    if (!(await ehDonoDoNexus(ctx.env.DB, admin))) {
+      throw new AppError(403, "so_o_dono", "Só o dono do Nexus cria administradores.");
+    }
+    if (body.sistemas.length) {
+      throw validationFailed("Administrador independente tem os próprios sistemas, sem acessos.");
+    }
+  }
 
   const db = ctx.env.DB;
   const existente = await db
@@ -163,10 +225,19 @@ export const convidarConta: Handler = async (ctx) => {
     await db.batch([
       db
         .prepare(
-          `INSERT INTO users (id, email, display_name, role, status, owner_id, created_at, updated_at)
-           VALUES (?, ?, ?, 'secondary', 'pending', ?, ?, ?)`,
+          `INSERT INTO users (id, email, display_name, role, status, owner_id, created_by, created_at, updated_at)
+           VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?)`,
         )
-        .bind(id, body.email, body.nome ?? null, admin.id, now, now),
+        .bind(
+          id,
+          body.email,
+          body.nome ?? null,
+          novoAdmin ? "admin" : "secondary",
+          novoAdmin ? null : admin.id,
+          admin.id,
+          now,
+          now,
+        ),
       // O trigger system_access_coherent_insert recusa sistema de outro administrador.
       ...sistemas.map((s) =>
         db
@@ -178,15 +249,22 @@ export const convidarConta: Handler = async (ctx) => {
       db
         .prepare(
           `INSERT INTO audit_events (actor_id, action, target_type, target_id, details_json, created_at)
-           VALUES (?, 'conta.convidada', 'user', ?, json_object('sistemas', ?), ?)`,
+           VALUES (?, ?, 'user', ?, json_object('sistemas', ?, 'papel', ?), ?)`,
         )
-        .bind(admin.id, id, sistemas.length, now),
+        .bind(
+          admin.id,
+          body.senha ? "conta.criada_com_senha" : "conta.convidada",
+          id,
+          sistemas.length,
+          body.papel,
+          now,
+        ),
       recordStatement(ctx, cmd, started, id, 201, now),
     ]);
   } catch (error) {
     const replay = isUnique(error) ? await replayAfterRace(ctx, cmd, started) : null;
     if (replay?.kind === "replay") {
-      return respostaDoConvite(ctx, admin, replay.resourceId, replay.statusCode);
+      return respostaDoConvite(ctx, admin, replay.resourceId, replay.statusCode, body.senha);
     }
     if (isUnique(error))
       throw new AppError(409, "email_em_uso", "Já existe uma conta com este e-mail.");
@@ -196,7 +274,32 @@ export const convidarConta: Handler = async (ctx) => {
     triggerConflict(error, { acesso_incoerente: "Um dos sistemas não pertence a você." });
   }
 
-  return respostaDoConvite(ctx, admin, id, 201);
+  return respostaDoConvite(ctx, admin, id, 201, body.senha);
+};
+
+/** Define uma nova senha para a conta (esqueceu, ou o acesso ainda não tinha sido criado). */
+export const definirSenha: Handler = async (ctx) => {
+  const admin = await administrador(ctx);
+  const conta = await carregarConta(ctx, admin, ctx.params.id ?? "");
+  const nova = parse(z.object({ senha }), await readJson(ctx.request)).senha;
+  if (conta.status === "disabled") throw conflict("Reative a conta antes de trocar a senha.");
+  const contas = ctx.auth?.contas;
+  if (!contas) throw conviteIndisponivel();
+  const uid = await uidNoFirebase(ctx, conta.id);
+  try {
+    if (uid) await contas.setPassword(uid, nova);
+    else if (!(await criarAcesso(ctx, conta, nova))) throw new Error("acesso não criado");
+  } catch (error) {
+    ctx.log.warn("conta.senha_falhou", { error });
+    throw unavailable("Não foi possível trocar a senha agora. Tente de novo.");
+  }
+  const now = ctx.clock.now();
+  await ctx.env.DB.prepare(
+    "INSERT INTO audit_events (actor_id, action, target_type, target_id, created_at) VALUES (?, 'conta.senha_definida', 'user', ?, ?)",
+  )
+    .bind(admin.id, conta.id, now)
+    .run();
+  return json({ conta: await uma(ctx, admin, conta.id), acessoCriado: true });
 };
 
 /** Reenvia o link de definir senha a uma conta que ainda não fez o primeiro acesso. */
@@ -218,6 +321,9 @@ export const definirAcesso: Handler = async (ctx) => {
   const admin = await administrador(ctx);
   const conta = await carregarConta(ctx, admin, ctx.params.id ?? "");
   const { sistema, ativo } = parse(AcessoBody, await readJson(ctx.request));
+  if (conta.role === "admin") {
+    throw validationFailed("Administrador independente tem os próprios sistemas, sem acessos.");
+  }
   if (ativo && conta.status === "disabled") {
     throw conflict("Reative a conta antes de conceder acessos.");
   }

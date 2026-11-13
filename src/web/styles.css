@@ -179,3 +179,97 @@
     outline-offset: 2px;
   }
 }
+
+/* Fundo vivo (pedido do dono, 2026-11-13): manchas de cor do padrão visual que derivam devagar
+   atrás do conteúdo, para a aplicação não parecer estática. Ficam paradas para quem pede menos
+   movimento (prefers-reduced-motion) e não recebem clique nem leitor de tela. */
+.fundo-vivo {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.fundo-vivo span {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(90px);
+  opacity: 0.32;
+  will-change: transform;
+}
+.fundo-vivo span:nth-child(1) {
+  width: 44rem;
+  height: 44rem;
+  left: -12rem;
+  top: -14rem;
+  background: color-mix(in oklch, var(--color-primary) 60%, transparent);
+  animation: deriva-1 38s ease-in-out infinite alternate;
+}
+.fundo-vivo span:nth-child(2) {
+  width: 36rem;
+  height: 36rem;
+  right: -12rem;
+  top: 22%;
+  background: color-mix(in oklch, var(--color-marca-destaque) 40%, transparent);
+  animation: deriva-2 46s ease-in-out infinite alternate;
+}
+.fundo-vivo span:nth-child(3) {
+  width: 32rem;
+  height: 32rem;
+  left: 28%;
+  bottom: -16rem;
+  background: oklch(0.72 0.11 195 / 50%);
+  animation: deriva-3 54s ease-in-out infinite alternate;
+}
+.dark .fundo-vivo span {
+  opacity: 0.2;
+}
+@keyframes deriva-1 {
+  to {
+    transform: translate(16vw, 14vh) scale(1.15);
+  }
+}
+@keyframes deriva-2 {
+  to {
+    transform: translate(-18vw, 10vh) scale(0.9);
+  }
+}
+@keyframes deriva-3 {
+  to {
+    transform: translate(-10vw, -18vh) scale(1.2);
+  }
+}
+
+/* Saudação da tela inicial: gradiente da marca com um brilho que gira devagar. */
+.destaque-inicio {
+  background: linear-gradient(
+    120deg,
+    color-mix(in oklch, var(--color-primary) 16%, var(--color-card)),
+    var(--color-card) 55%,
+    color-mix(in oklch, var(--color-marca-destaque) 14%, var(--color-card))
+  );
+}
+.destaque-inicio::before {
+  content: "";
+  position: absolute;
+  inset: -60%;
+  background: conic-gradient(
+    from 0deg,
+    transparent,
+    color-mix(in oklch, var(--color-primary) 16%, transparent),
+    transparent 35%
+  );
+  animation: gira 26s linear infinite;
+}
+@keyframes gira {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fundo-vivo span,
+  .destaque-inicio::before {
+    animation: none;
+  }
+}

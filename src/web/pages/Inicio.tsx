@@ -19,7 +19,7 @@ import {
   Users,
   type LucideIcon,
 } from "lucide-react";
-import type { InicioDto } from "../../shared/api";
+import type { InicioDto, ResumoSistemaDto } from "../../shared/api";
 import { TEMPLATE_LABELS } from "../../shared/contract/catalog";
 import { formatarCentavos } from "../../shared/dominio/precos";
 import { obterInicio } from "@/api/sistemas";
@@ -54,39 +54,29 @@ const plural = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um :
 /** O que precisa de atenção, do mais urgente para o menos. */
 export function alertasDoInicio(d: InicioDto, agora = Date.now()): Alerta[] {
   const lista: Alerta[] = [];
-  for (const { sistema: s, painel: p, pedidosAbertos } of d.sistemas) {
+  for (const { sistema: s, resumo: r, pedidosAbertos, ultimaAtividade } of d.sistemas) {
     const base = { sistema: s.nome, sistemaId: s.id };
-    if (p?.financeiro) {
-      const n = p.financeiro.vencidosReceber.quantidade + p.financeiro.vencidosPagar.quantidade;
-      if (n > 0) {
-        lista.push({
-          ...base,
-          id: `${s.id}-vencidas`,
-          texto: `${plural(n, "conta vencida", "contas vencidas")} (${formatarCentavos(
-            p.financeiro.vencidosPagar.totalCentavos + p.financeiro.vencidosReceber.totalCentavos,
-          )})`,
-          caminho: "app/financeiro",
-          icone: Landmark,
-          peso: 1,
-        });
-      }
+    if (r?.contasVencidas && r.contasVencidas.quantidade > 0) {
+      lista.push({
+        ...base,
+        id: `${s.id}-vencidas`,
+        texto: `${plural(r.contasVencidas.quantidade, "conta vencida", "contas vencidas")} (${formatarCentavos(r.contasVencidas.totalCentavos)})`,
+        caminho: "app/financeiro",
+        icone: Landmark,
+        peso: 1,
+      });
     }
-    if (p?.estoque) {
-      const critico =
-        p.estoque.minimo === null ? p.estoque.semEstoque : (p.estoque.abaixoDoMinimo ?? 0);
-      if (critico > 0) {
-        lista.push({
-          ...base,
-          id: `${s.id}-estoque`,
-          texto:
-            p.estoque.minimo === null
-              ? `${plural(critico, "produto sem estoque", "produtos sem estoque")}`
-              : `${plural(critico, "produto abaixo do mínimo", "produtos abaixo do mínimo")}`,
-          caminho: "app/produtos",
-          icone: PackageX,
-          peso: 2,
-        });
-      }
+    if (r?.estoque && r.estoque.criticos > 0) {
+      lista.push({
+        ...base,
+        id: `${s.id}-estoque`,
+        texto: r.estoque.comMinimo
+          ? plural(r.estoque.criticos, "produto abaixo do mínimo", "produtos abaixo do mínimo")
+          : plural(r.estoque.criticos, "produto sem estoque", "produtos sem estoque"),
+        caminho: "app/produtos",
+        icone: PackageX,
+        peso: 2,
+      });
     }
     if (pedidosAbertos > 0) {
       lista.push({
@@ -98,9 +88,9 @@ export function alertasDoInicio(d: InicioDto, agora = Date.now()): Alerta[] {
         peso: 3,
       });
     }
-    // Rascunho parado há mais de 3 dias: lembrar de terminar a configuração.
-    if (s.status === "draft" && agora - s.atualizadoEm > 3 * DIA_MS) {
-      const dias = Math.floor((agora - s.atualizadoEm) / DIA_MS);
+    // Rascunho sem mexer na configuração há mais de 3 dias: lembrar de terminar.
+    if (s.status === "draft" && agora - ultimaAtividade > 3 * DIA_MS) {
+      const dias = Math.floor((agora - ultimaAtividade) / DIA_MS);
       lista.push({
         ...base,
         id: `${s.id}-rascunho`,
@@ -116,22 +106,17 @@ export function alertasDoInicio(d: InicioDto, agora = Date.now()): Alerta[] {
 
 /** Totais do dia e do mês somando os sistemas ativos. */
 export function totaisDoInicio(d: InicioDto) {
-  const ativos = d.sistemas.filter((s) => s.painel);
-  const soma = (f: (p: NonNullable<ItemSistema["painel"]>) => number) =>
-    ativos.reduce((t, s) => t + f(s.painel!), 0);
+  const resumos = d.sistemas.flatMap((s) => (s.resumo ? [s.resumo] : []));
+  const soma = (f: (r: ResumoSistemaDto) => number) => resumos.reduce((t, r) => t + f(r), 0);
   return {
-    vendasHoje: soma((p) => p.vendas?.hoje.totalCentavos ?? 0),
-    qtdHoje: soma((p) => p.vendas?.hoje.quantidade ?? 0),
-    vendasMes: soma((p) => p.vendas?.mes.totalCentavos ?? 0),
-    qtdMes: soma((p) => p.vendas?.mes.quantidade ?? 0),
-    clientes: soma((p) => p.clientes?.ativos ?? 0),
-    atendimentosHoje: soma((p) =>
-      p.agenda
-        ? p.agenda.hoje.agendados + p.agenda.hoje.emAtendimento + p.agenda.hoje.concluidos
-        : 0,
-    ),
-    temVendas: ativos.some((s) => s.painel?.vendas),
-    temAgenda: ativos.some((s) => s.painel?.agenda),
+    vendasHoje: soma((r) => r.vendas?.hoje.totalCentavos ?? 0),
+    qtdHoje: soma((r) => r.vendas?.hoje.quantidade ?? 0),
+    vendasMes: soma((r) => r.vendas?.mes.totalCentavos ?? 0),
+    qtdMes: soma((r) => r.vendas?.mes.quantidade ?? 0),
+    clientes: soma((r) => r.clientesAtivos ?? 0),
+    atendimentosHoje: soma((r) => r.atendimentosHoje ?? 0),
+    temVendas: resumos.some((r) => r.vendas),
+    temAgenda: resumos.some((r) => r.atendimentosHoje !== undefined),
   };
 }
 
@@ -177,7 +162,7 @@ export function Inicio() {
   const { usuario } = useAuth();
   const q = useQuery({ queryKey: ["inicio"], queryFn: obterInicio, refetchInterval: 60_000 });
   const d = q.data;
-  const nome = usuario?.nome.split(" ")[0] ?? "";
+  const saudacao = `Olá, ${usuario?.nome ?? ""}!`;
 
   const criar = (
     <CriarSistemaDialog
@@ -189,19 +174,20 @@ export function Inicio() {
     />
   );
 
-  if (q.isError) {
+  // Erro sem nenhum dado: tela de erro. Com dados em cache, mantém o resumo e avisa.
+  if (q.isError && !d) {
     return (
       <>
-        <PageHeader titulo={`Olá, ${nome}`} acoes={criar} />
+        <PageHeader titulo={saudacao} acoes={criar} />
         <ErrorState mensagem={q.error.message} onTentar={() => void q.refetch()} />
       </>
     );
   }
 
-  if (q.isPending || !d) {
+  if (!d) {
     return (
       <>
-        <PageHeader titulo={`Olá, ${nome}`} acoes={criar} />
+        <PageHeader titulo={saudacao} acoes={criar} />
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4" aria-busy="true">
           {[0, 1, 2, 3].map((i) => (
             <Skeleton key={i} className="h-32 rounded-xl" />
@@ -220,17 +206,35 @@ export function Inicio() {
 
   return (
     <>
-      <PageHeader
-        titulo={`Olá, ${nome}`}
-        descricao={`${dataPorExtenso(d.hoje)} · ${
-          ativos.length
-            ? `${plural(ativos.length, "sistema ativo", "sistemas ativos")}${
-                rascunhos.length ? ` e ${plural(rascunhos.length, "rascunho", "rascunhos")}` : ""
-              }`
-            : "Nenhum sistema ativo ainda"
-        }`}
-        acoes={criar}
-      />
+      <section
+        aria-labelledby="titulo-saudacao"
+        className="destaque-inicio relative mb-6 overflow-hidden rounded-2xl border p-6 shadow-card sm:p-8"
+      >
+        <div className="relative flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <p className="text-sm font-medium text-primary">{dataPorExtenso(d.hoje)}</p>
+            <h1 id="titulo-saudacao" className="mt-1 text-2xl font-semibold sm:text-3xl">
+              {saudacao}
+            </h1>
+            <p className="mt-2 max-w-xl text-muted-foreground">
+              {ativos.length === 0
+                ? "Monte seu primeiro sistema conversando com a IA: em poucos minutos ele está pronto."
+                : alertas.length
+                  ? `${plural(alertas.length, "item precisa", "itens precisam")} de atenção em ${plural(ativos.length, "sistema ativo", "sistemas ativos")}${rascunhos.length ? ` · ${plural(rascunhos.length, "rascunho", "rascunhos")}` : ""}.`
+                  : `Tudo em dia em ${plural(ativos.length, "sistema ativo", "sistemas ativos")}${rascunhos.length ? ` · ${plural(rascunhos.length, "rascunho", "rascunhos")}` : ""}.`}
+            </p>
+          </div>
+          {criar}
+        </div>
+      </section>
+      {q.isError && (
+        <p role="status" className="mb-4 rounded-lg bg-warning-soft px-3 py-2 text-sm text-warning">
+          Não foi possível atualizar agora; mostrando os últimos números.{" "}
+          <button className="underline" onClick={() => void q.refetch()}>
+            Tentar de novo
+          </button>
+        </p>
+      )}
 
       {d.sistemas.length === 0 ? (
         <PrimeirosPassos />
@@ -290,7 +294,7 @@ export function Inicio() {
                   alertas.length ? "bg-warning-soft text-warning" : "bg-success-soft text-success"
                 }
                 valor={String(alertas.length)}
-                detalhe={alertas.length ? "Veja a lista abaixo" : "Tudo em dia"}
+                detalhe={alertas.length ? "Veja a lista ao lado" : "Tudo em dia"}
               />
             </div>
           </section>
@@ -313,11 +317,12 @@ export function Inicio() {
                   <CartaoSistema key={s.sistema.id} item={s} />
                 ))}
               </div>
-              {conta("archived") > 0 && (
+              {(conta("archived") > 0 || d.truncado) && (
                 <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
                   <Archive className="size-3.5" aria-hidden />
-                  {plural(conta("archived"), "sistema arquivado", "sistemas arquivados")} em
-                  Sistemas.
+                  {d.truncado
+                    ? "Os números consideram os 100 sistemas mais relevantes (ativos primeiro)."
+                    : `${plural(conta("archived"), "sistema arquivado", "sistemas arquivados")} em Sistemas.`}
                 </p>
               )}
             </section>
@@ -356,34 +361,36 @@ export function Inicio() {
                 )}
               </section>
 
-              <section
-                aria-labelledby="titulo-pedidos"
-                className="rounded-xl border bg-card p-4 shadow-card"
-              >
-                <h2
-                  id="titulo-pedidos"
-                  className="mb-3 flex items-center gap-2 text-lg font-semibold"
+              {d.pedidos && (
+                <section
+                  aria-labelledby="titulo-pedidos"
+                  className="rounded-xl border bg-card p-4 shadow-card"
                 >
-                  <Inbox className="size-5 text-primary" aria-hidden /> Pedidos ao desenvolvedor
-                </h2>
-                <dl className="grid grid-cols-3 gap-2 text-center">
-                  {(
-                    [
-                      ["Abertos", d.pedidos.abertos],
-                      ["Em análise", d.pedidos.emAnalise],
-                      ["Prontos", d.pedidos.implementados],
-                    ] as const
-                  ).map(([rotulo, n]) => (
-                    <div key={rotulo} className="rounded-lg bg-muted/60 p-2">
-                      <dt className="text-xs text-muted-foreground">{rotulo}</dt>
-                      <dd className="text-xl font-semibold tabular-nums">{n}</dd>
-                    </div>
-                  ))}
-                </dl>
-                <p className="mt-3 text-xs text-muted-foreground">
-                  O que os módulos não cobrem vira pedido, registrado na conversa ou nos ajustes.
-                </p>
-              </section>
+                  <h2
+                    id="titulo-pedidos"
+                    className="mb-3 flex items-center gap-2 text-lg font-semibold"
+                  >
+                    <Inbox className="size-5 text-primary" aria-hidden /> Pedidos ao desenvolvedor
+                  </h2>
+                  <dl className="grid grid-cols-3 gap-2 text-center">
+                    {(
+                      [
+                        ["Abertos", d.pedidos.abertos],
+                        ["Em análise", d.pedidos.emAnalise],
+                        ["Prontos", d.pedidos.implementados],
+                      ] as const
+                    ).map(([rotulo, n]) => (
+                      <div key={rotulo} className="rounded-lg bg-muted/60 p-2">
+                        <dt className="text-xs text-muted-foreground">{rotulo}</dt>
+                        <dd className="text-xl font-semibold tabular-nums">{n}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                  <p className="mt-3 text-xs text-muted-foreground">
+                    O que os módulos não cobrem vira pedido, registrado na conversa ou nos ajustes.
+                  </p>
+                </section>
+              )}
 
               {d.ia && <UsoIa gasto={d.ia.gastoCentavos} teto={d.ia.tetoCentavos} />}
             </aside>
@@ -395,35 +402,18 @@ export function Inicio() {
 }
 
 function CartaoSistema({ item }: { item: ItemSistema }) {
-  const { sistema: s, painel: p, modelo, modulos } = item;
+  const { sistema: s, resumo: r, modelo, modulos } = item;
   const ativo = s.status === "active";
-  const critico = p?.estoque
-    ? p.estoque.minimo === null
-      ? p.estoque.semEstoque
-      : (p.estoque.abaixoDoMinimo ?? 0)
-    : 0;
-  const metricas: [string, string][] = p
-    ? [
-        ...(p.vendas
-          ? ([
-              ["Vendas hoje", formatarCentavos(p.vendas.hoje.totalCentavos)],
-              ["No mês", formatarCentavos(p.vendas.mes.totalCentavos)],
-            ] as [string, string][])
-          : []),
-        ...(p.agenda
-          ? ([
-              [
-                "Atendimentos hoje",
-                String(
-                  p.agenda.hoje.agendados + p.agenda.hoje.emAtendimento + p.agenda.hoje.concluidos,
-                ),
-              ],
-            ] as [string, string][])
-          : []),
-        ...(p.clientes
-          ? ([["Clientes ativos", String(p.clientes.ativos)]] as [string, string][])
-          : []),
-      ].slice(0, 4)
+  const critico = r?.estoque?.criticos ?? 0;
+  const metricas: [string, string][] = r
+    ? (
+        [
+          r.vendas && ["Vendas hoje", formatarCentavos(r.vendas.hoje.totalCentavos)],
+          r.vendas && ["No mês", formatarCentavos(r.vendas.mes.totalCentavos)],
+          r.atendimentosHoje !== undefined && ["Atendimentos hoje", String(r.atendimentosHoje)],
+          r.clientesAtivos !== undefined && ["Clientes ativos", String(r.clientesAtivos)],
+        ].filter(Boolean) as [string, string][]
+      ).slice(0, 4)
     : [];
 
   return (

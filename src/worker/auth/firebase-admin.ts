@@ -124,6 +124,14 @@ export interface AccountAdmin {
    * Devolve o uid da conta no Firebase.
    */
   invite(email: string): Promise<string>;
+  /**
+   * Cria a conta com a senha definida pelo administrador e o e-mail dado como confirmado (sem
+   * validação por e-mail, pedido do dono). Se o e-mail já existir no Firebase, troca a senha.
+   * Devolve o uid. A senha só passa por aqui: não é gravada nem registrada.
+   */
+  createWithPassword(email: string, password: string, displayName?: string): Promise<string>;
+  /** Troca a senha de uma conta existente. */
+  setPassword(uid: string, password: string): Promise<void>;
   /** Desativa no Firebase e invalida as sessões emitidas (validSince = agora). */
   disable(uid: string): Promise<void>;
   /** Reativa no Firebase (as sessões antigas continuam inválidas). */
@@ -212,6 +220,31 @@ export function createAccountAdmin(options: {
       );
       if (!envio.ok) throw new AccountLookupError(`sendOobCode falhou (${envio.status})`);
       return uid;
+    }),
+    createWithPassword: segura(async (email: string, password: string, displayName?: string) => {
+      const existente = await admin("accounts:lookup", { email: [email] });
+      const uid = existente.users?.[0]?.localId;
+      if (uid) {
+        await admin("accounts:update", {
+          localId: uid,
+          password,
+          emailVerified: true,
+          disableUser: false,
+          ...(displayName ? { displayName } : {}),
+        });
+        return uid;
+      }
+      const criado = await admin("accounts", {
+        email,
+        password,
+        emailVerified: true,
+        ...(displayName ? { displayName } : {}),
+      });
+      if (!criado.localId) throw new AccountLookupError("conta criada sem uid");
+      return criado.localId;
+    }),
+    setPassword: segura(async (uid: string, password: string) => {
+      await admin("accounts:update", { localId: uid, password });
     }),
     disable: segura(async (uid: string) => {
       await admin("accounts:update", {
