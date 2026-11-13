@@ -23,6 +23,8 @@ import {
 } from "../../ia/prompts";
 import { isUnique, parse } from "../comum";
 import { abrirOperacao, type Operacao } from "./contexto";
+import * as modulos from "./consulta-modulos";
+import { PAYMENT_LABELS } from "../../../shared/contract/catalog";
 
 // Chat de consulta (seção 15): SOMENTE LEITURA. A IA só classifica a pergunta em uma intenção
 // permitida e extrai período, produto e profissional; o backend autoriza, consulta com SQL
@@ -276,6 +278,22 @@ function regras(config: ConfigDraft): Resposta {
         return `Um pedido aberto segura o estoque por ${r.minutos} minutos sem alteração.`;
       case "par_atendimento":
         return `${nome(r.primeiro)} e ${nome(r.segundo)} com o mesmo profissional, nessa ordem.`;
+      case "estoque_minimo":
+        return `Estoque mínimo de ${r.unidades} unidades por produto (abaixo disso, aparece como crítico).`;
+      case "pedido_minimo":
+        return `Pedido mínimo de ${formatarCentavos(r.valor_centavos)} para concluir uma venda.`;
+      case "limite_unidades_por_item":
+        return `No máximo ${r.unidades} unidades de um mesmo produto por venda.`;
+      case "prazo_cancelamento_venda":
+        return `Venda concluída pode ser cancelada até ${r.dias} dias depois.`;
+      case "horario_funcionamento":
+        return `Atendimentos das ${r.abre} às ${r.fecha}, nos dias ${r.dias_semana.map((d) => ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"][d]).join(", ")}.`;
+      case "antecedencia_minima":
+        return `Agendar com pelo menos ${r.minutos} minutos de antecedência.`;
+      case "prazo_cancelamento_atendimento":
+        return `Cancelar ou remarcar atendimento até ${r.horas} horas antes do início.`;
+      case "formas_pagamento":
+        return `Formas de pagamento aceitas: ${r.formas.map((f) => PAYMENT_LABELS[f]).join(", ")}${r.prazo_dias ? `; a prazo vence em ${r.prazo_dias} dias` : ""}.`;
     }
   });
   return {
@@ -287,7 +305,7 @@ function regras(config: ConfigDraft): Resposta {
 
 const foraDoEscopo: Resposta = {
   texto:
-    "Eu só consulto informações deste sistema. Para vender, cancelar, ajustar estoque ou agendar, use as telas do sistema.",
+    "Eu consulto e explico as informações deste sistema, mas não altero nada pelo chat. Para vender, cancelar, ajustar estoque, agendar ou pagar, use as telas do sistema (pergunte “como faço…?” que eu explico o caminho).",
   filtros: [],
   origem: "chat de consulta (somente leitura)",
 };
@@ -304,6 +322,24 @@ async function responder(ctx: RequestContext, op: Operacao, c: Consulta): Promis
       return agenda(ctx, op, c);
     case "regras":
       return regras(op.config);
+    case "resumo_geral":
+      return modulos.resumoGeral(ctx, op);
+    case "mais_vendidos":
+      return modulos.maisVendidos(ctx, op, c);
+    case "clientes":
+      return modulos.clientes(ctx, op, c);
+    case "produtos":
+      return modulos.produtos(ctx, op, c);
+    case "profissionais":
+      return modulos.profissionais(ctx, op, c);
+    case "pagamentos":
+      return modulos.pagamentos(ctx, op, c);
+    case "compras":
+      return modulos.compras(ctx, op, c);
+    case "financeiro":
+      return modulos.financeiro(ctx, op, c);
+    case "como_usar":
+      return modulos.comoUsar(op.config, c.modulo);
     case "fora_do_escopo":
       return foraDoEscopo;
   }

@@ -205,3 +205,60 @@ describe("chat de consulta", () => {
     expect((await call("GET", p("/consulta"), ADMIN)).body.mensagens).toHaveLength(0);
   });
 });
+
+describe("chat de consulta: todos os módulos (pedido do dono, 2026-11-13)", () => {
+  const ultima = async (dados: Record<string, unknown>, texto = "pergunta") => {
+    roteiro.push(consulta(dados));
+    return (await perguntar(texto)).body.mensagens!.at(-1)!;
+  };
+
+  it("resumo geral traz os números do painel, sem a IA calcular nada", async () => {
+    const r = await ultima({ intencao: "resumo_geral" }, "Como está meu negócio?");
+    expect(r.texto).toContain("Vendas hoje: R$ 50,00 em 1 venda.");
+    expect(r.texto).toContain("Clientes ativos: 1");
+    expect(r.origem).toBe("mesmos números do painel do sistema");
+  });
+
+  it("mais vendidos e clientes que mais compram, no mês quando não há período", async () => {
+    const mais = await ultima({ intencao: "mais_vendidos" });
+    expect(mais.texto).toBe("1. Cerveja lata: 10 unidades, R$ 50,00");
+    expect(mais.filtros[0]).toContain("este mês, 01/11/2026 a 30/11/2026");
+    const top = await ultima({ intencao: "clientes" });
+    expect(top.texto).toContain("Clientes ativos: 1; inativos: 0.");
+    expect(top.texto).toContain("1. Bar do Zé: R$ 50,00 em 1 compra");
+    const um = await ultima({ intencao: "clientes", cliente: "zé" });
+    expect(um.texto).toContain("Bar do Zé (ativo): 1 compra, total R$ 50,00");
+  });
+
+  it("produtos com preços; regras completas; como usar", async () => {
+    const prod = await ultima({ intencao: "produtos", produto: "cerveja" });
+    expect(prod.texto).toBe("Cerveja lata: varejo R$ 5,00, atacado R$ 4,00, caixa com 12");
+    const regras = await ultima({ intencao: "regras" });
+    expect(regras.texto).toContain("Um pedido aberto segura o estoque por 30 minutos");
+    const como = await ultima({ intencao: "como_usar", modulo: "vendas" }, "Como faço uma venda?");
+    expect(como.texto).toContain("“Nova venda”");
+    expect(como.filtros).toEqual(["Módulo: Vendas"]);
+  });
+
+  it("módulo que o sistema não tem: diz que não há, sem inventar", async () => {
+    const r = await ultima({ intencao: "financeiro" }, "Tenho contas vencidas?");
+    expect(r.texto).toBe(
+      "Este sistema não tem o módulo de financeiro, então não há o que consultar sobre isso.",
+    );
+  });
+
+  it("a IA recebe as intenções novas e os argumentos de cliente, fornecedor e módulo", async () => {
+    await ultima({ intencao: "resumo_geral" });
+    const instrucoes = pedidos.at(-1)!.instrucoes;
+    for (const termo of [
+      "resumo_geral",
+      "financeiro",
+      "compras",
+      "como_usar",
+      "cliente:",
+      "fornecedor:",
+    ]) {
+      expect(instrucoes).toContain(termo);
+    }
+  });
+});
