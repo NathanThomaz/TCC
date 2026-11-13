@@ -138,7 +138,7 @@ export interface AccountAdmin {
     displayName?: string,
     existingUid?: string | null,
   ): Promise<string>;
-  /** Troca a senha de uma conta existente. */
+  /** Troca a senha de uma conta existente e dá o e-mail como confirmado. */
   setPassword(uid: string, password: string): Promise<void>;
   /** Desativa no Firebase e invalida as sessões emitidas (validSince = agora). */
   disable(uid: string): Promise<void>;
@@ -256,7 +256,9 @@ export function createAccountAdmin(options: {
       },
     ),
     setPassword: segura(async (uid: string, password: string) => {
-      await admin("accounts:update", { localId: uid, password });
+      // Senha definida pelo administrador vale como confirmação do e-mail (sem validação por
+      // e-mail, pedido do dono): sem isto, a conta convidada pelo link antigo não entraria.
+      await admin("accounts:update", { localId: uid, password, emailVerified: true });
     }),
     disable: segura(async (uid: string) => {
       await admin("accounts:update", {
