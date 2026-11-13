@@ -10,6 +10,7 @@ import { textoSobre } from "@/lib/cores";
 import { ROTULO_MODULO } from "@/lib/nexus";
 import { Link } from "@/lib/rotas";
 import { cn } from "@/lib/utils";
+import { Logotipo } from "@/components/nexus/Logotipo";
 
 // Aplicação de um sistema ativo (seção 6, área "Aplicação"): as telas se montam a partir da
 // configuração APROVADA — módulos, rótulos do menu, campos e aparência. Dados reais começam
@@ -82,7 +83,10 @@ export function Aplicacao() {
           >
             <ArrowLeft className="size-3" aria-hidden /> {app.sistema.nome}
           </Link>
-          <h1 className="text-xl font-semibold tracking-tight">{aparencia.titulo}</h1>
+          <div className="flex items-center gap-3">
+            <Logotipo sistema={id} nome={aparencia.nome} className="bg-card" />
+            <h1 className="text-xl font-semibold tracking-tight">{aparencia.titulo}</h1>
+          </div>
           {aparencia.texto_boas_vindas && (
             <p className="mt-1 text-sm opacity-90">{aparencia.texto_boas_vindas}</p>
           )}

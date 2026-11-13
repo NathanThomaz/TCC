@@ -1,4 +1,6 @@
 import { Link } from "@/lib/rotas";
+import { useAuth } from "@/lib/auth";
+import { EditorLogotipo, Logotipo } from "@/components/nexus/Logotipo";
 import { useParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -21,6 +23,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 export function Detalhe() {
   const { id = "" } = useParams();
   const q = useQuery({ queryKey: ["sistema", id], queryFn: () => obterSistema(id) });
+  const { usuario } = useAuth();
 
   const voltar = (
     <Link
@@ -56,6 +59,7 @@ export function Detalhe() {
       <PageHeader
         titulo={
           <span className="flex flex-wrap items-center gap-3">
+            <Logotipo sistema={id} nome={sistema.nome} />
             {sistema.nome}
             <StatusBadge status={sistema.status} />
           </span>
@@ -98,6 +102,18 @@ export function Detalhe() {
           </>
         }
       />
+
+      {usuario?.papel === "administrador" && sistema.status !== "archived" && (
+        <section
+          aria-labelledby="titulo-logotipo"
+          className="mb-6 rounded-xl border bg-card p-4 shadow-card"
+        >
+          <h2 id="titulo-logotipo" className="mb-3 text-lg font-semibold">
+            Logotipo
+          </h2>
+          <EditorLogotipo sistema={id} nome={sistema.nome} />
+        </section>
+      )}
 
       {sistema.status === "active" && (
         <div

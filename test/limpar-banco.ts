@@ -14,6 +14,7 @@ export async function limparBanco(): Promise<void> {
       "DELETE FROM products",
       "DELETE FROM customers",
       "DELETE FROM professionals",
+      "DELETE FROM system_logos",
       "DELETE FROM dev_request_events",
       "DELETE FROM dev_requests",
       "DELETE FROM requirements",

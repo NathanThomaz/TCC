@@ -137,6 +137,21 @@ beforeEach(async () => {
 });
 
 describe("abertura e isolamento", () => {
+  it("T09: a aplicação recém-ativada começa vazia (nada da prévia vira dado real)", async () => {
+    for (const recurso of ["/clientes", "/produtos", "/profissionais", "/vendas", "/agenda"]) {
+      const r = await call("GET", p(recurso), ADMIN);
+      expect(r.status, recurso).toBe(200);
+      const lista = Object.values(r.body).find(Array.isArray) as unknown[] | undefined;
+      expect(lista ?? [], recurso).toEqual([]);
+    }
+    const linhas = await env.DB.prepare(
+      `SELECT (SELECT COUNT(*) FROM customers) + (SELECT COUNT(*) FROM products)
+            + (SELECT COUNT(*) FROM professionals) + (SELECT COUNT(*) FROM sales)
+            + (SELECT COUNT(*) FROM appointments) AS n`,
+    ).first<{ n: number }>();
+    expect(linhas!.n).toBe(0);
+  });
+
   it("abre a aplicação ativa com a configuração aprovada, também para o secundário", async () => {
     const r = await call("GET", p("/app"), SEC);
     expect(r.status).toBe(200);
@@ -201,7 +216,7 @@ describe("cadastros", () => {
     expect((await call("GET", p("/clientes"), ADMIN)).body.clientes).toHaveLength(1);
   });
 
-  it("inativo não entra em venda nova; reativar devolve", async () => {
+  it("T27: inativo não entra em venda nova; reativar devolve", async () => {
     const c = await cliente();
     const prod = await produto();
     await entrada(prod, 10);
@@ -447,7 +462,7 @@ describe("estoque e reservas (seção 11)", () => {
     expect(await estoqueDe(prod)).toMatchObject({ fisico: 10, reservado: 0 });
   });
 
-  it("produto com reserva ativa não é inativado", async () => {
+  it("T27: produto com reserva ativa não é inativado", async () => {
     const c = await cliente();
     const prod = await produto();
     await entrada(prod, 10);
@@ -668,7 +683,7 @@ describe("agenda (seção 13)", () => {
     expect(servicos.map((s) => s.status)).toEqual(["cancelled", "cancelled"]);
   });
 
-  it("profissional com atendimento pendente não é inativado", async () => {
+  it("T27: profissional com atendimento pendente não é inativado", async () => {
     const { c, t } = await base();
     await par(c, t, AMANHA, AMANHA + 3 * H);
     const r = await call("POST", p(`/profissionais/${t}/status`), ADMIN, { status: "inactive" });
