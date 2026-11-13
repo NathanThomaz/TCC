@@ -69,6 +69,7 @@ import {
   obterCriacao,
 } from "./modules/criacao";
 import { cancelarPedido, comentarPedido, criarPedido, listarPedidos } from "./modules/pedidos";
+import { enviarLogotipo, obterLogotipo, removerLogotipo } from "./modules/logotipo";
 import { geminiDoAmbiente } from "./ia/gemini";
 import {
   activateSystem,
@@ -167,6 +168,10 @@ export function createApp(
       { method: "POST", path: `${O}/criacao/confirmar`, handler: confirmarResumo },
       { method: "POST", path: `${O}/criacao/gerar`, handler: gerarConfiguracao },
       { method: "POST", path: `${O}/criacao/corrigir`, handler: corrigirConfiguracao },
+      // Logotipo (seções 5 e 29): PNG/JPEG até 200 KB no D1.
+      { method: "GET", path: `${O}/logotipo`, handler: obterLogotipo },
+      { method: "PUT", path: `${O}/logotipo`, handler: enviarLogotipo },
+      { method: "DELETE", path: `${O}/logotipo`, handler: removerLogotipo },
       // Pedidos ao desenvolvedor (ADR-004).
       { method: "GET", path: `${O}/pedidos`, handler: listarPedidos },
       { method: "POST", path: `${O}/pedidos`, handler: criarPedido },

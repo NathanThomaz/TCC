@@ -22,6 +22,11 @@ export function quandoSessaoExpirar(fn: (() => void) | undefined) {
   aoExpirar = fn;
 }
 
+/** Para chamadas fora de `chamar` (ex.: arquivos): 401 com sessão aberta avisa a expiração. */
+export function sessaoRecusada(status: number, tinhaToken: boolean) {
+  if (status === 401 && tinhaToken) aoExpirar?.();
+}
+
 export async function tokenAtual(): Promise<string | null> {
   const auth = await obterAuth();
   return (await auth?.currentUser?.getIdToken()) ?? null;
@@ -52,7 +57,7 @@ export async function chamar<T>(
   if (resposta.ok && corpo) return corpo;
   // 422 do validador traz o diagnóstico no corpo; quem chama decide o que fazer.
   if (resposta.status === 422 && corpo && "issues" in corpo) return corpo;
-  if (resposta.status === 401 && token) aoExpirar?.();
+  sessaoRecusada(resposta.status, !!token);
   const erro = corpo?.error;
   throw new ApiError(
     erro?.code ?? (resposta.status >= 500 ? "servico_indisponivel" : "erro_desconhecido"),
