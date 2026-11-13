@@ -1,5 +1,6 @@
 import type {
   AtendimentoDto,
+  PainelDto,
   CamposInformativos,
   ClienteDto,
   MovimentoDto,
@@ -271,4 +272,10 @@ export async function acaoAtendimento(
     { method: "POST", body, chave },
   );
   return exigir(r.atendimentos, "atendimentos");
+}
+
+/** Painel do sistema ativo: números calculados no backend, só dos módulos ativos. */
+export async function obterPainel(sistema: string): Promise<PainelDto> {
+  const r = await chamar<{ painel?: PainelDto }>(`${base(sistema)}/painel`);
+  return exigir(r.painel, "painel");
 }

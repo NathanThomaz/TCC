@@ -13,6 +13,7 @@ import {
   PADRAO,
   PassoAjustes,
   pendenciasDosAjustes,
+  type Sugerida,
   type Sugerivel,
 } from "@/components/configurar/Ajustes";
 import { Revisao, type Resultado } from "@/components/configurar/Revisao";
@@ -56,7 +57,7 @@ export function Configurar() {
   const navigate = useNavigate();
   const q = useQuery({ queryKey: ["sistema", id], queryFn: () => obterSistema(id) });
   const [draft, setDraft] = useState<ConfigDraft | null>(null);
-  const [sugestoes, setSugestoesEstado] = useState<Sugerivel[]>([]);
+  const [sugestoes, setSugestoesEstado] = useState<Sugerida[]>([]);
   const [resultado, setResultado] = useState<Resultado | null>(null);
   const tituloRef = useRef<HTMLHeadingElement>(null);
   const chave = `nexus:rascunho:${id}`;
@@ -68,7 +69,7 @@ export function Configurar() {
     const salvo = ler<ConfigDraft>(chave);
     if (salvo) {
       setDraft(salvo);
-      setSugestoesEstado(ler<Sugerivel[]>(chaveSugestoes) ?? []);
+      setSugestoesEstado(ler<Sugerida[]>(chaveSugestoes) ?? []);
     } else {
       const inicial = comPadroes(q.data.ultimaConfig ?? rascunhoPadrao(q.data.sistema.nome));
       setDraft(inicial.draft);
@@ -88,7 +89,7 @@ export function Configurar() {
       setResultado(null); // conteúdo mudou: diagnóstico anterior deixa de valer
       return n;
     });
-  const setSugestoes = (s: Sugerivel[]) => {
+  const setSugestoes = (s: Sugerida[]) => {
     setSugestoesEstado(s);
     gravar(chaveSugestoes, s);
   };

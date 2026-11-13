@@ -2,6 +2,12 @@ import { z } from "zod";
 import type { AtendimentoDto, FaltaDto, ItemVendaDto, VendaDto } from "../../../shared/api";
 import type { ConfigDraft } from "../../../shared/contract/schema";
 import { calcularTotais, unidadesDoItem } from "../../../shared/dominio/precos";
+import {
+  conferirLimitePorItem,
+  conferirPedidoMinimo,
+  conferirPrazoCancelamentoAtendimento,
+  conferirPrazoCancelamentoVenda,
+} from "../../../shared/dominio/regras";
 import { readJson } from "../../http/body";
 import { AppError, conflict, notFound, validationFailed } from "../../http/errors";
 import {
@@ -176,6 +182,7 @@ interface ItemMontado {
  */
 async function montarItens(
   ctx: RequestContext,
+  config: ConfigDraft,
   systemId: string,
   pedido: z.infer<typeof itens>,
   anteriores: ItemRow[],
@@ -209,6 +216,8 @@ async function montarItens(
       throw validationFailed(`${produto.name} não é vendido em caixas.`);
     }
     if (unidades <= 0) throw validationFailed(`Informe a quantidade de ${produto.name}.`);
+    const limite = conferirLimitePorItem(config, produto.name, unidades);
+    if (limite) throw new AppError(422, limite.code, limite.message);
     return {
       produto: produto.id,
       caixas: pedidoItem.caixas,
@@ -417,7 +426,7 @@ export const criarVenda: Handler = async (ctx) => {
   const limite = limiteAtacado(op.config);
   const minutos = prazoReserva(op.config);
   const expiresAt = now + minutos * 60_000;
-  const montados = await montarItens(ctx, op.systemId, body.itens, [], now);
+  const montados = await montarItens(ctx, op.config, op.systemId, body.itens, [], now);
   const totais = calcularTotais(
     montados.map((m) => ({
       unidades: m.unidades,
@@ -488,6 +497,7 @@ export const salvarItens: Handler = async (ctx) => {
   const expiresAt = now + venda.reservation_minutes * 60_000;
   const montados = await montarItens(
     ctx,
+    op.config,
     op.systemId,
     body.itens,
     await carregarItens(ctx, id),
@@ -571,6 +581,8 @@ export const concluirVenda: Handler = async (ctx) => {
   if (venda.expires_at <= now)
     throw new AppError(409, "reserva_expirada", MENSAGENS.reserva_expirada);
   if (venda.revision !== revisao) throw conflict(MENSAGENS.venda_alterada);
+  const minimo = conferirPedidoMinimo(op.config, venda.total_cents);
+  if (minimo) throw new AppError(409, minimo.code, minimo.message);
 
   const db = ctx.env.DB;
   try {
@@ -611,6 +623,12 @@ export const cancelarVenda: Handler = async (ctx) => {
   if (venda.status !== "completed") {
     throw conflict("Só venda concluída é cancelada; um rascunho é descartado.");
   }
+  const prazoCancelar = conferirPrazoCancelamentoVenda(
+    op.config,
+    venda.completed_at ?? 0,
+    ctx.clock.now(),
+  );
+  if (prazoCancelar) throw new AppError(409, prazoCancelar.code, prazoCancelar.message);
 
   const servicos: AtendimentoDto[] = op.config.modulos.includes("agenda")
     ? (await atendimentosDaVenda(ctx, op.systemId, id)).filter((a) => a.status !== "cancelled")
@@ -624,6 +642,14 @@ export const cancelarVenda: Handler = async (ctx) => {
       { servicos: iniciados },
     );
   }
+  const prazoServicos = servicos.length
+    ? conferirPrazoCancelamentoAtendimento(
+        op.config,
+        Math.min(...servicos.map((a) => a.inicio)),
+        ctx.clock.now(),
+      )
+    : null;
+  if (prazoServicos) throw new AppError(409, prazoServicos.code, prazoServicos.message);
   if (servicos.length > 0 && !body.cancelarServicos) {
     return conflitoComDados(
       ctx,

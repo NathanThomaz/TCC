@@ -1,6 +1,10 @@
 import { z } from "zod";
 import type { AtendimentoDto } from "../../../shared/api";
 import { planejarAtendimento } from "../../../shared/dominio/agenda";
+import {
+  conferirHorarios,
+  conferirPrazoCancelamentoAtendimento,
+} from "../../../shared/dominio/regras";
 import { readJson } from "../../http/body";
 import { AppError, conflict, notFound, validationFailed } from "../../http/errors";
 import { beginIdempotent, recordStatement, replayAfterRace } from "../../http/idempotency";
@@ -168,6 +172,13 @@ export const agendar: Handler = async (ctx) => {
   const now = ctx.clock.now();
   const plano = planejarAtendimento(op.config, body, now);
   if ("erro" in plano) throw new AppError(422, plano.erro.code, plano.erro.message);
+  // Regras da agenda (ADR-005): antecedência mínima e horário de funcionamento.
+  const foraDaRegra = conferirHorarios(
+    op.config,
+    plano.planos.map((p) => p.intervalo),
+    now,
+  );
+  if (foraDaRegra) throw new AppError(422, foraDaRegra.code, foraDaRegra.message);
   const extra = camposValidos(op.config, "agendamentos", body.campos);
   if (body.venda !== undefined) {
     if (!op.config.modulos.includes("vendas"))
@@ -326,6 +337,12 @@ export const remarcar: Handler = async (ctx) => {
     }
   }
 
+  // Regras da agenda (ADR-005): prazo para remarcar (pelo horário atual) e o novo horário.
+  const prazo = conferirPrazoCancelamentoAtendimento(op.config, alvo.start_at, now);
+  if (prazo) throw new AppError(409, prazo.code, prazo.message);
+  const foraDaRegra = conferirHorarios(op.config, mudancas, now);
+  if (foraDaRegra) throw new AppError(422, foraDaRegra.code, foraDaRegra.message);
+
   const db = ctx.env.DB;
   try {
     await db.batch([
@@ -407,6 +424,13 @@ export const cancelarAtendimento: Handler = async (ctx) => {
     throw conflict("Atendimento iniciado ou concluído não é cancelado.");
   }
   const now = ctx.clock.now();
+  // O par cancela todos os não iniciados: o prazo vale pelo mais cedo deles (ADR-005).
+  const atingidos = atual.pair_id
+    ? (await carregarPar(ctx, op.systemId, atual.pair_id)).filter((a) => a.status === "scheduled")
+    : [atual];
+  const maisCedo = Math.min(...atingidos.map((a) => a.start_at), atual.start_at);
+  const prazo = conferirPrazoCancelamentoAtendimento(op.config, maisCedo, now);
+  if (prazo) throw new AppError(409, prazo.code, prazo.message);
   const db = ctx.env.DB;
   const alvo = atual.pair_id
     ? db

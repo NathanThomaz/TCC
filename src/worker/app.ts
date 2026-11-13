@@ -70,6 +70,7 @@ import {
 } from "./modules/criacao";
 import { cancelarPedido, comentarPedido, criarPedido, listarPedidos } from "./modules/pedidos";
 import { enviarLogotipo, obterLogotipo, removerLogotipo } from "./modules/logotipo";
+import { obterPainel } from "./modules/operacao/painel";
 import { geminiDoAmbiente } from "./ia/gemini";
 import {
   activateSystem,
@@ -179,6 +180,7 @@ export function createApp(
       { method: "POST", path: `${O}/pedidos/:pedidoId/cancelar`, handler: cancelarPedido },
       // Operação do sistema ativo (seções 10 a 14).
       { method: "GET", path: `${O}/app`, handler: obterApp },
+      { method: "GET", path: `${O}/painel`, handler: obterPainel },
       { method: "GET", path: `${O}/consulta`, handler: obterConsulta },
       { method: "POST", path: `${O}/consulta/mensagens`, handler: perguntar },
       { method: "GET", path: `${O}/clientes`, handler: listarClientes },
