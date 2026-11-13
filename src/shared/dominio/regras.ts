@@ -1,5 +1,5 @@
 import type { ConfigDraft, Rule } from "../contract/schema";
-import { paraCampoLocal } from "./agenda";
+import { deCampoLocal, paraCampoLocal } from "./agenda";
 
 // Regras do catálogo ampliado (ADR-005) aplicadas pela operação. Cada função devolve o erro em
 // linguagem de negócio (ou null) e é a mesma usada pelo backend e pelas telas.
@@ -89,11 +89,12 @@ export function conferirHorarios(
   const horario = regraDo(config, "horario_funcionamento");
   if (horario) {
     for (const i of intervalos) {
-      const inicio = paraCampoLocal(i.inicio);
-      const fim = paraCampoLocal(i.fim);
-      const [dataIni = "", horaIni = ""] = inicio.split("T");
-      const [dataFim = "", horaFim = ""] = fim.split("T");
-      const mesmoDia = dataIni === dataFim || (horaFim === "00:00" && horario.fecha === "23:59");
+      const dataIni = paraCampoLocal(i.inicio).slice(0, 10);
+      const abre = deCampoLocal(`${dataIni}T${horario.abre}`) ?? 0;
+      // "23:59" é o fim do dia: o atendimento pode terminar à meia-noite.
+      const fecha =
+        (deCampoLocal(`${dataIni}T${horario.fecha}`) ?? 0) +
+        (horario.fecha === "23:59" ? 60_000 : 0);
       if (!horario.dias_semana.includes(diaDaSemana(dataIni))) {
         const abertos = [...horario.dias_semana]
           .sort()
@@ -104,7 +105,7 @@ export function conferirHorarios(
           message: `Não há atendimento em ${DIAS[diaDaSemana(dataIni)]}. Dias de funcionamento: ${abertos}.`,
         };
       }
-      if (!mesmoDia || horaIni < horario.abre || horaFim > horario.fecha) {
+      if (i.inicio < abre || i.fim > fecha) {
         return {
           code: "fora_do_horario",
           message: `O atendimento precisa começar e terminar entre ${horario.abre} e ${horario.fecha}.`,

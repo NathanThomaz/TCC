@@ -8,6 +8,7 @@ import {
 } from "../../src/shared/dominio/agenda";
 import { validarCampos } from "../../src/shared/dominio/campos";
 import { calcularTotais, unidadesDoItem } from "../../src/shared/dominio/precos";
+import { conferirHorarios } from "../../src/shared/dominio/regras";
 import { DISTRIBUIDORA } from "../fixtures/distribuidora";
 
 // Regras puras compartilhadas entre o Worker e as telas (seções 10 e 13).
@@ -82,5 +83,49 @@ describe("campos informativos", () => {
     expect(validarCampos(DISTRIBUIDORA, "agendamentos", { endereco: "Rua A" })).toEqual({
       valores: { endereco: "Rua A" },
     });
+  });
+});
+
+describe("regras de horário (ADR-005)", () => {
+  // Sexta, 06/11/2026, no fuso de São Paulo (UTC−3).
+  const sexta = (h: number, m = 0, seg = 0) => Date.UTC(2026, 10, 6, h + 3, m, seg);
+  const config = {
+    ...DISTRIBUIDORA,
+    regras: [
+      ...DISTRIBUIDORA.regras,
+      {
+        tipo: "horario_funcionamento" as const,
+        abre: "08:00",
+        fecha: "12:00",
+        dias_semana: [5],
+        requisitos: ["REQ-01"],
+      },
+    ],
+  };
+  const agora = sexta(0);
+
+  it("aceita do horário de abertura até o fechamento, inclusive", () => {
+    expect(conferirHorarios(config, [{ inicio: sexta(8), fim: sexta(12) }], agora)).toBeNull();
+  });
+
+  it("conta os segundos: terminar 30 s depois do fechamento é recusado", () => {
+    expect(
+      conferirHorarios(config, [{ inicio: sexta(11, 0, 30), fim: sexta(12, 0, 30) }], agora)?.code,
+    ).toBe("fora_do_horario");
+    expect(conferirHorarios(config, [{ inicio: sexta(7, 59), fim: sexta(9) }], agora)?.code).toBe(
+      "fora_do_horario",
+    );
+  });
+
+  it("fechamento às 23:59 permite terminar à meia-noite", () => {
+    const ateMeiaNoite = {
+      ...config,
+      regras: config.regras.map((r) =>
+        r.tipo === "horario_funcionamento" ? { ...r, fecha: "23:59" } : r,
+      ),
+    };
+    expect(
+      conferirHorarios(ateMeiaNoite, [{ inicio: sexta(23), fim: sexta(24) }], agora),
+    ).toBeNull();
   });
 });

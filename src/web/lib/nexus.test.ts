@@ -49,6 +49,22 @@ describe("modo avançado", () => {
     expect(bloqueantes(d)).toEqual([]);
   });
 
+  it("trocar de modelo tira também as regras novas dos módulos que saíram (ADR-005)", () => {
+    const completo: ConfigDraft = comModelo(rascunhoPadrao("Loja"), "comercio_com_servicos");
+    completo.regras = [
+      { tipo: "pedido_minimo", valor_centavos: 5_000, requisitos: [] },
+      { tipo: "estoque_minimo", unidades: 10, requisitos: [] },
+      { tipo: "antecedencia_minima", minutos: 60, requisitos: [] },
+    ];
+    expect(reconciliarModelo(comModelo(completo, "servicos")).regras.map((r) => r.tipo)).toEqual([
+      "antecedencia_minima",
+    ]);
+    expect(reconciliarModelo(comModelo(completo, "comercio")).regras.map((r) => r.tipo)).toEqual([
+      "pedido_minimo",
+      "estoque_minimo",
+    ]);
+  });
+
   it("trocar de comércio para serviços tira as regras de vendas e a configuração continua válida", () => {
     const comercio: ConfigDraft = {
       ...rascunhoPadrao("Loja"),

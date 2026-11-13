@@ -5,6 +5,7 @@ import { calcularTotais, unidadesDoItem } from "../../../shared/dominio/precos";
 import {
   conferirLimitePorItem,
   conferirPedidoMinimo,
+  conferirPrazoCancelamentoAtendimento,
   conferirPrazoCancelamentoVenda,
 } from "../../../shared/dominio/regras";
 import { readJson } from "../../http/body";
@@ -641,6 +642,14 @@ export const cancelarVenda: Handler = async (ctx) => {
       { servicos: iniciados },
     );
   }
+  const prazoServicos = servicos.length
+    ? conferirPrazoCancelamentoAtendimento(
+        op.config,
+        Math.min(...servicos.map((a) => a.inicio)),
+        ctx.clock.now(),
+      )
+    : null;
+  if (prazoServicos) throw new AppError(409, prazoServicos.code, prazoServicos.message);
   if (servicos.length > 0 && !body.cancelarServicos) {
     return conflitoComDados(
       ctx,

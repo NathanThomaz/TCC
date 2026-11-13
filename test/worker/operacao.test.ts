@@ -1043,6 +1043,46 @@ describe("regras do catálogo (ADR-005)", () => {
     expect(remarcar.body.error!.code).toBe("prazo_cancelamento_atendimento");
   });
 
+  it("prazo para cancelar atendimento vale pelo par e pela venda (revisão do Codex)", async () => {
+    await ativarCom([{ tipo: "prazo_cancelamento_atendimento", horas: 24 }]);
+    const c = await cliente();
+    const t = await tecnico();
+    const [, segundo] = (
+      await call("POST", p("/agenda"), ADMIN, {
+        cliente: c,
+        profissional: t,
+        tipo: "instalacao",
+        inicio: NOW + 5 * H,
+        inicioSegundo: NOW + 72 * H,
+        campos: { endereco: "Rua A, 10" },
+      })
+    ).body.atendimentos!;
+    const peloSegundo = await call("POST", p(`/agenda/${segundo!.id}/cancelar`), ADMIN, {
+      motivo: "Chuva",
+    });
+    expect(peloSegundo.body.error!.code).toBe("prazo_cancelamento_atendimento");
+
+    const prod = await produto();
+    await entrada(prod, 10);
+    const v = (await venda(c, [{ produto: prod, unidades: 2 }])).body.venda!;
+    await call("POST", p(`/vendas/${v.id}/concluir`), ADMIN, { revisao: v.revisao });
+    await call("POST", p("/agenda"), ADMIN, {
+      cliente: c,
+      profissional: t,
+      tipo: "instalacao",
+      inicio: NOW + 6 * H,
+      inicioSegundo: NOW + 9 * H,
+      campos: { endereco: "Rua A, 10" },
+      venda: v.id,
+    });
+    const pelaVenda = await call("POST", p(`/vendas/${v.id}/cancelar`), ADMIN, {
+      motivo: "Desistiu",
+      cancelarServicos: true,
+    });
+    expect(pelaVenda.body.error!.code).toBe("prazo_cancelamento_atendimento");
+    expect((await call("GET", p(`/vendas/${v.id}`), ADMIN)).body.venda!.status).toBe("completed");
+  });
+
   it("painel: vendas do dia e do mês, abertas, clientes ativos, estoque abaixo do mínimo e agenda", async () => {
     await ativarCom([{ tipo: "estoque_minimo", unidades: 10 }]);
     const c = await cliente();

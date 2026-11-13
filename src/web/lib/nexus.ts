@@ -1,4 +1,5 @@
 import type { Campo, ConfigDraft, Modelo, Modulo, Regra } from "@/types/nexus";
+import { RULE_MODULES } from "../../shared/contract/catalog";
 
 export const MODULOS_POR_MODELO: Record<Modelo, Modulo[]> = {
   comercio: ["clientes", "produtos", "vendas", "estoque"],
@@ -129,17 +130,12 @@ export function comRequisitosGerados(d: ConfigDraft): ConfigDraft {
   };
 }
 
-const REGRAS_DE_VENDAS: Regra["tipo"][] = ["limite_atacado", "unidades_por_caixa", "prazo_reserva"];
-
 /** Ao trocar o modelo, tira as regras e os atendimentos de módulos que deixaram de existir. */
 export function reconciliarModelo(d: ConfigDraft): ConfigDraft {
-  const vendas = d.modulos.includes("vendas");
   const agenda = d.modulos.includes("agenda");
   return {
     ...d,
-    regras: d.regras.filter((r) =>
-      r.tipo === "par_atendimento" ? agenda : !REGRAS_DE_VENDAS.includes(r.tipo) || vendas,
-    ),
+    regras: d.regras.filter((r) => RULE_MODULES[r.tipo].every((m) => d.modulos.includes(m))),
     tipos_atendimento: agenda ? d.tipos_atendimento : [],
     campos: d.campos.filter((c) => entidadesDosModulos(d.modulos).includes(c.entidade)),
   };

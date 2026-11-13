@@ -424,7 +424,12 @@ export const cancelarAtendimento: Handler = async (ctx) => {
     throw conflict("Atendimento iniciado ou concluído não é cancelado.");
   }
   const now = ctx.clock.now();
-  const prazo = conferirPrazoCancelamentoAtendimento(op.config, atual.start_at, now);
+  // O par cancela todos os não iniciados: o prazo vale pelo mais cedo deles (ADR-005).
+  const atingidos = atual.pair_id
+    ? (await carregarPar(ctx, op.systemId, atual.pair_id)).filter((a) => a.status === "scheduled")
+    : [atual];
+  const maisCedo = Math.min(...atingidos.map((a) => a.start_at), atual.start_at);
+  const prazo = conferirPrazoCancelamentoAtendimento(op.config, maisCedo, now);
   if (prazo) throw new AppError(409, prazo.code, prazo.message);
   const db = ctx.env.DB;
   const alvo = atual.pair_id
