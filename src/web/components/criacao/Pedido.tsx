@@ -93,22 +93,31 @@ function Secao({ titulo, children }: { titulo: string; children: ReactNode }) {
 function Ficha({ pedido, sistema }: { pedido: PedidoDto; sistema: string | undefined }) {
   const qc = useQueryClient();
   const [comentario, setComentario] = useState("");
-  // Mesma chave enquanto o conteúdo não mudar: repetir depois de uma falha não duplica.
-  const chave = useChavePorConteudo();
+  // Uma chave por intenção: repetir depois de uma falha não duplica; depois de um sucesso, o
+  // próximo envio (mesmo com texto igual) é outra intenção.
+  const chaveComentario = useChavePorConteudo();
+  const chaveCancelar = useChavePorConteudo();
+  const [enviados, setEnviados] = useState(0);
   const atualizar = () => {
     void qc.invalidateQueries({ queryKey: ["pedidos", sistema] });
     void qc.invalidateQueries({ queryKey: ["criacao", sistema] });
   };
   const comentar = useMutation({
     mutationFn: (texto: string) =>
-      comentarPedido(sistema!, pedido.id, texto, chave({ comentar: pedido.id, texto })),
+      comentarPedido(
+        sistema!,
+        pedido.id,
+        texto,
+        chaveComentario({ pedido: pedido.id, texto, enviados }),
+      ),
     onSuccess: () => {
       setComentario("");
+      setEnviados((n) => n + 1);
       atualizar();
     },
   });
   const cancelar = useMutation({
-    mutationFn: () => cancelarPedido(sistema!, pedido.id, chave({ cancelar: pedido.id })),
+    mutationFn: () => cancelarPedido(sistema!, pedido.id, chaveCancelar({ cancelar: pedido.id })),
     onSuccess: atualizar,
   });
 

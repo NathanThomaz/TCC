@@ -331,16 +331,19 @@ function PedidoAoDesenvolvedor({ sistemaId }: { sistemaId: string }) {
   });
   const [titulo, setTitulo] = useState("");
   const [texto, setTexto] = useState("");
-  // Mesma chave enquanto o pedido não mudar: repetir depois de uma falha não o duplica.
+  // Mesma chave enquanto o pedido não mudar: repetir depois de uma falha não o duplica; depois de
+  // um sucesso, registrar de novo (mesmo igual) é outra intenção.
   const chave = useChavePorConteudo();
+  const [enviados, setEnviados] = useState(0);
   const m = useMutation({
     mutationFn: () => {
       const corpo = { titulo: titulo.trim(), pedido: texto.trim() };
-      return criarPedido(sistemaId, corpo.titulo, corpo.pedido, chave(corpo));
+      return criarPedido(sistemaId, corpo.titulo, corpo.pedido, chave({ ...corpo, enviados }));
     },
     onSuccess: () => {
       setTitulo("");
       setTexto("");
+      setEnviados((n) => n + 1);
       void qc.invalidateQueries({ queryKey: ["pedidos", sistemaId] });
     },
   });

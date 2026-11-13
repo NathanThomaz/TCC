@@ -41,7 +41,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ORDEM_ASSUNTOS, pendenciasDaEntrevista, ROTULO_ASSUNTO } from "@/lib/criacao";
-import { ROTULO_MODULO, textoDaRegra } from "@/lib/nexus";
+import { ROTULO_ENTIDADE, ROTULO_MODULO, textoDaRegra } from "@/lib/nexus";
+
+const TIPO_CAMPO = { texto: "texto", numero: "número", data: "data", lista: "lista" } as const;
 import { Link, useNavigate } from "@/lib/rotas";
 
 // Revisão da criação guiada (ADR-004): o dono confere em linguagem de negócio o que fica pronto e
@@ -255,7 +257,16 @@ export function CriarRevisao() {
                 "Regras",
                 e.config.regras.map((r) => textoDaRegra(r, e.config!)).join(" · ") || "Nenhuma",
               ],
-              ["Informações extras", e.config.campos.map((c) => c.rotulo).join(", ") || "Nenhuma"],
+              [
+                "Informações extras",
+                e.config.campos
+                  .map((c) => {
+                    const opcoes = c.tipo === "lista" && c.opcoes ? `: ${c.opcoes.join(", ")}` : "";
+                    const obrigatorio = c.obrigatorio ? ", obrigatório" : "";
+                    return `${c.rotulo} (${ROTULO_ENTIDADE[c.entidade].toLowerCase()}, ${TIPO_CAMPO[c.tipo]}${opcoes}${obrigatorio})`;
+                  })
+                  .join(" · ") || "Nenhuma",
+              ],
               ...(e.config.tipos_atendimento.length
                 ? [
                     [
