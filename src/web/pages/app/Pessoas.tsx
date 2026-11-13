@@ -40,8 +40,8 @@ import { rotuloModulo, useApp } from "./Aplicacao";
 
 const ENTIDADE = { clientes: "clientes", profissionais: "profissionais" } as const;
 
-type Filtro = "todos" | "active" | "inactive";
-type Ordem = "nome" | "total" | "ultima" | "proximo";
+export type Filtro = "todos" | "active" | "inactive";
+export type Ordem = "nome" | "total" | "ultima" | "proximo";
 
 /** Valor de um campo informativo como texto da célula (data em dd/mm/aaaa). */
 export function textoDoCampo(campo: Campo, valor: CamposInformativos[string] | undefined): string {
@@ -64,6 +64,39 @@ const normalizar = (t: string) =>
     .replace(/\p{Diacritic}/gu, "")
     .toLowerCase();
 
+/** Busca (nome e campos, no valor guardado e no mostrado), situação e ordem da tabela. */
+export function filtrarPessoas(
+  pessoas: ClienteDto[],
+  campos: Campo[],
+  busca: string,
+  filtro: Filtro,
+  ordem: Ordem,
+): ClienteDto[] {
+  const termo = normalizar(busca.trim());
+  const lista = pessoas.filter(
+    (p) =>
+      (filtro === "todos" || p.status === filtro) &&
+      (!termo ||
+        normalizar(
+          [
+            p.nome,
+            ...Object.values(p.campos).map(String),
+            ...campos.map((c) => textoDoCampo(c, p.campos[c.id])),
+          ].join(" "),
+        ).includes(termo)),
+  );
+  const r = (p: ClienteDto) => p.resumo;
+  const porOrdem: Record<Ordem, (a: ClienteDto, b: ClienteDto) => number> = {
+    nome: (a, b) => a.nome.localeCompare(b.nome, "pt-BR"),
+    total: (a, b) => (r(b)?.totalCentavos ?? 0) - (r(a)?.totalCentavos ?? 0),
+    ultima: (a, b) => (r(b)?.ultimaCompra ?? 0) - (r(a)?.ultimaCompra ?? 0),
+    // Sem próximo atendimento vai para o fim.
+    proximo: (a, b) =>
+      (r(a)?.proximoAtendimento ?? Infinity) - (r(b)?.proximoAtendimento ?? Infinity),
+  };
+  return [...lista].sort(porOrdem[ordem]);
+}
+
 export function Pessoas({ tipo }: { tipo: TipoPessoa }) {
   const app = useApp();
   const qc = useQueryClient();
@@ -79,32 +112,20 @@ export function Pessoas({ tipo }: { tipo: TipoPessoa }) {
     onError: (e) => toast.error(e.message),
   });
 
-  const campos = app.config.campos.filter((c) => c.entidade === ENTIDADE[tipo]);
+  const campos = useMemo(
+    () => app.config.campos.filter((c) => c.entidade === ENTIDADE[tipo]),
+    [app.config.campos, tipo],
+  );
   const temVendas = tipo === "clientes" && app.config.modulos.includes("vendas");
   const temAgenda = app.config.modulos.includes("agenda");
   const [busca, setBusca] = useState("");
   const [filtro, setFiltro] = useState<Filtro>("todos");
   const [ordem, setOrdem] = useState<Ordem>("nome");
 
-  const linhas = useMemo(() => {
-    const termo = normalizar(busca.trim());
-    const lista = (q.data ?? []).filter(
-      (p) =>
-        (filtro === "todos" || p.status === filtro) &&
-        (!termo ||
-          normalizar([p.nome, ...Object.values(p.campos).map(String)].join(" ")).includes(termo)),
-    );
-    const r = (p: ClienteDto) => p.resumo;
-    const porOrdem: Record<Ordem, (a: ClienteDto, b: ClienteDto) => number> = {
-      nome: (a, b) => a.nome.localeCompare(b.nome, "pt-BR"),
-      total: (a, b) => (r(b)?.totalCentavos ?? 0) - (r(a)?.totalCentavos ?? 0),
-      ultima: (a, b) => (r(b)?.ultimaCompra ?? 0) - (r(a)?.ultimaCompra ?? 0),
-      // Sem próximo atendimento vai para o fim.
-      proximo: (a, b) =>
-        (r(a)?.proximoAtendimento ?? Infinity) - (r(b)?.proximoAtendimento ?? Infinity),
-    };
-    return [...lista].sort(porOrdem[ordem]);
-  }, [q.data, busca, filtro, ordem]);
+  const linhas = useMemo(
+    () => filtrarPessoas(q.data ?? [], campos, busca, filtro, ordem),
+    [q.data, campos, busca, filtro, ordem],
+  );
 
   const ativos = (q.data ?? []).filter((p) => p.status === "active").length;
   const cabecalho = [

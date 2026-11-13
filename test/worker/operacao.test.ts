@@ -1197,6 +1197,18 @@ describe("regras do catálogo (ADR-005)", () => {
     expect(painel.vendas!.mes.quantidade).toBe(2);
   });
 
+  it("painel: concluído no mês conta pela data da conclusão, não pela do agendamento", async () => {
+    await ativarCom([]);
+    const c = await cliente();
+    const t = await tecnico();
+    agora = Date.UTC(2026, 9, 31, 12, 0); // 31/10, 09:00 em São Paulo
+    const [inst] = (await par(c, t, agora + 4 * H)).body.atendimentos!; // 31/10 às 13:00
+    await call("POST", p(`/agenda/${inst!.id}/iniciar`), ADMIN, {});
+    agora = Date.UTC(2026, 10, 1, 12, 0); // 01/11: concluído já em novembro
+    await call("POST", p(`/agenda/${inst!.id}/concluir`), ADMIN, {});
+    expect((await painelDe()).agenda!.concluidosNoMes).toBe(1);
+  });
+
   it("painel: só os números do próprio sistema e só dos módulos que ele tem", async () => {
     await ativarCom([]);
     const prod = await produto();

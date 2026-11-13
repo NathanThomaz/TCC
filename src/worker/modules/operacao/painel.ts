@@ -174,7 +174,7 @@ export const obterPainel: Handler = async (ctx) => {
              (SELECT COUNT(*) FROM appointments WHERE system_id = ?1 AND status = 'scheduled'
                 AND start_at >= ?2 AND start_at < ?2 + 7 * 86400000) AS semana,
              (SELECT COUNT(*) FROM appointments WHERE system_id = ?1 AND status = 'done'
-                AND start_at >= ?3 AND start_at < ?4) AS concluidos,
+                AND done_at >= ?3 AND done_at < ?4) AS concluidos,
              (SELECT COUNT(*) FROM appointments WHERE system_id = ?1 AND status = 'cancelled'
                 AND cancelled_at >= ?3 AND cancelled_at < ?4) AS cancelados,
              (SELECT COUNT(*) FROM professionals WHERE system_id = ?1 AND status = 'active')

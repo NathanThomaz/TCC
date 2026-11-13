@@ -150,10 +150,8 @@ export function indicadores(p: PainelDto): IndicadorDados[] {
         rotulo: "Clientes que compraram",
         icone: UserCheck,
         valor: String(p.vendas.clientesNoMes),
-        detalhe:
-          c.ativos > 0
-            ? `${Math.round((p.vendas.clientesNoMes / c.ativos) * 100)}% dos ativos, no mês`
-            : "No mês",
+        // Contagem simples: quem comprou e depois foi inativado continua contando no mês.
+        detalhe: "Diferentes, com venda concluída no mês",
       });
     } else {
       add({
