@@ -51,7 +51,7 @@ async function abrir(ctx: RequestContext, escrita: boolean) {
 
 /** Lê o corpo em pedaços e corta assim que passar do limite (com ou sem Content-Length). */
 async function lerAteLimite(request: Request): Promise<Uint8Array> {
-  const leitor = request.body?.getReader();
+  const leitor = (request.body as ReadableStream<Uint8Array> | null)?.getReader();
   if (!leitor) return new Uint8Array();
   const partes: Uint8Array[] = [];
   let total = 0;
