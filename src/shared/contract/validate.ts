@@ -240,6 +240,16 @@ export function semanticIssues(draft: ConfigDraft): ValidationIssue[] {
         );
       }
     });
+    if (rule.tipo === "horario_funcionamento") {
+      if (rule.abre >= rule.fecha) {
+        issues.push(
+          block("horario_invalido", path, "O horário de abertura precisa ser antes do fechamento."),
+        );
+      }
+      if (new Set(rule.dias_semana).size !== rule.dias_semana.length) {
+        issues.push(block("horario_invalido", path, "Há dia da semana repetido."));
+      }
+    }
     if (rule.tipo === "par_atendimento") {
       if (rule.primeiro === rule.segundo) {
         issues.push(

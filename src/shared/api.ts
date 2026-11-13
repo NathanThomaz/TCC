@@ -228,6 +228,33 @@ export interface ContasApiBody {
 
 // ---- Criação por conversa (/api/v1/systems/:systemId/criacao) ----
 
+// ---- Painel do sistema ativo (/api/v1/systems/:systemId/painel) ----
+
+export interface PainelDto {
+  /** Data de hoje no fuso do Nexus (AAAA-MM-DD). Cada bloco só vem com o módulo ativo. */
+  hoje: string;
+  vendas?: {
+    hoje: { quantidade: number; totalCentavos: number };
+    mes: { quantidade: number; totalCentavos: number };
+    abertas: number;
+    canceladasNoMes: number;
+    ultimas: { id: string; cliente: string; totalCentavos: number; concluidaEm: number }[];
+  };
+  estoque?: {
+    produtosAtivos: number;
+    semEstoque: number;
+    /** Estoque mínimo da regra (null sem a regra) e quantos estão abaixo dele. */
+    minimo: number | null;
+    abaixoDoMinimo: number | null;
+    criticos: { id: string; nome: string; fisico: number; reservado: number; disponivel: number }[];
+  };
+  clientes?: { ativos: number; inativos: number };
+  agenda?: {
+    hoje: { agendados: number; emAtendimento: number; concluidos: number };
+    proximos: { id: string; inicio: number; tipo: string; cliente: string; profissional: string }[];
+  };
+}
+
 /** Assuntos da entrevista guiada (ADR-004), na ordem em que a IA conduz. */
 export type AssuntoDto =
   "negocio" | "produtos_precos" | "pedidos_estoque" | "clientes" | "atendimentos" | "aparencia";

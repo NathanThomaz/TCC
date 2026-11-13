@@ -1,3 +1,4 @@
+import type { PainelDto } from "../../src/shared/api";
 import { env } from "cloudflare:workers";
 import { beforeEach, describe, expect, it } from "vitest";
 import c1 from "../../experiments/cenarios/c1-gabarito.json";
@@ -157,6 +158,7 @@ describe("abertura e isolamento", () => {
     expect(r.status).toBe(200);
     expect(r.body.config!.aparencia.nome).toBe("Distribuidora Exemplo");
     expect(r.body.papel).toBe("secondary");
+    expect((await call("GET", p("/painel"), SEC)).status).toBe(200);
   });
 
   it("T04: outro administrador não enxerga o sistema nem usa os cadastros dele", async () => {
@@ -919,5 +921,156 @@ describe("revisão cruzada, segunda passada", () => {
     const ate = NOW + 7 * 24 * H;
     const lista = (await call("GET", p(`/agenda?de=${de}&ate=${ate}`), ADMIN)).body.atendimentos!;
     expect(lista.map((a) => a.posicaoNoPar)).toEqual([1, 2]);
+  });
+});
+
+// ---- Regras do catálogo ampliado (ADR-005) e painel: cada regra é aplicada pela operação ----
+
+describe("regras do catálogo (ADR-005)", () => {
+  const AMANHA = NOW + 24 * H; // sexta, 06/11, 09:00 em São Paulo
+  async function ativarCom(extras: Record<string, unknown>[]) {
+    S = await ativar(ADMIN, {
+      ...DISTRIBUIDORA,
+      requisitos: [
+        ...DISTRIBUIDORA.requisitos,
+        { id: "REQ-90", texto: "Regras extras do catálogo", status: "confirmado" },
+      ],
+      regras: [...DISTRIBUIDORA.regras, ...extras.map((r) => ({ ...r, requisitos: ["REQ-90"] }))],
+    });
+  }
+  async function tecnico() {
+    return (await call("POST", p("/profissionais"), ADMIN, { nome: "Técnico Ana" })).body
+      .profissional!.id;
+  }
+  const par = (c: string, t: string, inicio: number) =>
+    call("POST", p("/agenda"), ADMIN, {
+      cliente: c,
+      profissional: t,
+      tipo: "instalacao",
+      inicio,
+      inicioSegundo: inicio + 2 * H,
+      campos: { endereco: "Rua A, 10" },
+    });
+
+  it("pedido mínimo: abaixo do valor a venda não conclui; a partir dele, conclui", async () => {
+    await ativarCom([{ tipo: "pedido_minimo", valor_centavos: 5000 }]);
+    const c = await cliente();
+    const prod = await produto();
+    await entrada(prod, 100);
+    const v = (await venda(c, [{ produto: prod, unidades: 2 }])).body.venda!;
+    const baixo = await call("POST", p(`/vendas/${v.id}/concluir`), ADMIN, { revisao: v.revisao });
+    expect(baixo.status).toBe(409);
+    expect(baixo.body.error!.code).toBe("pedido_minimo");
+    const maior = (
+      await call("POST", p(`/vendas/${v.id}/itens`), ADMIN, {
+        revisao: v.revisao,
+        itens: [{ produto: prod, unidades: 10 }],
+      })
+    ).body.venda!;
+    const ok = await call("POST", p(`/vendas/${v.id}/concluir`), ADMIN, {
+      revisao: maior.revisao,
+    });
+    expect(ok.body.venda!.status).toBe("completed");
+  });
+
+  it("limite de unidades por item: pedido acima do limite é recusado", async () => {
+    await ativarCom([{ tipo: "limite_unidades_por_item", unidades: 24 }]);
+    const c = await cliente();
+    const prod = await produto();
+    await entrada(prod, 100);
+    const r = await venda(c, [{ produto: prod, caixas: 2, unidades: 1 }]); // 25 unidades
+    expect(r.status).toBe(422);
+    expect(r.body.error!.code).toBe("limite_unidades_por_item");
+    expect((await venda(c, [{ produto: prod, caixas: 2 }])).status).toBe(201);
+  });
+
+  it("prazo para cancelar venda: depois do prazo, a venda concluída não é cancelada", async () => {
+    await ativarCom([{ tipo: "prazo_cancelamento_venda", dias: 7 }]);
+    const c = await cliente();
+    const prod = await produto();
+    await entrada(prod, 100);
+    const v = (await venda(c, [{ produto: prod, unidades: 1 }])).body.venda!;
+    await call("POST", p(`/vendas/${v.id}/concluir`), ADMIN, { revisao: v.revisao });
+    agora = NOW + 8 * 24 * H;
+    const r = await call("POST", p(`/vendas/${v.id}/cancelar`), ADMIN, { motivo: "Desistiu" });
+    expect(r.status).toBe(409);
+    expect(r.body.error!.code).toBe("prazo_cancelamento_venda");
+  });
+
+  it("horário de funcionamento: fora do horário ou do dia é recusado; dentro, agenda", async () => {
+    await ativarCom([
+      {
+        tipo: "horario_funcionamento",
+        abre: "08:00",
+        fecha: "18:00",
+        dias_semana: [1, 2, 3, 4, 5],
+      },
+    ]);
+    const c = await cliente();
+    const t = await tecnico();
+    const cedo = await par(c, t, AMANHA - 2 * H); // sexta 07:00
+    expect(cedo.status).toBe(422);
+    expect(cedo.body.error!.code).toBe("fora_do_horario");
+    const sabado = await par(c, t, AMANHA + 24 * H); // sábado 09:00
+    expect(sabado.body.error!.code).toBe("fora_do_horario");
+    const tarde = await par(c, t, AMANHA + 7 * H); // sexta 16:00, retirada termina às 19:00
+    expect(tarde.body.error!.code).toBe("fora_do_horario");
+    expect((await par(c, t, AMANHA)).status).toBe(201); // sexta 09:00 a 12:00
+  });
+
+  it("antecedência mínima: em cima da hora é recusado", async () => {
+    await ativarCom([{ tipo: "antecedencia_minima", minutos: 24 * 60 }]);
+    const c = await cliente();
+    const t = await tecnico();
+    const r = await par(c, t, NOW + 3 * H);
+    expect(r.status).toBe(422);
+    expect(r.body.error!.code).toBe("antecedencia_minima");
+    expect((await par(c, t, AMANHA + H)).status).toBe(201);
+  });
+
+  it("prazo para cancelar atendimento: perto do início não cancela nem remarca", async () => {
+    await ativarCom([{ tipo: "prazo_cancelamento_atendimento", horas: 24 }]);
+    const c = await cliente();
+    const t = await tecnico();
+    const a = (await par(c, t, NOW + 5 * H)).body.atendimentos![0]!;
+    const cancelar = await call("POST", p(`/agenda/${a.id}/cancelar`), ADMIN, { motivo: "Chuva" });
+    expect(cancelar.status).toBe(409);
+    expect(cancelar.body.error!.code).toBe("prazo_cancelamento_atendimento");
+    const remarcar = await call("POST", p(`/agenda/${a.id}/remarcar`), ADMIN, {
+      inicio: AMANHA + 2 * 24 * H,
+      inicioSegundo: AMANHA + 2 * 24 * H + 2 * H,
+    });
+    expect(remarcar.body.error!.code).toBe("prazo_cancelamento_atendimento");
+  });
+
+  it("painel: vendas do dia e do mês, abertas, clientes ativos, estoque abaixo do mínimo e agenda", async () => {
+    await ativarCom([{ tipo: "estoque_minimo", unidades: 10 }]);
+    const c = await cliente();
+    await call("POST", p(`/clientes/${await cliente("Inativo")}/status`), ADMIN, {
+      status: "inactive",
+    });
+    const cerveja = await produto();
+    const agua = await produto({ nome: "Água" });
+    await entrada(cerveja, 100);
+    await entrada(agua, 8);
+    const v = (await venda(c, [{ produto: cerveja, unidades: 4 }])).body.venda!;
+    await call("POST", p(`/vendas/${v.id}/concluir`), ADMIN, { revisao: v.revisao });
+    await venda(c, [{ produto: cerveja, unidades: 1 }]); // rascunho aberto
+    const t = await tecnico();
+    await par(c, t, AMANHA);
+    const r = await call("GET", p("/painel"), ADMIN);
+    expect(r.status).toBe(200);
+    const painel = (r.body as unknown as { painel: PainelDto }).painel;
+    expect(painel.hoje).toBe("2026-11-05");
+    expect(painel.vendas).toMatchObject({
+      hoje: { quantidade: 1, totalCentavos: 2000 },
+      mes: { quantidade: 1, totalCentavos: 2000 },
+      abertas: 1,
+      canceladasNoMes: 0,
+    });
+    expect(painel.clientes).toEqual({ ativos: 1, inativos: 1 });
+    expect(painel.estoque).toMatchObject({ produtosAtivos: 2, minimo: 10, abaixoDoMinimo: 1 });
+    expect(painel.estoque!.criticos[0]).toMatchObject({ nome: "Água", disponivel: 8 });
+    expect(painel.agenda!.proximos).toHaveLength(2);
   });
 });

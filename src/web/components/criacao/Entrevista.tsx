@@ -100,6 +100,7 @@ export function Conversa({
   estado,
   bloqueado,
   ocupado,
+  pendente,
   texto,
   setTexto,
   campo,
@@ -112,6 +113,8 @@ export function Conversa({
   estado: EstadoCriacao;
   bloqueado: boolean;
   ocupado: boolean;
+  /** Mensagem enviada que ainda espera a IA: já aparece na conversa. */
+  pendente: string | null;
   texto: string;
   setTexto: (t: string) => void;
   campo: RefObject<HTMLTextAreaElement | null>;
@@ -124,7 +127,7 @@ export function Conversa({
   const fim = useRef<HTMLDivElement>(null);
   useEffect(() => {
     fim.current?.scrollIntoView?.({ block: "nearest" });
-  }, [estado.mensagens.length, ocupado]);
+  }, [estado.mensagens.length, ocupado, pendente]);
   const ultima = estado.mensagens.at(-1);
   // Antes da primeira resposta, sugestões fixas para a primeira pergunta; depois, as da IA.
   const sugestoes =
@@ -230,7 +233,12 @@ export function Conversa({
             </div>
           ),
         )}
-        {sugestoes.length > 0 && !bloqueado && (
+        {pendente && (
+          <div className="ml-auto max-w-[85%] whitespace-pre-wrap break-words rounded-lg bg-primary p-4 text-sm text-primary-foreground opacity-80">
+            {pendente}
+          </div>
+        )}
+        {sugestoes.length > 0 && !bloqueado && !pendente && (
           <div className="flex flex-wrap gap-2" aria-label="Sugestões de resposta">
             {sugestoes.map((r) => (
               <Button

@@ -16,7 +16,7 @@ import type { ConfigDraft } from "../../shared/contract/schema";
 // das constantes do contrato, para nunca divergir do que o validador aceita. Prompts versionados:
 // mudar o texto é mudar a configuração congelada do experimento (seção 25).
 
-export const VERSAO_PROMPTS = "2026-11-13.2";
+export const VERSAO_PROMPTS = "2026-11-13.3";
 
 type Json = Parameters<typeof adaptForGemini>[0];
 
@@ -45,7 +45,15 @@ Regras parametrizáveis:
 - unidades_por_caixa: fator padrão de unidades por caixa (cada produto pode ter o seu); caixa não tem preço próprio.
 - prazo_reserva: minutos que um pedido aberto segura o estoque (obrigatório quando há vendas).
 - par_atendimento: dois tipos de atendimento vinculados, mesmo profissional, o segundo começa depois do fim do primeiro.
-Fora do catálogo (registrar como necessidade, nunca prometer): nota fiscal, pagamentos, compras e fornecedores, descontos manuais, rotas e expediente, app móvel, relatórios financeiros e qualquer módulo ou regra que não esteja acima.`;
+- estoque_minimo: unidades; abaixo disso (disponível) o produto aparece como crítico no painel.
+- pedido_minimo: valor em centavos; a venda só é concluída com total a partir dele.
+- limite_unidades_por_item: máximo de unidades de um mesmo produto numa venda.
+- prazo_cancelamento_venda: dias; venda concluída só é cancelada até esse prazo.
+- horario_funcionamento: abre e fecha (HH:MM) e dias_semana (0 = domingo a 6 = sábado); atendimento começa e termina dentro do horário.
+- antecedencia_minima: minutos; agendar ou remarcar só com essa antecedência.
+- prazo_cancelamento_atendimento: horas; cancelar ou remarcar atendimento só até essas horas antes do início.
+Todas as regras são opcionais, exceto prazo_reserva com vendas. Ofereça as que fazem sentido para o negócio (ex.: pedido mínimo e estoque mínimo para comércio; horário de funcionamento e antecedência para serviços), uma pergunta por vez, sempre com sugestões; o dono decide se quer.
+Fora do catálogo (registrar como pedido ao desenvolvedor, nunca prometer): nota fiscal, pagamentos, compras e fornecedores, descontos, taxa de entrega, rotas, app móvel, relatórios financeiros e qualquer módulo ou regra que não esteja acima.`;
 };
 
 // ---- Levantamento: entrevista guiada que extrai requisitos, um assunto por vez (ADR-004) ----
@@ -103,17 +111,9 @@ export const LevantamentoSchema = z.object({
 });
 export type Levantamento = z.infer<typeof LevantamentoSchema>;
 
-/**
- * O Gemini recusa (400) o maxItems de 60 numa lista de objetos deste tamanho; o limite continua
- * valendo porque toda resposta passa pelo LevantamentoSchema antes de qualquer gravação.
- */
-export const levantamentoGeminiSchema = (): Json => {
-  const schema = adaptForGemini(z.toJSONSchema(LevantamentoSchema) as Json) as {
-    properties: { requisitos: Record<string, unknown> };
-  };
-  delete schema.properties.requisitos.maxItems;
-  return schema as unknown as Json;
-};
+// adaptForGemini tira o maxItems (o Gemini recusa listas grandes); o Zod aplica os limites.
+export const levantamentoGeminiSchema = (): Json =>
+  adaptForGemini(z.toJSONSchema(LevantamentoSchema) as Json);
 
 export function instrucoesLevantamento(
   nomeSistema: string,

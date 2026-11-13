@@ -25,6 +25,8 @@ export function Criar() {
   const q = useQuery({ queryKey: ["criacao", id], queryFn: () => obterCriacao(id) });
   const detalhe = useQuery({ queryKey: ["sistema", id], queryFn: () => obterSistema(id) });
   const [texto, setTexto] = useState("");
+  // Mensagem já enviada, à espera da IA: aparece na conversa na hora (envio fluido).
+  const [pendente, setPendente] = useState<string | null>(null);
   const [pedidoAberto, setPedidoAberto] = useState<string | null>(null);
   const [resumoAberto, setResumoAberto] = useState(false);
   const campo = useRef<HTMLTextAreaElement>(null);
@@ -41,11 +43,13 @@ export function Criar() {
   const enviar = useMutation({
     // Mesma chave enquanto o texto não mudar: repetir depois de uma falha não duplica a rodada.
     mutationFn: (t: string) => enviarMensagem(id, revisao, t, chave({ t, revisao })),
-    onSuccess: (e, enviado) => {
-      atualizar(e);
-      setTexto((atual) => (atual.trim() === enviado ? "" : atual));
+    onSuccess: (e) => atualizar(e),
+    // Falhou: o texto volta para a caixa, para tentar de novo (mesma chave, sem duplicar).
+    onError: (erro, enviado) => {
+      setTexto((atual) => atual || enviado);
+      recarregar(erro);
     },
-    onError: recarregar,
+    onSettled: () => setPendente(null),
   });
   const sugestao = useMutation({
     mutationFn: (codigo: string) =>
@@ -111,7 +115,8 @@ export function Criar() {
   const onEnviar = (t: string) => {
     const limpo = t.trim();
     if (!limpo || ocupado || bloqueado) return;
-    setTexto(t);
+    setPendente(limpo);
+    setTexto("");
     enviar.mutate(limpo);
   };
   const onMudar = (r: RequisitoDto) => escrever(`Quero mudar "${r.titulo ?? r.texto}": `);
@@ -177,6 +182,7 @@ export function Criar() {
             estado={estado}
             bloqueado={bloqueado}
             ocupado={ocupado}
+            pendente={pendente}
             texto={texto}
             setTexto={setTexto}
             campo={campo}

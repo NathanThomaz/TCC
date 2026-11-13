@@ -56,6 +56,51 @@ export const RuleSchema = z.discriminatedUnion("tipo", [
     minutos: z.number().int().min(1).max(1440),
     requisitos: requirementRefs,
   }),
+  // ---- Regras do catálogo ampliado (ADR-005): cada uma é aplicada pela operação ----
+  z.strictObject({
+    tipo: z.literal("estoque_minimo"),
+    // Abaixo disso (disponível), o produto aparece como crítico no painel e no estoque.
+    unidades: z.number().int().min(1).max(100_000),
+    requisitos: requirementRefs,
+  }),
+  z.strictObject({
+    tipo: z.literal("pedido_minimo"),
+    // Venda só é concluída com total a partir deste valor, inclusive.
+    valor_centavos: z.number().int().min(1).max(100_000_000),
+    requisitos: requirementRefs,
+  }),
+  z.strictObject({
+    tipo: z.literal("limite_unidades_por_item"),
+    // Máximo de unidades de um mesmo produto numa venda.
+    unidades: z.number().int().min(1).max(100_000),
+    requisitos: requirementRefs,
+  }),
+  z.strictObject({
+    tipo: z.literal("prazo_cancelamento_venda"),
+    // Venda concluída só é cancelada até este número de dias depois da conclusão.
+    dias: z.number().int().min(1).max(365),
+    requisitos: requirementRefs,
+  }),
+  z.strictObject({
+    tipo: z.literal("horario_funcionamento"),
+    // Atendimento começa e termina dentro do horário, nos dias da semana (0 = domingo).
+    abre: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "horário HH:MM"),
+    fecha: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "horário HH:MM"),
+    dias_semana: z.array(z.number().int().min(0).max(6)).min(1).max(7),
+    requisitos: requirementRefs,
+  }),
+  z.strictObject({
+    tipo: z.literal("antecedencia_minima"),
+    // Agendar (ou remarcar) só com esta antecedência em relação a agora.
+    minutos: z.number().int().min(1).max(43_200),
+    requisitos: requirementRefs,
+  }),
+  z.strictObject({
+    tipo: z.literal("prazo_cancelamento_atendimento"),
+    // Cancelar ou remarcar só até estas horas antes do início.
+    horas: z.number().int().min(1).max(720),
+    requisitos: requirementRefs,
+  }),
   z.strictObject({
     tipo: z.literal("par_atendimento"),
     // Dois atendimentos vinculados, mesmo profissional, o segundo após o fim do primeiro (AGE-02/04).

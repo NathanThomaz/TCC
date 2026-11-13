@@ -25,13 +25,17 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import type { Regra } from "@/types/nexus";
+import { RegrasCatalogo } from "@/components/configurar/RegrasCatalogo";
 import { cn } from "@/lib/utils";
 
 // Modo avançado, passo 2 (ADR-004): um bloco por módulo, com os padrões do modelo já preenchidos
 // e marcados "Sugestão — confirme" até o dono confirmar ou mudar. Não há requisitos na tela: cada
 // ajuste vira, por trás, o requisito e a regra que o validador exige.
 
+/** Regras de valor único que entram com valor sugerido; o dono confirma ou muda. */
 export type Sugerivel = "limite_atacado" | "unidades_por_caixa" | "prazo_reserva";
+/** Qualquer regra pode estar marcada como sugestão (as do catálogo entram assim). */
+export type Sugerida = Regra["tipo"];
 
 /** Valores sugeridos pelo modelo: só valem depois que o dono confirma ou muda. */
 export const PADRAO: Record<Sugerivel, Regra> = {
@@ -41,7 +45,7 @@ export const PADRAO: Record<Sugerivel, Regra> = {
 };
 
 /** O que ainda impede avançar do passo de ajustes (mensagens em linguagem de negócio). */
-export function pendenciasDosAjustes(d: PassoProps["draft"], sugestoes: Sugerivel[]): string[] {
+export function pendenciasDosAjustes(d: PassoProps["draft"], sugestoes: Sugerida[]): string[] {
   const faltas: string[] = [];
   const regra = <T extends Regra["tipo"]>(t: T) =>
     d.regras.find((r): r is Extract<Regra, { tipo: T }> => r.tipo === t);
@@ -125,8 +129,8 @@ export function PassoAjustes({
   setSugestoes,
 }: PassoProps & {
   sistemaId: string;
-  sugestoes: Sugerivel[];
-  setSugestoes: (s: Sugerivel[]) => void;
+  sugestoes: Sugerida[];
+  setSugestoes: (s: Sugerida[]) => void;
 }) {
   const regra = <T extends Regra["tipo"]>(t: T) =>
     draft.regras.find((r): r is Extract<Regra, { tipo: T }> => r.tipo === t);
@@ -342,6 +346,26 @@ export function PassoAjustes({
           )}
         </Secao>
       )}
+
+      <Secao
+        titulo="Mais regras do negócio"
+        resumo={(() => {
+          const n = draft.regras.filter(
+            (r) =>
+              ![
+                "limite_atacado",
+                "unidades_por_caixa",
+                "prazo_reserva",
+                "par_atendimento",
+              ].includes(r.tipo),
+          ).length;
+          return n
+            ? `${n} ${n === 1 ? "regra escolhida" : "regras escolhidas"}`
+            : "Escolha regras prontas no menu";
+        })()}
+      >
+        <RegrasCatalogo draft={draft} set={set} sugestoes={sugestoes} setSugestoes={setSugestoes} />
+      </Secao>
 
       <Secao titulo="Aparência" resumo={draft.aparencia.titulo || "Sem título"}>
         <PassoAparencia draft={draft} set={set} />

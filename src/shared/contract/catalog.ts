@@ -1,7 +1,7 @@
 // Catálogo fechado do Nexus (seção 5 da especificação). Tudo o que uma configuração pode usar
 // está aqui; o que não está não é criado silenciosamente — vira necessidade fora do catálogo.
 
-export const CATALOG_VERSION = "2026.11.2";
+export const CATALOG_VERSION = "2026.11.3";
 
 export const MODULES = [
   "clientes",
@@ -136,6 +136,13 @@ export const RULE_TYPES = [
   "unidades_por_caixa",
   "prazo_reserva",
   "par_atendimento",
+  "estoque_minimo",
+  "pedido_minimo",
+  "limite_unidades_por_item",
+  "prazo_cancelamento_venda",
+  "horario_funcionamento",
+  "antecedencia_minima",
+  "prazo_cancelamento_atendimento",
 ] as const;
 export type RuleType = (typeof RULE_TYPES)[number];
 
@@ -145,6 +152,13 @@ export const RULE_MODULES: Record<RuleType, readonly ModuleId[]> = {
   unidades_por_caixa: ["produtos", "vendas"],
   prazo_reserva: ["vendas", "estoque"],
   par_atendimento: ["agenda"],
+  estoque_minimo: ["produtos", "estoque"],
+  pedido_minimo: ["vendas"],
+  limite_unidades_por_item: ["vendas"],
+  prazo_cancelamento_venda: ["vendas"],
+  horario_funcionamento: ["agenda"],
+  antecedencia_minima: ["agenda"],
+  prazo_cancelamento_atendimento: ["agenda"],
 };
 
 /** Regras que todo sistema com esses módulos precisa ter explicitamente (sem valor inventado). */

@@ -286,6 +286,59 @@ describe("validateDraft — erros bloqueantes (T07)", () => {
   });
 });
 
+describe("validateDraft — regras do catálogo ampliado (ADR-005)", () => {
+  function comExtras(): ConfigDraft {
+    const draft = distribuidora();
+    draft.regras.push(
+      { tipo: "estoque_minimo", unidades: 10, requisitos: ["REQ-01"] },
+      { tipo: "pedido_minimo", valor_centavos: 5_000, requisitos: ["REQ-01"] },
+      { tipo: "limite_unidades_por_item", unidades: 240, requisitos: ["REQ-01"] },
+      { tipo: "prazo_cancelamento_venda", dias: 7, requisitos: ["REQ-01"] },
+      {
+        tipo: "horario_funcionamento",
+        abre: "08:00",
+        fecha: "18:00",
+        dias_semana: [1, 2, 3, 4, 5],
+        requisitos: ["REQ-04"],
+      },
+      { tipo: "antecedencia_minima", minutos: 1_440, requisitos: ["REQ-04"] },
+      { tipo: "prazo_cancelamento_atendimento", horas: 24, requisitos: ["REQ-04"] },
+    );
+    return draft;
+  }
+
+  it("aceita as sete regras novas com valores válidos", () => {
+    expect(validateDraft(comExtras()).issues.filter((i) => i.severity === "bloqueante")).toEqual(
+      [],
+    );
+  });
+
+  it("recusa horário com abertura depois do fechamento e dia repetido", () => {
+    const draft = comExtras();
+    const horario = draft.regras.find((r) => r.tipo === "horario_funcionamento")!;
+    Object.assign(horario, { abre: "18:00", fecha: "08:00", dias_semana: [1, 1] });
+    expect(codes(draft).filter((c) => c === "horario_invalido")).toHaveLength(2);
+  });
+
+  it("recusa horário fora do formato HH:MM e regra de agenda sem o módulo agenda", () => {
+    const draft = comExtras();
+    const horario = draft.regras.find((r) => r.tipo === "horario_funcionamento")!;
+    Object.assign(horario, { abre: "8h" });
+    expect(codes(draft)).toContain("estrutura_invalida");
+
+    const semAgenda = comExtras();
+    semAgenda.modelo = "comercio";
+    semAgenda.modulos = ["clientes", "produtos", "vendas", "estoque"];
+    semAgenda.tipos_atendimento = [];
+    semAgenda.regras = semAgenda.regras.filter((r) => r.tipo !== "par_atendimento");
+    expect(codes(semAgenda).filter((c) => c === "modulo_inativo")).toHaveLength(3);
+  });
+
+  it("o schema do Gemini não leva maxItems (o Gemini recusa com HTTP 400)", () => {
+    expect(JSON.stringify(configDraftGeminiSchema())).not.toContain('"maxItems"');
+  });
+});
+
 describe("schema para o Gemini", () => {
   it("troca oneOf por anyOf, const por enum e remove $schema em todo o schema", () => {
     const text = JSON.stringify(configDraftGeminiSchema());

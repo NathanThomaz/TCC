@@ -56,6 +56,18 @@ export function passoDoPath(path: string): number {
   }
 }
 
+export const DIAS_SEMANA = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"] as const;
+
+/** "Seg a Sáb", "Seg, Qua e Sex" ou "todos os dias". */
+export function diasDaSemana(dias: number[]): string {
+  const d = [...new Set(dias)].sort((a, b) => a - b);
+  if (d.length === 7) return "todos os dias";
+  const seguidos = d.length > 2 && d.every((x, i) => i === 0 || x === d[i - 1]! + 1);
+  if (seguidos) return `${DIAS_SEMANA[d[0]!]} a ${DIAS_SEMANA[d.at(-1)!]}`;
+  const nomes = d.map((x) => DIAS_SEMANA[x]);
+  return nomes.length > 1 ? `${nomes.slice(0, -1).join(", ")} e ${nomes.at(-1)}` : (nomes[0] ?? "");
+}
+
 const formatarMinutos = (m: number) =>
   m % 60 === 0 ? `${m / 60} ${m === 60 ? "hora" : "horas"}` : `${m} minutos`;
 
@@ -71,6 +83,20 @@ export function textoDaRegra(r: Regra, d: ConfigDraft): string {
       return `Pedido aberto segura o estoque por ${formatarMinutos(r.minutos)}`;
     case "par_atendimento":
       return `${rotulo(r.primeiro)} seguido de ${rotulo(r.segundo)}, com o mesmo profissional`;
+    case "estoque_minimo":
+      return `Estoque mínimo de ${r.unidades} ${r.unidades === 1 ? "unidade" : "unidades"} por produto`;
+    case "pedido_minimo":
+      return `Pedido mínimo de R$ ${centavosParaReais(r.valor_centavos)}`;
+    case "limite_unidades_por_item":
+      return `No máximo ${r.unidades} unidades de um mesmo produto por venda`;
+    case "prazo_cancelamento_venda":
+      return `Venda concluída pode ser cancelada até ${r.dias} ${r.dias === 1 ? "dia" : "dias"} depois`;
+    case "horario_funcionamento":
+      return `Atendimentos de ${diasDaSemana(r.dias_semana)}, das ${r.abre} às ${r.fecha}`;
+    case "antecedencia_minima":
+      return `Agendar com pelo menos ${formatarMinutos(r.minutos)} de antecedência`;
+    case "prazo_cancelamento_atendimento":
+      return `Cancelar ou remarcar atendimento até ${r.horas} ${r.horas === 1 ? "hora" : "horas"} antes`;
   }
 }
 
