@@ -1,7 +1,7 @@
 // Catálogo fechado do Nexus (seção 5 da especificação). Tudo o que uma configuração pode usar
 // está aqui; o que não está não é criado silenciosamente — vira necessidade fora do catálogo.
 
-export const CATALOG_VERSION = "2026.11.3";
+export const CATALOG_VERSION = "2026.11.4";
 
 export const MODULES = [
   "clientes",
@@ -10,6 +10,10 @@ export const MODULES = [
   "estoque",
   "profissionais",
   "agenda",
+  // Opcionais (ADR-006): entram por escolha do dono, nos modelos que os aceitam.
+  "pagamentos",
+  "fornecedores",
+  "financeiro",
 ] as const;
 export type ModuleId = (typeof MODULES)[number];
 
@@ -21,6 +25,10 @@ export const MODULE_INFO: Record<ModuleId, { label: string; dependsOn: readonly 
   vendas: { label: "Vendas", dependsOn: ["clientes", "produtos", "estoque"] },
   profissionais: { label: "Profissionais", dependsOn: [] },
   agenda: { label: "Agenda", dependsOn: ["clientes", "profissionais"] },
+  pagamentos: { label: "Formas de pagamento", dependsOn: ["vendas"] },
+  // A compra dá entrada no estoque.
+  fornecedores: { label: "Fornecedores e compras", dependsOn: ["produtos", "estoque"] },
+  financeiro: { label: "Financeiro", dependsOn: [] },
 };
 
 export const TEMPLATES = ["comercio", "servicos", "comercio_com_servicos"] as const;
@@ -31,6 +39,32 @@ export const TEMPLATE_MODULES: Record<TemplateId, readonly ModuleId[]> = {
   comercio: ["clientes", "produtos", "vendas", "estoque"],
   servicos: ["clientes", "profissionais", "agenda"],
   comercio_com_servicos: ["clientes", "produtos", "vendas", "estoque", "profissionais", "agenda"],
+};
+
+/** Módulos opcionais que cada modelo aceita, além dos seus (ADR-006). */
+export const OPTIONAL_MODULES: Record<TemplateId, readonly ModuleId[]> = {
+  comercio: ["pagamentos", "fornecedores", "financeiro"],
+  servicos: ["financeiro"],
+  comercio_com_servicos: ["pagamentos", "fornecedores", "financeiro"],
+};
+
+/** Formas de pagamento que a regra `formas_pagamento` pode aceitar. */
+export const PAYMENT_METHODS = [
+  "dinheiro",
+  "pix",
+  "cartao_credito",
+  "cartao_debito",
+  "boleto",
+  "a_prazo",
+] as const;
+export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
+export const PAYMENT_LABELS: Record<PaymentMethod, string> = {
+  dinheiro: "Dinheiro",
+  pix: "Pix",
+  cartao_credito: "Cartão de crédito",
+  cartao_debito: "Cartão de débito",
+  boleto: "Boleto",
+  a_prazo: "A prazo",
 };
 
 export const TEMPLATE_LABELS: Record<TemplateId, string> = {
@@ -46,6 +80,7 @@ export const FIELD_ENTITIES = {
   profissionais: "profissionais",
   vendas: "vendas",
   agendamentos: "agenda",
+  fornecedores: "fornecedores",
 } as const satisfies Record<string, ModuleId>;
 export type FieldEntity = keyof typeof FIELD_ENTITIES;
 
@@ -103,6 +138,10 @@ export const NATIVE_FIELDS: Record<
     },
     { label: "Venda vinculada", aliases: [] },
   ],
+  fornecedores: [
+    { label: "Nome", aliases: ["nome do fornecedor", "razao social"] },
+    { label: "Situação (ativo ou inativo)", aliases: ["situacao", "status"] },
+  ],
 };
 
 /** Minúsculas, sem acento nem espaços repetidos: "Preço  Unitário" → "preco unitario". */
@@ -115,12 +154,37 @@ export function normalizarRotulo(texto: string): string {
     .trim();
 }
 
+/** Campos que um módulo opcional acrescenta a um cadastro, só quando ele está ligado (ADR-006). */
+export const MODULE_NATIVE_FIELDS: Partial<
+  Record<
+    ModuleId,
+    Partial<Record<FieldEntity, readonly { label: string; aliases: readonly string[] }[]>>
+  >
+> = {
+  pagamentos: {
+    vendas: [
+      {
+        label: "Forma de pagamento",
+        aliases: ["pagamento", "meio de pagamento", "forma de pagto", "como pagou"],
+      },
+    ],
+  },
+};
+
 /** Campo nativo que um rótulo de campo extra duplicaria, se houver. */
-export function campoNativoDuplicado(entidade: FieldEntity, rotulo: string): string | null {
+export function campoNativoDuplicado(
+  entidade: FieldEntity,
+  rotulo: string,
+  modulos: readonly ModuleId[] = [],
+): string | null {
   const r = normalizarRotulo(rotulo);
   if (!r) return null;
+  const nativos = [
+    ...NATIVE_FIELDS[entidade],
+    ...modulos.flatMap((m) => MODULE_NATIVE_FIELDS[m]?.[entidade] ?? []),
+  ];
   // Vale o rótulo completo, o rótulo sem o detalhe entre parênteses e os sinônimos.
-  const achado = NATIVE_FIELDS[entidade].find(
+  const achado = nativos.find(
     (n) =>
       normalizarRotulo(n.label) === r ||
       normalizarRotulo(n.label.replace(/\(.*\)/, "")) === r ||
@@ -143,6 +207,7 @@ export const RULE_TYPES = [
   "horario_funcionamento",
   "antecedencia_minima",
   "prazo_cancelamento_atendimento",
+  "formas_pagamento",
 ] as const;
 export type RuleType = (typeof RULE_TYPES)[number];
 
@@ -159,11 +224,14 @@ export const RULE_MODULES: Record<RuleType, readonly ModuleId[]> = {
   horario_funcionamento: ["agenda"],
   antecedencia_minima: ["agenda"],
   prazo_cancelamento_atendimento: ["agenda"],
+  formas_pagamento: ["pagamentos"],
 };
 
 /** Regras que todo sistema com esses módulos precisa ter explicitamente (sem valor inventado). */
 export const REQUIRED_RULES: { rule: RuleType; whenModule: ModuleId }[] = [
   { rule: "prazo_reserva", whenModule: "vendas" },
+  // Quais formas o negócio aceita é decisão do dono (ADR-006).
+  { rule: "formas_pagamento", whenModule: "pagamentos" },
 ];
 
 export const LIMITS = {

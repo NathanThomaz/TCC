@@ -26,6 +26,8 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import type { Regra } from "@/types/nexus";
 import { RegrasCatalogo } from "@/components/configurar/RegrasCatalogo";
+import { ModulosOpcionais } from "@/components/configurar/ModulosOpcionais";
+import { OPCIONAIS_POR_MODELO, ROTULO_MODULO } from "@/lib/nexus";
 import { cn } from "@/lib/utils";
 
 // Modo avançado, passo 2 (ADR-004): um bloco por módulo, com os padrões do modelo já preenchidos
@@ -56,7 +58,7 @@ export function pendenciasDosAjustes(d: PassoProps["draft"], sugestoes: Sugerida
   if (atacado && !(atacado.valor_centavos > 0)) faltas.push("Informe o valor do atacado.");
   const duplicados = d.campos.filter(
     (c) =>
-      campoNativoDuplicado(c.entidade, c.rotulo) ||
+      campoNativoDuplicado(c.entidade, c.rotulo, d.modulos) ||
       d.campos.some(
         (x) =>
           x.id !== c.id &&
@@ -66,6 +68,13 @@ export function pendenciasDosAjustes(d: PassoProps["draft"], sugestoes: Sugerida
   );
   if (duplicados.length) {
     faltas.push("Há campo extra que repete um campo que já existe; renomeie ou remova.");
+  }
+  const formas = regra("formas_pagamento");
+  if (d.modulos.includes("pagamentos")) {
+    if (!formas?.formas.length) faltas.push("Escolha ao menos uma forma de pagamento.");
+    else if (formas.formas.includes("a_prazo") && !((formas.prazo_dias ?? 0) >= 1)) {
+      faltas.push("Diga em quantos dias vence a venda a prazo.");
+    }
   }
   if (d.modulos.includes("agenda") && d.tipos_atendimento.length === 0) {
     faltas.push("Cadastre ao menos um tipo de atendimento.");
@@ -166,6 +175,34 @@ export function PassoAjustes({
         Os valores comuns já vêm preenchidos como sugestão. Confirme ou mude cada um; o que você
         precisar e não estiver aqui vira um pedido ao desenvolvedor.
       </p>
+
+      {OPCIONAIS_POR_MODELO[draft.modelo].length > 0 && (
+        <Secao
+          titulo="Módulos opcionais"
+          resumo={(() => {
+            const ligados = OPCIONAIS_POR_MODELO[draft.modelo].filter((m) =>
+              draft.modulos.includes(m),
+            );
+            return ligados.length
+              ? `Ligados: ${ligados.map((m) => ROTULO_MODULO[m]).join(", ")}`
+              : "Nenhum ligado — ligue o que o negócio usa";
+          })()}
+        >
+          <ModulosOpcionais
+            draft={draft}
+            set={set}
+            sugerido={sugestoes.includes("formas_pagamento")}
+            onSugerir={(ligado) =>
+              setSugestoes(
+                ligado
+                  ? [...sugestoes.filter((s) => s !== "formas_pagamento"), "formas_pagamento"]
+                  : sugestoes.filter((s) => s !== "formas_pagamento"),
+              )
+            }
+            onConfirmar={() => setSugestoes(sugestoes.filter((s) => s !== "formas_pagamento"))}
+          />
+        </Secao>
+      )}
 
       {temVendas && (
         <Secao
@@ -357,6 +394,7 @@ export function PassoAjustes({
                 "unidades_por_caixa",
                 "prazo_reserva",
                 "par_atendimento",
+                "formas_pagamento",
               ].includes(r.tipo),
           ).length;
           return n

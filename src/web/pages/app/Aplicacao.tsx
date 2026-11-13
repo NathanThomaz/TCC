@@ -25,13 +25,17 @@ export function useApp() {
 }
 
 /** Ordem do menu; estoque fica junto de produtos (mesma tela, com saldos e movimentos). */
-const MENU: { modulo: ModuleId; caminho: string }[] = [
+const MENU: { modulo: ModuleId; caminho: string; rotulo?: string }[] = [
   { modulo: "vendas", caminho: "vendas" },
   { modulo: "produtos", caminho: "produtos" },
   { modulo: "estoque", caminho: "estoque" },
   { modulo: "agenda", caminho: "agenda" },
   { modulo: "clientes", caminho: "clientes" },
   { modulo: "profissionais", caminho: "profissionais" },
+  // Opcionais (ADR-006); formas de pagamento ficam dentro de vendas.
+  { modulo: "fornecedores", caminho: "fornecedores" },
+  { modulo: "fornecedores", caminho: "compras", rotulo: "Compras" },
+  { modulo: "financeiro", caminho: "financeiro" },
 ];
 
 export function rotuloModulo(app: App, modulo: ModuleId): string {
@@ -98,10 +102,10 @@ export function Aplicacao() {
           <MenuLink id={id} caminho="" rotulo="Painel" exato destaque={aparencia.cor_destaque} />
           {MENU.filter((m) => modulos.includes(m.modulo)).map((m) => (
             <MenuLink
-              key={m.modulo}
+              key={m.caminho}
               id={id}
               caminho={m.caminho}
-              rotulo={rotuloModulo(app, m.modulo)}
+              rotulo={m.rotulo ?? rotuloModulo(app, m.modulo)}
               destaque={aparencia.cor_destaque}
             />
           ))}

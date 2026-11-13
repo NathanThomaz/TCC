@@ -3,6 +3,7 @@ import { deCampoLocal, paraCampoLocal } from "../../../shared/dominio/agenda";
 import { json } from "../../http/responses";
 import type { Handler } from "../../http/router";
 import { abrirOperacao } from "./contexto";
+import { hojeLocal } from "./financeiro";
 
 // Painel do sistema ativo: números calculados no backend (nunca pela IA), no fuso do Nexus, só
 // dos módulos que o sistema tem. Mesma conta que a consulta usa: vendas concluídas pelo dia da
@@ -201,6 +202,100 @@ export const obterPainel: Handler = async (ctx) => {
         tipo: rotulo(a.service_type),
         cliente: a.cliente,
         profissional: a.profissional,
+      })),
+    };
+  }
+
+  if (tem("pagamentos")) {
+    const { results } = await db
+      .prepare(
+        `SELECT payment_method AS forma, COUNT(*) AS n, SUM(total_cents) AS total FROM sales
+         WHERE system_id = ? AND status = 'completed' AND payment_method IS NOT NULL
+           AND completed_at >= ? AND completed_at < ?
+         GROUP BY payment_method ORDER BY n DESC, total DESC`,
+      )
+      .bind(s, inicioMes, inicioProximoMes)
+      .all<{
+        forma: NonNullable<PainelDto["pagamentos"]>[number]["forma"];
+        n: number;
+        total: number;
+      }>();
+    painel.pagamentos = results.map((r) => ({
+      forma: r.forma,
+      quantidade: r.n,
+      totalCentavos: r.total,
+    }));
+  }
+
+  if (tem("fornecedores")) {
+    const r = await db
+      .prepare(
+        `SELECT
+           (SELECT COUNT(*) FROM purchases WHERE system_id = ?1 AND status = 'completed'
+              AND created_at >= ?2 AND created_at < ?3) AS n,
+           (SELECT COALESCE(SUM(total_cents), 0) FROM purchases WHERE system_id = ?1
+              AND status = 'completed' AND created_at >= ?2 AND created_at < ?3) AS total,
+           (SELECT COUNT(*) FROM suppliers WHERE system_id = ?1 AND status = 'active') AS ativos,
+           (SELECT COALESCE(SUM(physical * last_cost_cents), 0) FROM products
+              WHERE system_id = ?1 AND status = 'active' AND last_cost_cents IS NOT NULL) AS custo`,
+      )
+      .bind(s, inicioMes, inicioProximoMes)
+      .first<{ n: number; total: number; ativos: number; custo: number }>();
+    painel.compras = {
+      noMes: { quantidade: r?.n ?? 0, totalCentavos: r?.total ?? 0 },
+      fornecedoresAtivos: r?.ativos ?? 0,
+      valorCustoCentavos: r?.custo ?? 0,
+    };
+  }
+
+  if (tem("financeiro")) {
+    const dia = hojeLocal(agora);
+    const [r, proximos] = await Promise.all([
+      db
+        .prepare(
+          `SELECT
+             SUM(kind = 'receber' AND status = 'pendente') AS rn,
+             COALESCE(SUM(CASE WHEN kind = 'receber' AND status = 'pendente' THEN amount_cents END), 0) AS rt,
+             SUM(kind = 'pagar' AND status = 'pendente') AS pn,
+             COALESCE(SUM(CASE WHEN kind = 'pagar' AND status = 'pendente' THEN amount_cents END), 0) AS pt,
+             SUM(kind = 'receber' AND status = 'pendente' AND due_date < ?2) AS vrn,
+             COALESCE(SUM(CASE WHEN kind = 'receber' AND status = 'pendente' AND due_date < ?2 THEN amount_cents END), 0) AS vrt,
+             SUM(kind = 'pagar' AND status = 'pendente' AND due_date < ?2) AS vpn,
+             COALESCE(SUM(CASE WHEN kind = 'pagar' AND status = 'pendente' AND due_date < ?2 THEN amount_cents END), 0) AS vpt,
+             COALESCE(SUM(CASE WHEN kind = 'receber' AND status = 'pago' AND paid_at >= ?3 AND paid_at < ?4 THEN amount_cents END), 0) AS recebido,
+             COALESCE(SUM(CASE WHEN kind = 'pagar' AND status = 'pago' AND paid_at >= ?3 AND paid_at < ?4 THEN amount_cents END), 0) AS pago
+           FROM financial_entries WHERE system_id = ?1`,
+        )
+        .bind(s, dia, inicioMes, inicioProximoMes)
+        .first<Record<string, number | null>>(),
+      db
+        .prepare(
+          `SELECT id, kind, description, amount_cents, due_date FROM financial_entries
+           WHERE system_id = ? AND status = 'pendente' ORDER BY due_date, created_at LIMIT 5`,
+        )
+        .bind(s)
+        .all<{
+          id: string;
+          kind: "receber" | "pagar";
+          description: string;
+          amount_cents: number;
+          due_date: string;
+        }>(),
+    ]);
+    const n = (k: string) => r?.[k] ?? 0;
+    painel.financeiro = {
+      aReceber: { quantidade: n("rn"), totalCentavos: n("rt") },
+      aPagar: { quantidade: n("pn"), totalCentavos: n("pt") },
+      vencidosReceber: { quantidade: n("vrn"), totalCentavos: n("vrt") },
+      vencidosPagar: { quantidade: n("vpn"), totalCentavos: n("vpt") },
+      recebidoNoMesCentavos: n("recebido"),
+      pagoNoMesCentavos: n("pago"),
+      proximos: proximos.results.map((l) => ({
+        id: l.id,
+        tipo: l.kind,
+        descricao: l.description,
+        valorCentavos: l.amount_cents,
+        vencimento: l.due_date,
       })),
     };
   }

@@ -38,7 +38,11 @@ import { rotuloModulo, useApp } from "./Aplicacao";
 // Clientes e profissionais (seção 14): cadastrar, editar, inativar e reativar; sem exclusão.
 // Cadastro de técnico não cria login (seção 7).
 
-const ENTIDADE = { clientes: "clientes", profissionais: "profissionais" } as const;
+const ENTIDADE = {
+  clientes: "clientes",
+  profissionais: "profissionais",
+  fornecedores: "fornecedores",
+} as const;
 
 export type Filtro = "todos" | "active" | "inactive";
 export type Ordem = "nome" | "total" | "ultima" | "proximo";
@@ -116,8 +120,10 @@ export function Pessoas({ tipo }: { tipo: TipoPessoa }) {
     () => app.config.campos.filter((c) => c.entidade === ENTIDADE[tipo]),
     [app.config.campos, tipo],
   );
-  const temVendas = tipo === "clientes" && app.config.modulos.includes("vendas");
-  const temAgenda = app.config.modulos.includes("agenda");
+  // Clientes compram nas vendas; fornecedores, nas compras (mesmas colunas).
+  const temVendas =
+    (tipo === "clientes" && app.config.modulos.includes("vendas")) || tipo === "fornecedores";
+  const temAgenda = tipo !== "fornecedores" && app.config.modulos.includes("agenda");
   const [busca, setBusca] = useState("");
   const [filtro, setFiltro] = useState<Filtro>("todos");
   const [ordem, setOrdem] = useState<Ordem>("nome");
@@ -130,11 +136,10 @@ export function Pessoas({ tipo }: { tipo: TipoPessoa }) {
   const ativos = (q.data ?? []).filter((p) => p.status === "active").length;
   const cabecalho = [
     "Nome",
+    "Situação",
     ...campos.map((c) => c.rotulo),
     ...(temVendas ? ["Compras", "Total comprado", "Última compra"] : []),
     ...(temAgenda ? ["Atendimentos", "Próximo atendimento"] : []),
-    "Cadastrado em",
-    "Situação",
     <span className="sr-only">Ações</span>,
   ];
 
@@ -225,8 +230,23 @@ export function Pessoas({ tipo }: { tipo: TipoPessoa }) {
                   className={p.status === "inactive" ? "text-muted-foreground" : undefined}
                 >
                   <td className="px-4 py-2 font-medium whitespace-nowrap">{p.nome}</td>
+                  <td className="px-4 py-2">
+                    <span
+                      className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
+                        p.status === "active"
+                          ? "bg-success/15 text-success"
+                          : "bg-muted text-muted-foreground"
+                      }`}
+                    >
+                      {p.status === "active" ? "Ativo" : "Inativo"}
+                    </span>
+                  </td>
                   {campos.map((c) => (
-                    <td key={c.id} className="px-4 py-2 text-muted-foreground">
+                    <td
+                      key={c.id}
+                      className="max-w-60 truncate px-4 py-2 whitespace-nowrap text-muted-foreground"
+                      title={textoDoCampo(c, p.campos[c.id])}
+                    >
                       {textoDoCampo(c, p.campos[c.id])}
                     </td>
                   ))}
@@ -251,21 +271,8 @@ export function Pessoas({ tipo }: { tipo: TipoPessoa }) {
                       </td>
                     </>
                   )}
-                  <td className="px-4 py-2 text-muted-foreground tabular-nums">
-                    {data(p.resumo?.desde)}
-                  </td>
-                  <td className="px-4 py-2">
-                    <span
-                      className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
-                        p.status === "active"
-                          ? "bg-success/15 text-success"
-                          : "bg-muted text-muted-foreground"
-                      }`}
-                    >
-                      {p.status === "active" ? "Ativo" : "Inativo"}
-                    </span>
-                  </td>
-                  <td className="px-4 py-2 text-right">
+                  {/* Ações fixas à direita: com muitas colunas, a tabela rola e elas continuam à vista. */}
+                  <td className="sticky right-0 bg-card px-4 py-2 text-right whitespace-nowrap shadow-[-8px_0_8px_-8px_rgb(0_0_0/0.15)]">
                     <div className="flex justify-end gap-2">
                       <Button
                         size="sm"

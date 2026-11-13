@@ -1,5 +1,10 @@
 import type { Campo, ConfigDraft, Modelo, Modulo, Regra } from "@/types/nexus";
-import { RULE_MODULES } from "../../shared/contract/catalog";
+import {
+  OPTIONAL_MODULES,
+  PAYMENT_LABELS,
+  RULE_MODULES,
+  type PaymentMethod,
+} from "../../shared/contract/catalog";
 
 export const MODULOS_POR_MODELO: Record<Modelo, Modulo[]> = {
   comercio: ["clientes", "produtos", "vendas", "estoque"],
@@ -14,7 +19,24 @@ export const ROTULO_MODULO: Record<Modulo, string> = {
   estoque: "Estoque",
   profissionais: "Profissionais",
   agenda: "Agenda",
+  pagamentos: "Formas de pagamento",
+  fornecedores: "Fornecedores",
+  financeiro: "Financeiro",
 };
+
+/** Módulos opcionais (ADR-006) que cada modelo aceita, além dos seus. */
+export const OPCIONAIS_POR_MODELO: Record<Modelo, readonly Modulo[]> = OPTIONAL_MODULES;
+
+export const DESCRICAO_OPCIONAL: Partial<Record<Modulo, string>> = {
+  pagamentos:
+    "A venda registra como foi paga (dinheiro, Pix, cartão, boleto ou a prazo) e o painel mostra as vendas por forma.",
+  fornecedores:
+    "Cadastro de fornecedores e compras: a compra dá entrada no estoque e grava o custo dos produtos.",
+  financeiro:
+    "Contas a pagar e a receber com vencimento e baixa. Venda a prazo e compra geram a conta sozinhas.",
+};
+
+export const ROTULO_PAGAMENTO: Record<PaymentMethod, string> = PAYMENT_LABELS;
 
 export type Entidade = Campo["entidade"];
 export const ROTULO_ENTIDADE: Record<Entidade, string> = {
@@ -23,6 +45,7 @@ export const ROTULO_ENTIDADE: Record<Entidade, string> = {
   profissionais: "Profissionais",
   vendas: "Vendas",
   agendamentos: "Agendamentos",
+  fornecedores: "Fornecedores",
 };
 
 export function entidadesDosModulos(modulos: Modulo[]): Entidade[] {
@@ -32,6 +55,7 @@ export function entidadesDosModulos(modulos: Modulo[]): Entidade[] {
   if (modulos.includes("profissionais")) out.push("profissionais");
   if (modulos.includes("vendas")) out.push("vendas");
   if (modulos.includes("agenda")) out.push("agendamentos");
+  if (modulos.includes("fornecedores")) out.push("fornecedores");
   return out;
 }
 
@@ -98,6 +122,12 @@ export function textoDaRegra(r: Regra, d: ConfigDraft): string {
       return `Agendar com pelo menos ${formatarMinutos(r.minutos)} de antecedência`;
     case "prazo_cancelamento_atendimento":
       return `Cancelar ou remarcar atendimento até ${r.horas} ${r.horas === 1 ? "hora" : "horas"} antes`;
+    case "formas_pagamento":
+      return `Formas de pagamento aceitas: ${r.formas.map((f) => PAYMENT_LABELS[f]).join(", ")}${
+        r.formas.includes("a_prazo") && r.prazo_dias
+          ? ` (a prazo vence em ${r.prazo_dias} ${r.prazo_dias === 1 ? "dia" : "dias"})`
+          : ""
+      }`;
   }
 }
 
@@ -132,12 +162,17 @@ export function comRequisitosGerados(d: ConfigDraft): ConfigDraft {
 
 /** Ao trocar o modelo, tira as regras e os atendimentos de módulos que deixaram de existir. */
 export function reconciliarModelo(d: ConfigDraft): ConfigDraft {
-  const agenda = d.modulos.includes("agenda");
+  // O modelo novo leva só os opcionais que ele aceita (ADR-006).
+  const modulos = d.modulos.filter(
+    (m) => MODULOS_POR_MODELO[d.modelo].includes(m) || OPCIONAIS_POR_MODELO[d.modelo].includes(m),
+  );
+  const agenda = modulos.includes("agenda");
   return {
     ...d,
-    regras: d.regras.filter((r) => RULE_MODULES[r.tipo].every((m) => d.modulos.includes(m))),
+    modulos,
+    regras: d.regras.filter((r) => RULE_MODULES[r.tipo].every((m) => modulos.includes(m))),
     tipos_atendimento: agenda ? d.tipos_atendimento : [],
-    campos: d.campos.filter((c) => entidadesDosModulos(d.modulos).includes(c.entidade)),
+    campos: d.campos.filter((c) => entidadesDosModulos(modulos).includes(c.entidade)),
   };
 }
 

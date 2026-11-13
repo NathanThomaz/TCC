@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { FIELD_TYPES, LIMITS, MODULES, RULE_TYPES, TEMPLATES } from "./catalog";
+import { FIELD_TYPES, LIMITS, MODULES, PAYMENT_METHODS, RULE_TYPES, TEMPLATES } from "./catalog";
 
 // Contrato de configuração (seção 17). Fonte única (ADR-001, item 3): valida o formulário
 // manual, a resposta do Gemini e o que o backend grava. Identidade, versões e hash são do
@@ -25,7 +25,14 @@ export const RequirementSchema = z.strictObject({
 
 export const FieldSchema = z.strictObject({
   id: slug,
-  entidade: z.enum(["clientes", "produtos", "profissionais", "vendas", "agendamentos"]),
+  entidade: z.enum([
+    "clientes",
+    "produtos",
+    "profissionais",
+    "vendas",
+    "agendamentos",
+    "fornecedores",
+  ]),
   rotulo: z.string().trim().min(1).max(60),
   tipo: z.enum(FIELD_TYPES),
   opcoes: z.array(z.string().trim().min(1).max(60)).max(LIMITS.listOptions.max).optional(),
@@ -102,6 +109,13 @@ export const RuleSchema = z.discriminatedUnion("tipo", [
     requisitos: requirementRefs,
   }),
   z.strictObject({
+    tipo: z.literal("formas_pagamento"),
+    formas: z.array(z.enum(PAYMENT_METHODS)).min(1).max(PAYMENT_METHODS.length),
+    // Vencimento da conta a receber de uma venda a prazo (obrigatório com "a_prazo").
+    prazo_dias: z.number().int().min(1).max(180).optional(),
+    requisitos: requirementRefs,
+  }),
+  z.strictObject({
     tipo: z.literal("par_atendimento"),
     // Dois atendimentos vinculados, mesmo profissional, o segundo após o fim do primeiro (AGE-02/04).
     primeiro: slug,
@@ -133,7 +147,7 @@ export const ConfigDraftSchema = z.strictObject({
   modulos: z.array(z.enum(MODULES)).min(1).max(MODULES.length),
   aparencia: AppearanceSchema,
   requisitos: z.array(RequirementSchema).min(1).max(LIMITS.requirements),
-  campos: z.array(FieldSchema).max(LIMITS.fieldsPerEntity * 5),
+  campos: z.array(FieldSchema).max(LIMITS.fieldsPerEntity * 6),
   tipos_atendimento: z.array(ServiceTypeSchema).max(LIMITS.serviceTypes),
   regras: z.array(RuleSchema).max(20),
   fora_do_catalogo: z.array(OutOfCatalogSchema).max(LIMITS.outOfCatalog),

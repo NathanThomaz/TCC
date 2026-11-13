@@ -29,6 +29,20 @@ const FUNCOES: Record<Modulo, { texto: string; regra?: Regra["tipo"] }[]> = {
     { texto: "Sem horário em conflito para o mesmo profissional" },
     { texto: "Atendimentos em par (ex.: instalação e retirada)", regra: "par_atendimento" },
   ],
+  pagamentos: [
+    { texto: "Forma de pagamento em cada venda", regra: "formas_pagamento" },
+    { texto: "Vendas por forma de pagamento no painel" },
+  ],
+  fornecedores: [
+    { texto: "Cadastro de fornecedores, com inativação" },
+    { texto: "Compra com entrada automática no estoque e custo dos produtos" },
+    { texto: "Cancelar compra devolve o estoque" },
+  ],
+  financeiro: [
+    { texto: "Contas a pagar e a receber com vencimento e baixa" },
+    { texto: "Venda a prazo e compra geram a conta sozinhas" },
+    { texto: "Vencidos e saldo do mês no painel" },
+  ],
 };
 
 /** Campos de fábrica que só entram em uso quando a regra correspondente está ligada. */
@@ -44,6 +58,7 @@ const ENTIDADE: Partial<Record<Modulo, FieldEntity>> = {
   profissionais: "profissionais",
   vendas: "vendas",
   agenda: "agendamentos",
+  fornecedores: "fornecedores",
 };
 
 /**

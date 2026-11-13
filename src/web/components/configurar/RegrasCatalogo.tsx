@@ -23,7 +23,7 @@ import { cn } from "@/lib/utils";
 
 export type TipoExtra = Exclude<
   Regra["tipo"],
-  "limite_atacado" | "unidades_por_caixa" | "prazo_reserva" | "par_atendimento"
+  "limite_atacado" | "unidades_por_caixa" | "prazo_reserva" | "par_atendimento" | "formas_pagamento"
 >;
 
 const NOME: Record<TipoExtra, string> = {
