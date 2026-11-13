@@ -31,13 +31,13 @@ function publicPessoa(row: PessoaRow): ClienteDto & ProfissionalDto {
 // ---- Clientes e profissionais (mesma forma) ----
 
 interface Pessoa {
-  table: "customers" | "professionals";
-  /** Coluna que liga vendas e atendimentos ao cadastro. */
-  coluna: "customer_id" | "professional_id";
+  table: "customers" | "professionals" | "suppliers";
+  /** Coluna que liga vendas, compras e atendimentos ao cadastro. */
+  coluna: "customer_id" | "professional_id" | "supplier_id";
   modulo: ModuleId;
   entidade: FieldEntity;
-  chave: "cliente" | "profissional";
-  plural: "clientes" | "profissionais";
+  chave: "cliente" | "profissional" | "fornecedor";
+  plural: "clientes" | "profissionais" | "fornecedores";
   inativo: Record<string, string>;
 }
 
@@ -61,6 +61,16 @@ const PROFISSIONAIS: Pessoa = {
     profissional_com_atendimento:
       "Este profissional tem atendimentos pendentes: cancele-os antes de inativar.",
   },
+};
+
+const FORNECEDORES: Pessoa = {
+  table: "suppliers",
+  coluna: "supplier_id",
+  modulo: "fornecedores",
+  entidade: "fornecedores",
+  chave: "fornecedor",
+  plural: "fornecedores",
+  inativo: {},
 };
 
 const PessoaBody = z.object({ nome, campos: z.unknown().optional() });
@@ -89,7 +99,7 @@ function listarPessoas(p: Pessoa): Handler {
         )
         .bind(op.systemId, status)
         .all<PessoaRow & { created_at: number }>(),
-      // Só cliente compra; profissional só tem atendimentos.
+      // Cliente compra nas vendas; fornecedor vende nas compras; profissional só atende.
       p.table === "customers" && tem("vendas")
         ? db
             .prepare(
@@ -98,8 +108,16 @@ function listarPessoas(p: Pessoa): Handler {
             )
             .bind(op.systemId)
             .all<{ id: string; n: number; total: number; ultima: number }>()
-        : null,
-      tem("agenda")
+        : p.table === "suppliers"
+          ? db
+              .prepare(
+                `SELECT supplier_id AS id, COUNT(*) AS n, SUM(total_cents) AS total, MAX(created_at) AS ultima
+                 FROM purchases WHERE system_id = ? AND status = 'completed' GROUP BY supplier_id`,
+              )
+              .bind(op.systemId)
+              .all<{ id: string; n: number; total: number; ultima: number }>()
+          : null,
+      tem("agenda") && p.table !== "suppliers"
         ? db
             .prepare(
               `SELECT ${p.coluna} AS id, COUNT(*) AS n,
@@ -255,6 +273,10 @@ export const listarProfissionais = listarPessoas(PROFISSIONAIS);
 export const criarProfissional = criarPessoa(PROFISSIONAIS);
 export const editarProfissional = editarPessoa(PROFISSIONAIS);
 export const statusProfissional = statusPessoa(PROFISSIONAIS);
+export const listarFornecedores = listarPessoas(FORNECEDORES);
+export const criarFornecedor = criarPessoa(FORNECEDORES);
+export const editarFornecedor = editarPessoa(FORNECEDORES);
+export const statusFornecedor = statusPessoa(FORNECEDORES);
 
 // ---- Produtos ----
 
@@ -268,6 +290,7 @@ interface ProdutoRow {
   physical: number;
   reserved: number;
   extra_json: string;
+  last_cost_cents: number | null;
 }
 
 const centavos = z.number().int().min(1).max(100_000_000);
@@ -292,13 +315,14 @@ export function publicProduto(row: ProdutoRow): ProdutoDto {
     reservado: row.reserved,
     disponivel: row.physical - row.reserved,
     campos: lerCampos(row.extra_json),
+    custoCentavos: row.last_cost_cents,
   };
 }
 
 /** Produtos com o reservado ativo no instante `now` (EST-05: soma das reservas não vencidas). */
 export const SELECT_PRODUTO = `
   SELECT p.id, p.name, p.status, p.retail_cents, p.wholesale_cents, p.units_per_box, p.physical,
-         p.extra_json,
+         p.extra_json, p.last_cost_cents,
          (SELECT COALESCE(SUM(r.quantity), 0) FROM reservations r
           WHERE r.product_id = p.id AND r.status = 'active' AND r.expires_at > ?1) AS reserved
   FROM products p`;

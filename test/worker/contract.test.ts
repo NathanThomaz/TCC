@@ -339,6 +339,42 @@ describe("validateDraft — regras do catálogo ampliado (ADR-005)", () => {
   });
 });
 
+describe("validateDraft — módulos opcionais (ADR-006)", () => {
+  it("aceita os opcionais do modelo e recusa os que o modelo não tem", () => {
+    const draft = distribuidora();
+    draft.modulos.push("fornecedores", "financeiro");
+    expect(codes(draft)).toEqual([]);
+
+    const servicos = distribuidora();
+    servicos.modelo = "servicos";
+    servicos.modulos = ["clientes", "profissionais", "agenda", "financeiro", "fornecedores"];
+    servicos.regras = servicos.regras.filter((r) => r.tipo === "par_atendimento");
+    servicos.campos = [];
+    // fornecedores não existe em serviços (e depende de produtos e estoque).
+    expect(codes(servicos)).toEqual(
+      expect.arrayContaining(["modulos_incompativeis_com_modelo", "dependencia_ausente"]),
+    );
+  });
+
+  it("formas de pagamento: obrigatória com o módulo, prazo com venda a prazo, sem repetição", () => {
+    const draft = distribuidora();
+    draft.modulos.push("pagamentos");
+    expect(codes(draft)).toContain("parametro_obrigatorio_ausente");
+    draft.regras.push({
+      tipo: "formas_pagamento",
+      formas: ["pix", "pix", "a_prazo"],
+      requisitos: ["REQ-01"],
+    });
+    expect(codes(draft).filter((c) => c === "forma_pagamento_invalida")).toHaveLength(2);
+  });
+
+  it("regra de formas de pagamento sem o módulo é bloqueada", () => {
+    const draft = distribuidora();
+    draft.regras.push({ tipo: "formas_pagamento", formas: ["pix"], requisitos: ["REQ-01"] });
+    expect(codes(draft)).toContain("modulo_inativo");
+  });
+});
+
 describe("schema para o Gemini", () => {
   it("troca oneOf por anyOf, const por enum e remove $schema em todo o schema", () => {
     const text = JSON.stringify(configDraftGeminiSchema());

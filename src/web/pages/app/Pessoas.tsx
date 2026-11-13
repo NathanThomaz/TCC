@@ -38,7 +38,11 @@ import { rotuloModulo, useApp } from "./Aplicacao";
 // Clientes e profissionais (seção 14): cadastrar, editar, inativar e reativar; sem exclusão.
 // Cadastro de técnico não cria login (seção 7).
 
-const ENTIDADE = { clientes: "clientes", profissionais: "profissionais" } as const;
+const ENTIDADE = {
+  clientes: "clientes",
+  profissionais: "profissionais",
+  fornecedores: "fornecedores",
+} as const;
 
 export type Filtro = "todos" | "active" | "inactive";
 export type Ordem = "nome" | "total" | "ultima" | "proximo";
@@ -116,8 +120,10 @@ export function Pessoas({ tipo }: { tipo: TipoPessoa }) {
     () => app.config.campos.filter((c) => c.entidade === ENTIDADE[tipo]),
     [app.config.campos, tipo],
   );
-  const temVendas = tipo === "clientes" && app.config.modulos.includes("vendas");
-  const temAgenda = app.config.modulos.includes("agenda");
+  // Clientes compram nas vendas; fornecedores, nas compras (mesmas colunas).
+  const temVendas =
+    (tipo === "clientes" && app.config.modulos.includes("vendas")) || tipo === "fornecedores";
+  const temAgenda = tipo !== "fornecedores" && app.config.modulos.includes("agenda");
   const [busca, setBusca] = useState("");
   const [filtro, setFiltro] = useState<Filtro>("todos");
   const [ordem, setOrdem] = useState<Ordem>("nome");

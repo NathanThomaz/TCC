@@ -1235,3 +1235,269 @@ describe("regras do catálogo (ADR-005)", () => {
     expect((await call("GET", p("/painel"), ADMIN2)).status).toBe(404);
   });
 });
+
+// ---- Módulos opcionais (ADR-006): formas de pagamento, fornecedores e compras, financeiro ----
+
+describe("módulos opcionais (ADR-006)", () => {
+  async function ativarModulos(
+    modulos: string[],
+    formas: Record<string, unknown> = { formas: ["dinheiro", "pix", "a_prazo"], prazo_dias: 30 },
+  ) {
+    S = await ativar(ADMIN, {
+      ...DISTRIBUIDORA,
+      modulos: [...DISTRIBUIDORA.modulos, ...modulos],
+      requisitos: [
+        ...DISTRIBUIDORA.requisitos,
+        { id: "REQ-91", texto: "Formas de pagamento aceitas", status: "confirmado" },
+      ],
+      regras: [
+        ...DISTRIBUIDORA.regras,
+        ...(modulos.includes("pagamentos")
+          ? [{ tipo: "formas_pagamento", ...formas, requisitos: ["REQ-91"] }]
+          : []),
+      ],
+    });
+  }
+  async function vendaPronta(clienteId: string, prod: string, unidades = 2) {
+    return (await venda(clienteId, [{ produto: prod, unidades }])).body.venda!;
+  }
+  const concluir = (v: { id: string; revisao: number }, formaPagamento?: string) =>
+    call("POST", p(`/vendas/${v.id}/concluir`), ADMIN, {
+      revisao: v.revisao,
+      ...(formaPagamento ? { formaPagamento } : {}),
+    });
+  const lancamentos = async (filtro = "") =>
+    (await call("GET", p(`/financeiro${filtro}`), ADMIN)).body.lancamentos!;
+  async function fornecedor(nome = "Cervejaria Sul") {
+    return (await call("POST", p("/fornecedores"), ADMIN, { nome })).body.fornecedor!.id;
+  }
+  const comprar = (corpo: Record<string, unknown>) => call("POST", p("/compras"), ADMIN, corpo);
+
+  it("forma de pagamento: obrigatória, só as aceitas, e gravada na venda", async () => {
+    await ativarModulos(["pagamentos"]);
+    const c = await cliente();
+    const prod = await produto();
+    await entrada(prod, 50);
+    const v = await vendaPronta(c, prod);
+    expect((await concluir(v)).body.error!.code).toBe("forma_pagamento_obrigatoria");
+    expect((await concluir(v, "cartao_credito")).body.error!.code).toBe(
+      "forma_pagamento_nao_aceita",
+    );
+    const ok = await concluir(v, "pix");
+    expect(ok.body.venda).toMatchObject({ status: "completed", formaPagamento: "pix" });
+    // Sem financeiro, venda a prazo não gera conta (não há onde registrar).
+    const prazo = await vendaPronta(c, prod);
+    expect((await concluir(prazo, "a_prazo")).body.venda!.formaPagamento).toBe("a_prazo");
+  });
+
+  it("sem o módulo de pagamentos a venda conclui como antes, sem forma", async () => {
+    await ativarModulos([]);
+    const prod = await produto();
+    await entrada(prod, 10);
+    const v = await vendaPronta(await cliente(), prod);
+    expect((await concluir(v, "pix")).body.venda!.formaPagamento).toBeNull();
+    expect((await call("GET", p("/financeiro"), ADMIN)).body.error!.code).toBe(
+      "modulo_indisponivel",
+    );
+  });
+
+  it("venda a prazo com financeiro gera conta a receber; cancelar a venda cancela a conta", async () => {
+    await ativarModulos(["pagamentos", "financeiro"]);
+    const c = await cliente();
+    const prod = await produto();
+    await entrada(prod, 50);
+    const v = await vendaPronta(c, prod, 4);
+    await concluir(v, "a_prazo");
+    const [conta] = await lancamentos();
+    expect(conta).toMatchObject({
+      tipo: "receber",
+      valorCentavos: 2000,
+      vencimento: "2026-12-05",
+      status: "pendente",
+      venda: v.id,
+      cliente: c,
+      contraparte: "Bar do Zé",
+      vencido: false,
+    });
+    expect(
+      (await call("POST", p(`/financeiro/${conta!.id}/cancelar`), ADMIN, { motivo: "Errado" })).body
+        .error!.code,
+    ).toBe("conta_de_origem");
+    await call("POST", p(`/vendas/${v.id}/cancelar`), ADMIN, { motivo: "Desistiu" });
+    expect((await lancamentos())[0]!.status).toBe("cancelado");
+  });
+
+  it("conta recebida impede cancelar a venda (gatilho e mensagem)", async () => {
+    await ativarModulos(["pagamentos", "financeiro"]);
+    const prod = await produto();
+    await entrada(prod, 50);
+    const v = await vendaPronta(await cliente(), prod);
+    await concluir(v, "a_prazo");
+    const [conta] = await lancamentos();
+    const baixa = await call("POST", p(`/financeiro/${conta!.id}/baixar`), ADMIN, {});
+    expect(baixa.body.lancamento).toMatchObject({ status: "pago", pagoEm: NOW });
+    const r = await call("POST", p(`/vendas/${v.id}/cancelar`), ADMIN, { motivo: "Desistiu" });
+    expect(r.status).toBe(409);
+    expect(r.body.error!.code).toBe("conta_ja_paga");
+    expect((await estoqueDe(prod)).fisico).toBe(48);
+  });
+
+  it("compra dá entrada no estoque, grava o custo e gera a conta a pagar", async () => {
+    await ativarModulos(["fornecedores", "financeiro"]);
+    const f = await fornecedor();
+    const prod = await produto();
+    const semVencimento = await comprar({
+      fornecedor: f,
+      itens: [{ produto: prod, caixas: 2, unidades: 0, custoUnitarioCentavos: 300 }],
+    });
+    expect(semVencimento.status).toBe(422);
+    const r = await comprar({
+      fornecedor: f,
+      itens: [{ produto: prod, caixas: 2, unidades: 3, custoUnitarioCentavos: 300 }],
+      vencimento: "2026-11-20",
+      observacao: "NF 123",
+    });
+    expect(r.status).toBe(201);
+    expect(r.body.compra).toMatchObject({
+      status: "completed",
+      totalCentavos: 27 * 300,
+      nomeFornecedor: "Cervejaria Sul",
+      itens: [{ caixas: 2, unidadesSoltas: 3, unidades: 27, custoUnitarioCentavos: 300 }],
+    });
+    expect((await estoqueDe(prod)).fisico).toBe(27);
+    const movs = (await call("GET", p(`/estoque/movimentos?produto=${prod}`), ADMIN)).body
+      .movimentos!;
+    expect(movs[0]).toMatchObject({
+      tipo: "entrada",
+      delta: 27,
+      motivo: "Compra de Cervejaria Sul",
+    });
+    expect(await lancamentos()).toMatchObject([
+      {
+        tipo: "pagar",
+        valorCentavos: 8100,
+        vencimento: "2026-11-20",
+        contraparte: "Cervejaria Sul",
+      },
+    ]);
+    const lista = (await call("GET", p("/fornecedores"), ADMIN)).body
+      .fornecedores as unknown as ClienteDto[];
+    expect(lista[0]!.resumo).toMatchObject({ compras: 1, totalCentavos: 8100, ultimaCompra: NOW });
+  });
+
+  it("cancelar a compra devolve o estoque e a conta; com o estoque já vendido, recusa", async () => {
+    await ativarModulos(["fornecedores", "financeiro"]);
+    const f = await fornecedor();
+    const prod = await produto();
+    const compra = async (unidades: number) =>
+      (
+        await comprar({
+          fornecedor: f,
+          itens: [{ produto: prod, unidades, custoUnitarioCentavos: 250 }],
+          vencimento: "2026-11-30",
+        })
+      ).body.compra!;
+    const primeira = await compra(10);
+    const r = await call("POST", p(`/compras/${primeira.id}/cancelar`), ADMIN, {
+      motivo: "Avaria",
+    });
+    expect(r.body.compra!.status).toBe("cancelled");
+    expect((await estoqueDe(prod)).fisico).toBe(0);
+    expect((await lancamentos())[0]!.status).toBe("cancelado");
+
+    const segunda = await compra(5);
+    await vendaPronta(await cliente(), prod, 3); // reserva 3 das 5
+    const recusa = await call("POST", p(`/compras/${segunda.id}/cancelar`), ADMIN, {
+      motivo: "Avaria",
+    });
+    expect(recusa.status).toBe(409);
+    expect(recusa.body.error!.code).toBe("estoque_insuficiente");
+    expect((await estoqueDe(prod)).fisico).toBe(5);
+  });
+
+  it("financeiro: lançamento manual, vencidos, baixa e cancelamento", async () => {
+    await ativarModulos(["financeiro"]);
+    const novo = (corpo: Record<string, unknown>) => call("POST", p("/financeiro"), ADMIN, corpo);
+    const aluguel = (
+      await novo({
+        tipo: "pagar",
+        descricao: "Aluguel",
+        valorCentavos: 150000,
+        vencimento: "2026-11-01",
+      })
+    ).body.lancamento!;
+    expect(aluguel).toMatchObject({ status: "pendente", vencido: true });
+    await novo({
+      tipo: "receber",
+      descricao: "Evento",
+      valorCentavos: 50000,
+      vencimento: "2026-11-10",
+    });
+    expect(
+      (await novo({ tipo: "pagar", descricao: "x", valorCentavos: 1, vencimento: "2026-02-30" }))
+        .status,
+    ).toBe(422);
+    expect((await lancamentos("?status=vencido")).map((l) => l.descricao)).toEqual(["Aluguel"]);
+    expect((await lancamentos("?tipo=receber")).map((l) => l.descricao)).toEqual(["Evento"]);
+    await call("POST", p(`/financeiro/${aluguel.id}/baixar`), ADMIN, {});
+    const cancelar = await call("POST", p(`/financeiro/${aluguel.id}/cancelar`), ADMIN, {
+      motivo: "Engano",
+    });
+    expect(cancelar.status).toBe(409);
+    expect(await lancamentos("?status=vencido")).toEqual([]);
+  });
+
+  it("painel: vendas por forma, compras do mês, estoque a custo e financeiro", async () => {
+    await ativarModulos(["pagamentos", "fornecedores", "financeiro"]);
+    const c = await cliente();
+    const f = await fornecedor();
+    const prod = await produto();
+    await comprar({
+      fornecedor: f,
+      itens: [{ produto: prod, unidades: 20, custoUnitarioCentavos: 300 }],
+      vencimento: "2026-11-01",
+    });
+    await concluir(await vendaPronta(c, prod, 2), "pix");
+    await concluir(await vendaPronta(c, prod, 4), "a_prazo");
+    const painel = (
+      (await call("GET", p("/painel"), ADMIN)).body as unknown as { painel: PainelDto }
+    ).painel;
+    expect(painel.pagamentos).toEqual([
+      { forma: "a_prazo", quantidade: 1, totalCentavos: 2000 },
+      { forma: "pix", quantidade: 1, totalCentavos: 1000 },
+    ]);
+    expect(painel.compras).toEqual({
+      noMes: { quantidade: 1, totalCentavos: 6000 },
+      fornecedoresAtivos: 1,
+      valorCustoCentavos: 14 * 300,
+    });
+    expect(painel.financeiro).toMatchObject({
+      aReceber: { quantidade: 1, totalCentavos: 2000 },
+      aPagar: { quantidade: 1, totalCentavos: 6000 },
+      vencidosPagar: { quantidade: 1, totalCentavos: 6000 },
+      vencidosReceber: { quantidade: 0, totalCentavos: 0 },
+    });
+    expect(painel.financeiro!.proximos[0]).toMatchObject({
+      tipo: "pagar",
+      vencimento: "2026-11-01",
+    });
+  });
+
+  it("isolamento: outro dono não vê compras nem contas deste sistema", async () => {
+    await ativarModulos(["fornecedores", "financeiro"]);
+    const f = await fornecedor();
+    const prod = await produto();
+    const compra = (
+      await comprar({
+        fornecedor: f,
+        itens: [{ produto: prod, unidades: 1, custoUnitarioCentavos: 1 }],
+        vencimento: "2026-11-30",
+      })
+    ).body.compra!;
+    expect((await call("GET", p("/compras"), ADMIN2)).status).toBe(404);
+    expect((await call("GET", p("/financeiro"), ADMIN2)).status).toBe(404);
+    expect(
+      (await call("POST", p(`/compras/${compra.id}/cancelar`), ADMIN2, { motivo: "Teste" })).status,
+    ).toBe(404);
+  });
+});

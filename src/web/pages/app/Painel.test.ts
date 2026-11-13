@@ -62,4 +62,40 @@ describe("indicadores do painel", () => {
     const ticket = indicadores({ hoje: "", vendas: sem }).find((i) => i.id === "ticket");
     expect(ticket!.valor).toBe("R$ 0,00");
   });
+
+  it("módulos opcionais: contas vencidas sobem para o topo e o total continua 8", () => {
+    const financeiro: NonNullable<PainelDto["financeiro"]> = {
+      aReceber: { quantidade: 1, totalCentavos: 1000 },
+      aPagar: { quantidade: 1, totalCentavos: 500 },
+      vencidosReceber: { quantidade: 1, totalCentavos: 1000 },
+      vencidosPagar: { quantidade: 0, totalCentavos: 0 },
+      recebidoNoMesCentavos: 0,
+      pagoNoMesCentavos: 0,
+      proximos: [],
+    };
+    const compras = {
+      noMes: { quantidade: 1, totalCentavos: 100 },
+      fornecedoresAtivos: 1,
+      valorCustoCentavos: 50,
+    };
+    const lista = ids({
+      hoje: "",
+      vendas,
+      clientes,
+      estoque,
+      financeiro,
+      compras,
+      pagamentos: [{ forma: "pix", quantidade: 2, totalCentavos: 3000 }],
+    });
+    expect(lista).toHaveLength(LIMITE_INDICADORES);
+    expect(lista).toEqual(expect.arrayContaining(["vencidos", "a-receber", "a-pagar"]));
+    const semVencidos = ids({
+      hoje: "",
+      vendas,
+      clientes,
+      estoque,
+      financeiro: { ...financeiro, vencidosReceber: { quantidade: 0, totalCentavos: 0 } },
+    });
+    expect(semVencidos).not.toContain("vencidos");
+  });
 });

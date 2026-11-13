@@ -2,11 +2,14 @@ import { z } from "zod";
 import type { AtendimentoDto, FaltaDto, ItemVendaDto, VendaDto } from "../../../shared/api";
 import type { ConfigDraft } from "../../../shared/contract/schema";
 import { calcularTotais, unidadesDoItem } from "../../../shared/dominio/precos";
+import { PAYMENT_METHODS, type PaymentMethod } from "../../../shared/contract/catalog";
 import {
+  conferirFormaPagamento,
   conferirLimitePorItem,
   conferirPedidoMinimo,
   conferirPrazoCancelamentoAtendimento,
   conferirPrazoCancelamentoVenda,
+  vencimentoEmDias,
 } from "../../../shared/dominio/regras";
 import { readJson } from "../../http/body";
 import { AppError, conflict, notFound, validationFailed } from "../../http/errors";
@@ -55,6 +58,7 @@ interface VendaRow {
   completed_at: number | null;
   cancelled_at: number | null;
   cancel_reason: string | null;
+  payment_method: PaymentMethod | null;
 }
 
 interface ItemRow {
@@ -83,7 +87,11 @@ const CriarBody = z.object({
   campos: z.unknown().optional(),
 });
 const SalvarBody = z.object({ revisao: z.number().int().min(1), itens });
-const ConcluirBody = z.object({ revisao: z.number().int().min(1) });
+const ConcluirBody = z.object({
+  revisao: z.number().int().min(1),
+  /** Obrigatória com o módulo de pagamentos (ADR-006); ignorada sem ele. */
+  formaPagamento: z.enum(PAYMENT_METHODS).optional(),
+});
 const CancelarBody = z.object({
   motivo: z.string().trim().min(3).max(300),
   /** CAN-04: confirma o cancelamento conjunto dos serviços vinculados ainda não iniciados. */
@@ -110,6 +118,7 @@ function publicVenda(row: VendaRow, items: ItemRow[], now: number): VendaDto {
     concluidaEm: row.completed_at,
     canceladaEm: row.cancelled_at,
     motivoCancelamento: row.cancel_reason,
+    formaPagamento: row.payment_method,
   };
 }
 
@@ -320,6 +329,9 @@ const MENSAGENS = {
     "A reserva venceu. Grave o rascunho de novo para reservar o estoque antes de concluir (RES-06).",
   servicos_vinculados:
     "Há serviços vinculados a esta venda que precisam ser resolvidos antes do cancelamento.",
+  conta_ja_paga:
+    "A conta a receber desta venda já foi recebida no financeiro: a venda não pode ser cancelada.",
+  forma_pagamento_imutavel: "A forma de pagamento é registrada só na conclusão.",
 };
 
 function limiteAtacado(config: ConfigDraft): number | null {
@@ -572,7 +584,7 @@ export const descartarVenda: Handler = async (ctx) => {
 export const concluirVenda: Handler = async (ctx) => {
   const op = await abrirOperacao(ctx, "vendas");
   const id = ctx.params.id ?? "";
-  const { revisao } = parse(ConcluirBody, await readJson(ctx.request));
+  const { revisao, formaPagamento } = parse(ConcluirBody, await readJson(ctx.request));
   const venda = await carregarVendaRow(ctx, op.systemId, id);
   if (venda.status === "completed")
     return json({ venda: await carregarVenda(ctx, op.systemId, id) });
@@ -583,21 +595,45 @@ export const concluirVenda: Handler = async (ctx) => {
   if (venda.revision !== revisao) throw conflict(MENSAGENS.venda_alterada);
   const minimo = conferirPedidoMinimo(op.config, venda.total_cents);
   if (minimo) throw new AppError(409, minimo.code, minimo.message);
+  const pagamento = conferirFormaPagamento(op.config, formaPagamento);
+  if ("code" in pagamento) throw new AppError(422, pagamento.code, pagamento.message);
 
   const db = ctx.env.DB;
+  // Venda a prazo com o financeiro gera a conta a receber no mesmo lote (ADR-006).
+  const conta =
+    pagamento.forma === "a_prazo" && op.config.modulos.includes("financeiro")
+      ? db
+          .prepare(
+            `INSERT INTO financial_entries (id, system_id, kind, description, amount_cents, due_date,
+               sale_id, customer_id, created_by, created_at, updated_at)
+             SELECT ?, system_id, 'receber', substr('Venda a prazo — ' || ?, 1, 200), total_cents, ?,
+               id, customer_id, ?, ?, ? FROM sales WHERE id = ? AND status = 'completed'`,
+          )
+          .bind(
+            crypto.randomUUID(),
+            venda.customer_name,
+            vencimentoEmDias(now, pagamento.prazoDias),
+            op.user.id,
+            now,
+            now,
+            id,
+          )
+      : null;
   try {
     await db.batch([
       db
         .prepare(
           `UPDATE sales SET status = 'completed', completed_at = ?, completed_by = ?, revision = ?,
-             updated_at = max(updated_at, ?) WHERE id = ? AND system_id = ? AND status = 'draft'`,
+             payment_method = ?, updated_at = max(updated_at, ?)
+           WHERE id = ? AND system_id = ? AND status = 'draft'`,
         )
-        .bind(now, op.user.id, revisao + 1, now, id, op.systemId),
+        .bind(now, op.user.id, revisao + 1, pagamento.forma, now, id, op.systemId),
       db
         .prepare(
           "INSERT INTO audit_events (system_id, actor_id, action, target_type, target_id, created_at) SELECT ?, ?, 'venda.completed', 'venda', ?, ? WHERE changes() = 1",
         )
         .bind(op.systemId, op.user.id, id, now),
+      ...(conta ? [conta] : []),
     ]);
   } catch (error) {
     triggerConflict(error, MENSAGENS);

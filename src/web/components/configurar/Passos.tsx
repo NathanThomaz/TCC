@@ -342,6 +342,12 @@ const SUGESTOES_CAMPOS: Record<Entidade, SugestaoCampo[]> = {
     { rotulo: "Endereço do atendimento", tipo: "texto" },
     { rotulo: "Observação", tipo: "texto" },
   ],
+  fornecedores: [
+    { rotulo: "CNPJ", tipo: "texto" },
+    { rotulo: "Telefone", tipo: "texto" },
+    { rotulo: "E-mail", tipo: "texto" },
+    { rotulo: "Contato", tipo: "texto" },
+  ],
 };
 
 const TIPOS_CAMPO: Record<Campo["tipo"], string> = {
@@ -377,7 +383,9 @@ export function PassoCampos({ draft, set }: PassoProps) {
           const lista = draft.campos.filter((c) => c.entidade === e);
           const existentes = new Set(lista.map((c) => normalizarRotulo(c.rotulo)));
           const atalhos = SUGESTOES_CAMPOS[e].filter(
-            (s) => !existentes.has(normalizarRotulo(s.rotulo)),
+            (s) =>
+              !existentes.has(normalizarRotulo(s.rotulo)) &&
+              !campoNativoDuplicado(e, s.rotulo, draft.modulos),
           );
           return (
             <section key={e} aria-labelledby={`ent-${e}`}>
@@ -441,7 +449,7 @@ export function PassoCampos({ draft, set }: PassoProps) {
                 {lista.map((c) => {
                   const ops = (c.opcoes ?? []).map((o) => o.trim()).filter(Boolean);
                   const dup = new Set(ops.map((o) => o.toLowerCase())).size !== ops.length;
-                  const nativo = campoNativoDuplicado(e, c.rotulo);
+                  const nativo = campoNativoDuplicado(e, c.rotulo, draft.modulos);
                   const repetido =
                     !!c.rotulo.trim() &&
                     lista.some(

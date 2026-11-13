@@ -1,6 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import {
+  ArrowDownCircle,
+  ArrowUpCircle,
   Ban,
+  Banknote,
+  Landmark,
+  ShoppingBag,
   CalendarCheck,
   CalendarClock,
   CalendarDays,
@@ -26,7 +31,7 @@ import { formatarCentavos } from "../../../shared/dominio/precos";
 import { obterPainel } from "@/api/operacao";
 import { ErrorState } from "@/components/nexus/Estados";
 import { Skeleton } from "@/components/ui/skeleton";
-import { textoDaRegra } from "@/lib/nexus";
+import { ROTULO_PAGAMENTO, textoDaRegra } from "@/lib/nexus";
 import { Link } from "@/lib/rotas";
 import { cn } from "@/lib/utils";
 import { rotuloModulo, useApp } from "./Aplicacao";
@@ -41,6 +46,13 @@ const ATALHOS: { modulo: ModuleId; caminho: string; icone: LucideIcon; texto: st
   { modulo: "agenda", caminho: "agenda", icone: CalendarDays, texto: "Agenda por profissional" },
   { modulo: "clientes", caminho: "clientes", icone: Users, texto: "Cadastro de clientes" },
   { modulo: "profissionais", caminho: "profissionais", icone: Wrench, texto: "Equipe" },
+  { modulo: "fornecedores", caminho: "compras", icone: ShoppingBag, texto: "Registrar uma compra" },
+  {
+    modulo: "financeiro",
+    caminho: "financeiro",
+    icone: Landmark,
+    texto: "Contas a pagar e receber",
+  },
 ];
 
 function Indicador({
@@ -242,6 +254,68 @@ export function indicadores(p: PainelDto): IndicadorDados[] {
       detalhe: prox ? `${prox.cliente} · ${prox.tipo}` : "Nada agendado",
     });
   }
+  if (p.financeiro) {
+    const f = p.financeiro;
+    const vencidos = f.vencidosReceber.quantidade + f.vencidosPagar.quantidade;
+    add({
+      id: "vencidos",
+      // Conta vencida é o que mais pede atenção; sem vencidos, cede o lugar.
+      prioridade: vencidos > 0 ? 3.5 : 13.5,
+      rotulo: "Contas vencidas",
+      icone: CircleAlert,
+      alerta: vencidos > 0,
+      valor: String(vencidos),
+      detalhe: `${formatarCentavos(f.vencidosReceber.totalCentavos)} a receber · ${formatarCentavos(f.vencidosPagar.totalCentavos)} a pagar`,
+    });
+    add({
+      id: "a-receber",
+      prioridade: 6.5,
+      rotulo: "A receber",
+      icone: ArrowDownCircle,
+      valor: formatarCentavos(f.aReceber.totalCentavos),
+      detalhe: `${plural(f.aReceber.quantidade, "conta pendente", "contas pendentes")} · ${formatarCentavos(f.recebidoNoMesCentavos)} recebidos no mês`,
+    });
+    add({
+      id: "a-pagar",
+      prioridade: 7.5,
+      rotulo: "A pagar",
+      icone: ArrowUpCircle,
+      valor: formatarCentavos(f.aPagar.totalCentavos),
+      detalhe: `${plural(f.aPagar.quantidade, "conta pendente", "contas pendentes")} · ${formatarCentavos(f.pagoNoMesCentavos)} pagos no mês`,
+    });
+  }
+  if (p.pagamentos) {
+    const [mais] = p.pagamentos;
+    add({
+      id: "forma-mais-usada",
+      prioridade: 10.5,
+      rotulo: "Forma mais usada no mês",
+      icone: Banknote,
+      valor: mais ? ROTULO_PAGAMENTO[mais.forma] : "—",
+      detalhe: mais
+        ? `${formatarCentavos(mais.totalCentavos)} em ${vendasTexto(mais.quantidade)}`
+        : "Nenhuma venda no mês",
+    });
+  }
+  if (p.compras) {
+    const c = p.compras;
+    add({
+      id: "compras-mes",
+      prioridade: 11.5,
+      rotulo: "Compras no mês",
+      icone: ShoppingBag,
+      valor: formatarCentavos(c.noMes.totalCentavos),
+      detalhe: `${plural(c.noMes.quantidade, "compra", "compras")} · ${plural(c.fornecedoresAtivos, "fornecedor ativo", "fornecedores ativos")}`,
+    });
+    add({
+      id: "estoque-custo",
+      prioridade: 12.5,
+      rotulo: "Estoque a preço de custo",
+      icone: Warehouse,
+      valor: formatarCentavos(c.valorCustoCentavos),
+      detalhe: "Pelo último custo de compra de cada produto",
+    });
+  }
   // Os mais importantes, mostrados na ordem dos módulos (vendas, clientes, estoque, agenda).
   const escolhidos = new Set(
     [...lista]
@@ -406,6 +480,58 @@ export function Painel() {
             </section>
           )}
 
+          {p.financeiro && (
+            <section
+              aria-labelledby="titulo-contas"
+              className="rounded-xl border bg-card p-4 shadow-card"
+            >
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <h2 id="titulo-contas" className="text-lg font-semibold">
+                  Contas a vencer
+                </h2>
+                <Link
+                  to={caminho("financeiro")}
+                  params={{ id: app.id }}
+                  className="text-sm text-primary underline-offset-4 hover:underline"
+                >
+                  Ver financeiro
+                </Link>
+              </div>
+              {p.financeiro.proximos.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Nenhuma conta pendente.</p>
+              ) : (
+                <ul className="divide-y text-sm">
+                  {p.financeiro.proximos.map((l) => {
+                    const [a, m, d] = l.vencimento.split("-");
+                    const vencida = l.vencimento < p.hoje;
+                    return (
+                      <li key={l.id} className="flex items-center justify-between gap-3 py-2">
+                        <span className="min-w-0">
+                          <span className="block truncate font-medium">{l.descricao}</span>
+                          <span
+                            className={cn(
+                              "block text-xs",
+                              vencida ? "text-warning" : "text-muted-foreground",
+                            )}
+                          >
+                            {vencida ? "Venceu em" : "Vence em"} {d}/{m}/{a}
+                          </span>
+                        </span>
+                        <span
+                          className={cn(
+                            "shrink-0 tabular-nums",
+                            l.tipo === "receber" ? "text-success" : "text-destructive",
+                          )}
+                        >
+                          {l.tipo === "pagar" ? "−" : "+"} {formatarCentavos(l.valorCentavos)}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </section>
+          )}
           {p.agenda && (
             <section
               aria-labelledby="titulo-proximos"

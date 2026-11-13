@@ -55,6 +55,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Link, useNavigate } from "@/lib/rotas";
 import { useApp } from "./Aplicacao";
 import { SituacaoVenda } from "./Vendas";
+import type { PaymentMethod } from "../../../shared/contract/catalog";
+import { ROTULO_PAGAMENTO } from "@/lib/nexus";
 
 // Editor da venda (seções 10 a 12). Salvar o rascunho reserva o estoque (RES-01), tudo ou nada
 // (RES-02), e reinicia o prazo (RES-03). A prévia do total usa as mesmas regras do backend,
@@ -157,6 +159,14 @@ function Rascunho({ venda, servicos }: { venda: VendaDto | null; servicos: Atend
     queryFn: () => listarProdutos(app.id),
   });
   const [cliente, setCliente] = useState(venda?.cliente ?? "");
+  // Módulo de pagamentos (ADR-006): a forma é escolhida na conclusão, entre as aceitas.
+  const formasAceitas =
+    (app.config.modulos.includes("pagamentos") &&
+      app.config.regras.find(
+        (r): r is Extract<typeof r, { tipo: "formas_pagamento" }> => r.tipo === "formas_pagamento",
+      )?.formas) ||
+    [];
+  const [forma, setForma] = useState<PaymentMethod | "">("");
   const [linhas, setLinhas] = useState<Linha[]>(venda ? deVenda(venda) : [linhaVazia()]);
   // Revisão de onde partem as edições locais. Se a venda mudar em outra tela (revisão nova vinda
   // do servidor), nada é salvo nem concluído até o usuário carregar a versão atual.
@@ -233,7 +243,8 @@ function Rascunho({ venda, servicos }: { venda: VendaDto | null; servicos: Atend
     onError: (e) => setFaltas(dadosDoErro<FaltaDto[]>(e, "faltas") ?? null),
   });
   const concluir = useMutation({
-    mutationFn: () => concluirVenda(app.id, venda!.id, (base ?? venda!).revisao),
+    mutationFn: () =>
+      concluirVenda(app.id, venda!.id, (base ?? venda!).revisao, forma || undefined),
     onSuccess: () => {
       invalidar();
       toast.success("Venda concluída. O estoque foi baixado.");
@@ -477,10 +488,30 @@ function Rascunho({ venda, servicos }: { venda: VendaDto | null; servicos: Atend
           </Button>
           {venda && (
             <>
+              {formasAceitas.length > 0 && (
+                <Select value={forma} onValueChange={(v) => setForma(v as PaymentMethod)}>
+                  <SelectTrigger className="w-48" aria-label="Forma de pagamento">
+                    <SelectValue placeholder="Forma de pagamento" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {formasAceitas.map((f) => (
+                      <SelectItem key={f} value={f}>
+                        {ROTULO_PAGAMENTO[f]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
               <Button
                 type="button"
                 variant="secondary"
-                disabled={concluir.isPending || alterado || vencida || desatualizada}
+                disabled={
+                  concluir.isPending ||
+                  alterado ||
+                  vencida ||
+                  desatualizada ||
+                  (formasAceitas.length > 0 && !forma)
+                }
                 onClick={() => concluir.mutate()}
               >
                 {concluir.isPending && <Loader2 className="animate-spin" aria-hidden />}Concluir
@@ -547,7 +578,9 @@ function VendaFechada({ venda, servicos }: { venda: VendaDto; servicos: Atendime
         }
         descricao={
           venda.status === "completed"
-            ? `Concluída em ${formatarDataHora(venda.concluidaEm ?? venda.criadoEm)}.`
+            ? `Concluída em ${formatarDataHora(venda.concluidaEm ?? venda.criadoEm)}${
+                venda.formaPagamento ? ` · ${ROTULO_PAGAMENTO[venda.formaPagamento]}` : ""
+              }.`
             : venda.status === "cancelled"
               ? `Cancelada em ${formatarDataHora(venda.canceladaEm ?? venda.criadoEm)} · motivo: ${venda.motivoCancelamento ?? "—"}`
               : "Rascunho descartado; a reserva foi liberada."

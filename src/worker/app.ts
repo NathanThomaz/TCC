@@ -26,6 +26,10 @@ import {
   editarProduto,
   editarProfissional,
   listarClientes,
+  listarFornecedores,
+  criarFornecedor,
+  editarFornecedor,
+  statusFornecedor,
   listarProdutos,
   listarProfissionais,
   statusCliente,
@@ -71,6 +75,13 @@ import {
 import { cancelarPedido, comentarPedido, criarPedido, listarPedidos } from "./modules/pedidos";
 import { enviarLogotipo, obterLogotipo, removerLogotipo } from "./modules/logotipo";
 import { obterPainel } from "./modules/operacao/painel";
+import { cancelarCompra, criarCompra, listarCompras } from "./modules/operacao/compras";
+import {
+  baixarLancamento,
+  cancelarLancamento,
+  criarLancamento,
+  listarLancamentos,
+} from "./modules/operacao/financeiro";
 import { geminiDoAmbiente } from "./ia/gemini";
 import {
   activateSystem,
@@ -183,6 +194,18 @@ export function createApp(
       { method: "GET", path: `${O}/painel`, handler: obterPainel },
       { method: "GET", path: `${O}/consulta`, handler: obterConsulta },
       { method: "POST", path: `${O}/consulta/mensagens`, handler: perguntar },
+      // Módulos opcionais (ADR-006): fornecedores e compras, financeiro.
+      { method: "GET", path: `${O}/fornecedores`, handler: listarFornecedores },
+      { method: "POST", path: `${O}/fornecedores`, handler: criarFornecedor },
+      { method: "PATCH", path: `${O}/fornecedores/:id`, handler: editarFornecedor },
+      { method: "POST", path: `${O}/fornecedores/:id/status`, handler: statusFornecedor },
+      { method: "GET", path: `${O}/compras`, handler: listarCompras },
+      { method: "POST", path: `${O}/compras`, handler: criarCompra },
+      { method: "POST", path: `${O}/compras/:id/cancelar`, handler: cancelarCompra },
+      { method: "GET", path: `${O}/financeiro`, handler: listarLancamentos },
+      { method: "POST", path: `${O}/financeiro`, handler: criarLancamento },
+      { method: "POST", path: `${O}/financeiro/:id/baixar`, handler: baixarLancamento },
+      { method: "POST", path: `${O}/financeiro/:id/cancelar`, handler: cancelarLancamento },
       { method: "GET", path: `${O}/clientes`, handler: listarClientes },
       { method: "POST", path: `${O}/clientes`, handler: criarCliente },
       { method: "PATCH", path: `${O}/clientes/:id`, handler: editarCliente },

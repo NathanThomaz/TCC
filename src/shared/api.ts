@@ -1,4 +1,5 @@
 // Contratos HTTP compartilhados entre o Worker e o front.
+import type { PaymentMethod } from "./contract/catalog";
 import type { ConfigDraft } from "./contract/schema";
 
 /** Corpo de erro padronizado (seção 20 da especificação): sem detalhes internos nem segredos. */
@@ -93,6 +94,8 @@ export interface ProdutoDto {
   reservado: number;
   disponivel: number;
   campos: CamposInformativos;
+  /** Último custo de compra (módulo de fornecedores, ADR-006); null sem compra registrada. */
+  custoCentavos: number | null;
 }
 
 export interface MovimentoDto {
@@ -146,6 +149,61 @@ export interface VendaDto {
   concluidaEm: number | null;
   canceladaEm: number | null;
   motivoCancelamento: string | null;
+  /** Forma registrada na conclusão (módulo de pagamentos, ADR-006). */
+  formaPagamento: PaymentMethod | null;
+}
+
+/** Fornecedor: mesma forma do cliente (ADR-006). */
+export type FornecedorDto = ClienteDto;
+
+export interface ItemCompraDto {
+  produto: string;
+  nomeProduto: string;
+  caixas: number;
+  unidadesSoltas: number;
+  unidades: number;
+  custoUnitarioCentavos: number;
+  totalCentavos: number;
+}
+
+export interface CompraDto {
+  id: string;
+  fornecedor: string;
+  nomeFornecedor: string;
+  status: "completed" | "cancelled";
+  totalCentavos: number;
+  observacao: string | null;
+  itens: ItemCompraDto[];
+  /** Conta a pagar gerada pela compra (com o financeiro). */
+  conta: string | null;
+  criadoEm: number;
+  canceladaEm: number | null;
+  motivoCancelamento: string | null;
+}
+
+export type TipoLancamento = "receber" | "pagar";
+export type StatusLancamento = "pendente" | "pago" | "cancelado";
+
+export interface LancamentoDto {
+  id: string;
+  tipo: TipoLancamento;
+  descricao: string;
+  valorCentavos: number;
+  /** Data local AAAA-MM-DD. */
+  vencimento: string;
+  status: StatusLancamento;
+  /** Pendente com vencimento antes de hoje (no fuso do Nexus). */
+  vencido: boolean;
+  pagoEm: number | null;
+  canceladoEm: number | null;
+  motivoCancelamento: string | null;
+  venda: string | null;
+  compra: string | null;
+  cliente: string | null;
+  fornecedor: string | null;
+  /** Nome da contraparte (cliente ou fornecedor), quando houver. */
+  contraparte: string | null;
+  criadoEm: number;
 }
 
 export type StatusAtendimento = "scheduled" | "in_progress" | "done" | "cancelled";
@@ -199,6 +257,12 @@ export interface OperacaoApiBody {
   faltas?: FaltaDto[];
   /** CAN-04/CAN-05: serviços vinculados que pedem confirmação ou bloqueiam o cancelamento. */
   servicos?: AtendimentoDto[];
+  fornecedores?: FornecedorDto[];
+  fornecedor?: FornecedorDto;
+  compras?: CompraDto[];
+  compra?: CompraDto;
+  lancamentos?: LancamentoDto[];
+  lancamento?: LancamentoDto;
   error?: ApiErrorBody["error"];
 }
 
@@ -269,6 +333,30 @@ export interface PainelDto {
     valorVarejoCentavos: number;
   };
   clientes?: { ativos: number; inativos: number; novosNoMes: number };
+  /** Vendas concluídas no mês por forma de pagamento (módulo de pagamentos). */
+  pagamentos?: { forma: PaymentMethod; quantidade: number; totalCentavos: number }[];
+  /** Fornecedores e compras: compras do mês e valor do estoque pelo último custo. */
+  compras?: {
+    noMes: { quantidade: number; totalCentavos: number };
+    fornecedoresAtivos: number;
+    valorCustoCentavos: number;
+  };
+  /** Financeiro: pendentes, vencidos (antes de hoje) e o que entrou e saiu no mês. */
+  financeiro?: {
+    aReceber: { quantidade: number; totalCentavos: number };
+    aPagar: { quantidade: number; totalCentavos: number };
+    vencidosReceber: { quantidade: number; totalCentavos: number };
+    vencidosPagar: { quantidade: number; totalCentavos: number };
+    recebidoNoMesCentavos: number;
+    pagoNoMesCentavos: number;
+    proximos: {
+      id: string;
+      tipo: TipoLancamento;
+      descricao: string;
+      valorCentavos: number;
+      vencimento: string;
+    }[];
+  };
   agenda?: {
     hoje: { agendados: number; emAtendimento: number; concluidos: number };
     /** Agendados nos próximos 7 dias, a partir de agora. */

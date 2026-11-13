@@ -5,6 +5,8 @@ import {
   MODULE_INFO,
   MODULES,
   NATIVE_FIELDS,
+  OPTIONAL_MODULES,
+  PAYMENT_METHODS,
   TEMPLATE_LABELS,
   TEMPLATE_MODULES,
   TEMPLATES,
@@ -16,13 +18,14 @@ import type { ConfigDraft } from "../../shared/contract/schema";
 // das constantes do contrato, para nunca divergir do que o validador aceita. Prompts versionados:
 // mudar o texto é mudar a configuração congelada do experimento (seção 25).
 
-export const VERSAO_PROMPTS = "2026-11-13.3";
+export const VERSAO_PROMPTS = "2026-11-13.4";
 
 type Json = Parameters<typeof adaptForGemini>[0];
 
 const catalogo = (): string => {
   const modelos = TEMPLATES.map(
-    (t) => `- ${t} (${TEMPLATE_LABELS[t]}): módulos ${TEMPLATE_MODULES[t].join(", ")}`,
+    (t) =>
+      `- ${t} (${TEMPLATE_LABELS[t]}): módulos ${TEMPLATE_MODULES[t].join(", ")}; opcionais: ${OPTIONAL_MODULES[t].join(", ") || "nenhum"}`,
   ).join("\n");
   const modulos = MODULES.map((m) => {
     const dep = MODULE_INFO[m].dependsOn;
@@ -32,13 +35,13 @@ const catalogo = (): string => {
     .map((e) => `- ${e}: ${NATIVE_FIELDS[e].map((n) => n.label).join("; ")}`)
     .join("\n");
   return `CATÁLOGO FECHADO DO NEXUS (nada fora dele é criado):
-Modelos (cada um define exatamente os módulos):
+Modelos (cada um define os módulos obrigatórios; os opcionais só entram se o negócio usar):
 ${modelos}
 Módulos:
 ${modulos}
 Campos que cada cadastro JÁ TEM (nunca crie campo informativo para eles nem para sinônimos):
 ${camposNativos}
-Campos informativos (extras, só o que não está acima): tipos ${FIELD_TYPES.join(", ")}; até ${LIMITS.fieldsPerEntity} por entidade (clientes, produtos, profissionais, vendas, agendamentos); lista com ${LIMITS.listOptions.min} a ${LIMITS.listOptions.max} opções.
+Campos informativos (extras, só o que não está acima): tipos ${FIELD_TYPES.join(", ")}; até ${LIMITS.fieldsPerEntity} por entidade (clientes, produtos, profissionais, vendas, agendamentos, fornecedores); lista com ${LIMITS.listOptions.min} a ${LIMITS.listOptions.max} opções.
 Tipos de atendimento: id, rótulo e duração em minutos (15 a 480).
 Regras parametrizáveis:
 - limite_atacado: valor em centavos a partir do qual vale o preço de atacado, inclusive; a base é o subtotal dos produtos a preço de varejo.
@@ -52,8 +55,10 @@ Regras parametrizáveis:
 - horario_funcionamento: abre e fecha (HH:MM) e dias_semana (0 = domingo a 6 = sábado); atendimento começa e termina dentro do horário.
 - antecedencia_minima: minutos; agendar ou remarcar só com essa antecedência.
 - prazo_cancelamento_atendimento: horas; cancelar ou remarcar atendimento só até essas horas antes do início.
-Todas as regras são opcionais, exceto prazo_reserva com vendas. Ofereça as que fazem sentido para o negócio (ex.: pedido mínimo e estoque mínimo para comércio; horário de funcionamento e antecedência para serviços), uma pergunta por vez, sempre com sugestões; o dono decide se quer.
-Fora do catálogo (registrar como pedido ao desenvolvedor, nunca prometer): nota fiscal, pagamentos, compras e fornecedores, descontos, taxa de entrega, rotas, app móvel, relatórios financeiros e qualquer módulo ou regra que não esteja acima.`;
+- formas_pagamento: formas aceitas (${PAYMENT_METHODS.join(", ")}) e prazo_dias (vencimento da venda a prazo, obrigatório com a_prazo); obrigatória quando há o módulo pagamentos.
+Módulos opcionais: pagamentos (a venda registra a forma de pagamento), fornecedores (cadastro de fornecedores e compras que dão entrada no estoque com custo) e financeiro (contas a pagar e a receber; venda a prazo e compra geram a conta). Proponha um opcional só quando o dono disser que precisa (ex.: vende fiado ou a prazo, compra de fornecedores, quer controlar contas); se não falou, não inclua.
+Todas as regras são opcionais, exceto prazo_reserva com vendas e formas_pagamento com pagamentos. Ofereça as que fazem sentido para o negócio (ex.: pedido mínimo e estoque mínimo para comércio; horário de funcionamento e antecedência para serviços), uma pergunta por vez, sempre com sugestões; o dono decide se quer.
+Fora do catálogo (registrar como pedido ao desenvolvedor, nunca prometer): nota fiscal, maquininha ou pagamento online, parcelamento, conciliação bancária, descontos, taxa de entrega, rotas, app móvel e qualquer módulo ou regra que não esteja acima.`;
 };
 
 // ---- Levantamento: entrevista guiada que extrai requisitos, um assunto por vez (ADR-004) ----
@@ -218,7 +223,7 @@ export function instrucoesModelagem(
 ${catalogo()}
 
 REGRAS DE GERAÇÃO:
-- Escolha o modelo pelo que os requisitos pedem e use exatamente os módulos desse modelo.
+- Escolha o modelo pelo que os requisitos pedem e use os módulos desse modelo; acrescente um módulo opcional só se um requisito confirmado pedir (venda a prazo ou forma de pagamento, compras de fornecedores, contas a pagar e receber).
 - requisitos: copie a lista abaixo exatamente, com status "confirmado".
 - Cada regra cita em "requisitos" os códigos que a justificam. Não crie regra sem requisito que diga o valor; não invente valores (se um requisito necessário não existir, deixe a regra de fora: o validador vai apontar a falta).
 - Dinheiro em centavos (R$ 1.000,00 = 100000). Durações em minutos.

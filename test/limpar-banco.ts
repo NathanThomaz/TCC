@@ -6,11 +6,15 @@ export async function limparBanco(): Promise<void> {
   await env.DB.batch(
     [
       "PRAGMA defer_foreign_keys = ON",
+      "DELETE FROM financial_entries",
       "DELETE FROM stock_movements",
       "DELETE FROM reservations",
       "DELETE FROM appointments",
       "DELETE FROM sales",
       "DELETE FROM sale_items",
+      "DELETE FROM purchases",
+      "DELETE FROM purchase_items",
+      "DELETE FROM suppliers",
       "DELETE FROM products",
       "DELETE FROM customers",
       "DELETE FROM professionals",

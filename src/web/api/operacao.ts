@@ -1,6 +1,9 @@
 import type {
   AtendimentoDto,
+  CompraDto,
+  LancamentoDto,
   PainelDto,
+  TipoLancamento,
   CamposInformativos,
   ClienteDto,
   MovimentoDto,
@@ -11,6 +14,7 @@ import type {
   SystemDto,
   VendaDto,
 } from "../../shared/api";
+import type { PaymentMethod } from "../../shared/contract/catalog";
 import type { ConfigDraft } from "../../shared/contract/schema";
 import { ApiError, chamar, novaChave } from "./cliente";
 
@@ -45,14 +49,20 @@ export async function obterApp(sistema: string): Promise<App> {
 
 // ---- Cadastros ----
 
-export type TipoPessoa = "clientes" | "profissionais";
+export type TipoPessoa = "clientes" | "profissionais" | "fornecedores";
+
+const UMA_PESSOA = {
+  clientes: "cliente",
+  profissionais: "profissional",
+  fornecedores: "fornecedor",
+} as const;
 
 export async function listarPessoas(
   sistema: string,
   tipo: TipoPessoa,
 ): Promise<(ClienteDto | ProfissionalDto)[]> {
   const r = await chamar<OperacaoApiBody>(`${base(sistema)}/${tipo}`);
-  return exigir(tipo === "clientes" ? r.clientes : r.profissionais, tipo);
+  return exigir(r[tipo], tipo);
 }
 
 export async function criarPessoa(
@@ -66,7 +76,7 @@ export async function criarPessoa(
     body: dados,
     chave,
   });
-  return exigir(tipo === "clientes" ? r.cliente : r.profissional, "cadastro");
+  return exigir(r[UMA_PESSOA[tipo]], "cadastro");
 }
 
 export async function editarPessoa(
@@ -79,7 +89,7 @@ export async function editarPessoa(
     method: "PATCH",
     body: dados,
   });
-  return exigir(tipo === "clientes" ? r.cliente : r.profissional, "cadastro");
+  return exigir(r[UMA_PESSOA[tipo]], "cadastro");
 }
 
 export async function mudarStatus(
@@ -216,8 +226,92 @@ async function acaoVenda(sistema: string, id: string, acao: string, body: unknow
 
 export const descartarVenda = (sistema: string, id: string) =>
   acaoVenda(sistema, id, "descartar", {});
-export const concluirVenda = (sistema: string, id: string, revisao: number) =>
-  acaoVenda(sistema, id, "concluir", { revisao });
+export const concluirVenda = (
+  sistema: string,
+  id: string,
+  revisao: number,
+  formaPagamento?: PaymentMethod,
+) => acaoVenda(sistema, id, "concluir", { revisao, ...(formaPagamento ? { formaPagamento } : {}) });
+
+// ---- Compras (ADR-006) ----
+
+export interface NovaCompra {
+  fornecedor: string;
+  itens: { produto: string; caixas: number; unidades: number; custoUnitarioCentavos: number }[];
+  observacao?: string;
+  vencimento?: string;
+}
+
+export async function listarCompras(sistema: string): Promise<CompraDto[]> {
+  const r = await chamar<OperacaoApiBody>(`${base(sistema)}/compras`);
+  return exigir(r.compras, "compras");
+}
+
+export async function criarCompra(sistema: string, dados: NovaCompra, chave = novaChave()) {
+  const r = await chamar<OperacaoApiBody>(`${base(sistema)}/compras`, {
+    method: "POST",
+    body: dados,
+    chave,
+  });
+  return exigir(r.compra, "compra");
+}
+
+export async function cancelarCompra(sistema: string, id: string, motivo: string) {
+  const r = await chamar<OperacaoApiBody>(
+    `${base(sistema)}/compras/${encodeURIComponent(id)}/cancelar`,
+    { method: "POST", body: { motivo }, chave: novaChave() },
+  );
+  return exigir(r.compra, "compra");
+}
+
+// ---- Financeiro (ADR-006) ----
+
+export interface FiltroFinanceiro {
+  tipo?: TipoLancamento;
+  status?: "pendente" | "pago" | "cancelado" | "vencido";
+}
+
+export async function listarLancamentos(
+  sistema: string,
+  filtro: FiltroFinanceiro = {},
+): Promise<LancamentoDto[]> {
+  const q = new URLSearchParams(
+    Object.entries(filtro).filter((e): e is [string, string] => typeof e[1] === "string"),
+  ).toString();
+  const r = await chamar<OperacaoApiBody>(`${base(sistema)}/financeiro${q ? `?${q}` : ""}`);
+  return exigir(r.lancamentos, "lançamentos");
+}
+
+export interface NovoLancamento {
+  tipo: TipoLancamento;
+  descricao: string;
+  valorCentavos: number;
+  vencimento: string;
+  cliente?: string;
+  fornecedor?: string;
+}
+
+export async function criarLancamento(sistema: string, dados: NovoLancamento, chave = novaChave()) {
+  const r = await chamar<OperacaoApiBody>(`${base(sistema)}/financeiro`, {
+    method: "POST",
+    body: dados,
+    chave,
+  });
+  return exigir(r.lancamento, "lançamento");
+}
+
+export async function acaoLancamento(
+  sistema: string,
+  id: string,
+  acao: "baixar" | "cancelar",
+  motivo?: string,
+) {
+  const r = await chamar<OperacaoApiBody>(
+    `${base(sistema)}/financeiro/${encodeURIComponent(id)}/${acao}`,
+    { method: "POST", body: motivo ? { motivo } : {}, chave: novaChave() },
+  );
+  return exigir(r.lancamento, "lançamento");
+}
 export const cancelarVenda = (
   sistema: string,
   id: string,

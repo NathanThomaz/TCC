@@ -7,6 +7,7 @@ import {
   REQUIRED_RULES,
   RULE_MODULES,
   TEMPLATE_LABELS,
+  OPTIONAL_MODULES,
   TEMPLATE_MODULES,
   type ModuleId,
 } from "./catalog";
@@ -67,18 +68,22 @@ export function semanticIssues(draft: ConfigDraft): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
   const active = new Set<ModuleId>(draft.modulos);
 
-  // Modelo × módulos: o modelo define o conjunto exato.
+  // Modelo × módulos: os do modelo são obrigatórios; além deles, só os opcionais que o modelo
+  // aceita (ADR-006).
   const expected = new Set(TEMPLATE_MODULES[draft.modelo]);
+  const optional = new Set(OPTIONAL_MODULES[draft.modelo]);
   const missing = [...expected].filter((m) => !active.has(m));
-  const extra = [...active].filter((m) => !expected.has(m));
+  const extra = [...active].filter((m) => !expected.has(m) && !optional.has(m));
   if (missing.length || extra.length) {
     issues.push(
       block(
         "modulos_incompativeis_com_modelo",
         "modulos",
-        `O modelo ${TEMPLATE_LABELS[draft.modelo]} usa exatamente: ${[...expected].join(", ")}.` +
+        `O modelo ${TEMPLATE_LABELS[draft.modelo]} usa: ${[...expected].join(", ")}` +
+          (optional.size ? ` (opcionais: ${[...optional].join(", ")})` : "") +
+          "." +
           (missing.length ? ` Faltam: ${missing.join(", ")}.` : "") +
-          (extra.length ? ` Sobram: ${extra.join(", ")}.` : ""),
+          (extra.length ? ` Não disponíveis neste modelo: ${extra.join(", ")}.` : ""),
       ),
     );
   }
@@ -140,7 +145,7 @@ export function semanticIssues(draft: ConfigDraft): ValidationIssue[] {
   draft.campos.forEach((field, index) => {
     const path = `campos.${index}`;
     const module = FIELD_ENTITIES[field.entidade];
-    const nativo = campoNativoDuplicado(field.entidade, field.rotulo);
+    const nativo = campoNativoDuplicado(field.entidade, field.rotulo, draft.modulos);
     if (nativo) {
       issues.push(
         block(
@@ -248,6 +253,20 @@ export function semanticIssues(draft: ConfigDraft): ValidationIssue[] {
       }
       if (new Set(rule.dias_semana).size !== rule.dias_semana.length) {
         issues.push(block("horario_invalido", path, "Há dia da semana repetido."));
+      }
+    }
+    if (rule.tipo === "formas_pagamento") {
+      if (new Set(rule.formas).size !== rule.formas.length) {
+        issues.push(block("forma_pagamento_invalida", path, "Há forma de pagamento repetida."));
+      }
+      if (rule.formas.includes("a_prazo") && rule.prazo_dias === undefined) {
+        issues.push(
+          block(
+            "forma_pagamento_invalida",
+            path,
+            "Venda a prazo precisa do prazo de vencimento em dias.",
+          ),
+        );
       }
     }
     if (rule.tipo === "par_atendimento") {

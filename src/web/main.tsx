@@ -12,6 +12,8 @@ import { Consulta } from "@/pages/app/Consulta";
 import { Estoque } from "@/pages/app/Estoque";
 import { Painel } from "@/pages/app/Painel";
 import { Pessoas } from "@/pages/app/Pessoas";
+import { Compras } from "@/pages/app/Compras";
+import { Financeiro } from "@/pages/app/Financeiro";
 import { Produtos } from "@/pages/app/Produtos";
 import { VendaEditor } from "@/pages/app/VendaEditor";
 import { Vendas } from "@/pages/app/Vendas";
@@ -65,6 +67,9 @@ createRoot(root).render(
                   <Route index element={<Painel />} />
                   <Route path="clientes" element={<Pessoas tipo="clientes" />} />
                   <Route path="profissionais" element={<Pessoas tipo="profissionais" />} />
+                  <Route path="fornecedores" element={<Pessoas tipo="fornecedores" />} />
+                  <Route path="compras" element={<Compras />} />
+                  <Route path="financeiro" element={<Financeiro />} />
                   <Route path="produtos" element={<Produtos />} />
                   <Route path="estoque" element={<Estoque />} />
                   <Route path="vendas" element={<Vendas />} />

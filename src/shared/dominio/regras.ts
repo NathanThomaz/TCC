@@ -1,3 +1,4 @@
+import { PAYMENT_LABELS, type PaymentMethod } from "../contract/catalog";
 import type { ConfigDraft, Rule } from "../contract/schema";
 import { deCampoLocal, paraCampoLocal } from "./agenda";
 
@@ -128,4 +129,37 @@ export function conferirPrazoCancelamentoAtendimento(
     code: "prazo_cancelamento_atendimento",
     message: `Cancelamentos e remarcações só até ${r.horas} ${r.horas === 1 ? "hora" : "horas"} antes do início.`,
   };
+}
+
+/**
+ * Forma de pagamento na conclusão da venda (ADR-006). Sem o módulo, a forma não é registrada
+ * (null). Com ele, precisa ser uma das formas aceitas pela regra `formas_pagamento`.
+ */
+export function conferirFormaPagamento(
+  config: ConfigDraft,
+  forma: PaymentMethod | undefined,
+): { forma: PaymentMethod | null; prazoDias: number } | ErroRegra {
+  if (!config.modulos.includes("pagamentos")) return { forma: null, prazoDias: 0 };
+  const r = regraDo(config, "formas_pagamento");
+  const aceitas = r?.formas ?? [];
+  if (!forma) {
+    return {
+      code: "forma_pagamento_obrigatoria",
+      message: "Escolha a forma de pagamento para concluir a venda.",
+    };
+  }
+  if (!aceitas.includes(forma)) {
+    return {
+      code: "forma_pagamento_nao_aceita",
+      message: `${PAYMENT_LABELS[forma]} não é aceito. Formas aceitas: ${aceitas.map((f) => PAYMENT_LABELS[f]).join(", ")}.`,
+    };
+  }
+  return { forma, prazoDias: r?.prazo_dias ?? 0 };
+}
+
+/** Data local (AAAA-MM-DD, fuso do Nexus) N dias depois do instante. */
+export function vencimentoEmDias(instante: number, dias: number): string {
+  const hoje = paraCampoLocal(instante).slice(0, 10);
+  const [a, m, d] = hoje.split("-").map(Number) as [number, number, number];
+  return new Date(Date.UTC(a, m - 1, d + dias)).toISOString().slice(0, 10);
 }
