@@ -298,6 +298,8 @@ export function Conversa({
             value={texto}
             maxLength={2000}
             disabled={bloqueado}
+            // Travada enquanto a resposta vai: se falhar, ela volta sem misturar com texto novo.
+            readOnly={pendente !== null}
             onChange={(e) => setTexto(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {

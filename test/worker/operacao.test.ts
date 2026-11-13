@@ -1113,4 +1113,61 @@ describe("regras do catálogo (ADR-005)", () => {
     expect(painel.estoque!.criticos[0]).toMatchObject({ nome: "Água", disponivel: 8 });
     expect(painel.agenda!.proximos).toHaveLength(2);
   });
+  const painelDe = async (token = ADMIN) =>
+    (
+      (await call("GET", p("/painel"), token)).body as unknown as {
+        painel: PainelDto;
+      }
+    ).painel;
+
+  it("painel: dia e mês contados no fuso de São Paulo, sem a virada errada", async () => {
+    await ativarCom([]);
+    const c = await cliente();
+    const prod = await produto();
+    await entrada(prod, 100);
+    const vendaConcluida = async (unidades: number) => {
+      const v = (await venda(c, [{ produto: prod, unidades }])).body.venda!;
+      await call("POST", p(`/vendas/${v.id}/concluir`), ADMIN, { revisao: v.revisao });
+    };
+    agora = Date.UTC(2026, 10, 1, 2, 59); // 31/10, 23:59 em São Paulo: mês anterior
+    await vendaConcluida(1);
+    agora = Date.UTC(2026, 10, 1, 3, 0); // 01/11, 00:00
+    await vendaConcluida(2);
+    agora = Date.UTC(2026, 10, 6, 2, 59); // 05/11, 23:59
+    await vendaConcluida(3);
+    let painel = await painelDe();
+    expect(painel.hoje).toBe("2026-11-05");
+    expect(painel.vendas!.hoje).toEqual({ quantidade: 1, totalCentavos: 1500 });
+    expect(painel.vendas!.mes).toEqual({ quantidade: 2, totalCentavos: 2500 });
+    agora = Date.UTC(2026, 10, 6, 3, 0); // 06/11, 00:00: o dia virou, o mês não
+    painel = await painelDe();
+    expect(painel.vendas!.hoje.quantidade).toBe(0);
+    expect(painel.vendas!.mes.quantidade).toBe(2);
+  });
+
+  it("painel: só os números do próprio sistema e só dos módulos que ele tem", async () => {
+    await ativarCom([]);
+    const prod = await produto();
+    await entrada(prod, 100);
+    const v = (await venda(await cliente(), [{ produto: prod, unidades: 4 }])).body.venda!;
+    await call("POST", p(`/vendas/${v.id}/concluir`), ADMIN, { revisao: v.revisao });
+    const doAdmin = S;
+
+    S = await ativar(ADMIN2, {
+      ...DISTRIBUIDORA,
+      modelo: "comercio",
+      modulos: ["clientes", "produtos", "vendas", "estoque"],
+      campos: DISTRIBUIDORA.campos.filter((c) => c.entidade !== "agendamentos"),
+      tipos_atendimento: [],
+      regras: DISTRIBUIDORA.regras.filter((r) => r.tipo !== "par_atendimento"),
+    });
+    const outro = await painelDe(ADMIN2);
+    expect(outro.vendas!.mes.quantidade).toBe(0);
+    expect(outro.clientes).toEqual({ ativos: 0, inativos: 0 });
+    expect(outro.estoque!.produtosAtivos).toBe(0);
+    expect(outro.agenda).toBeUndefined();
+    expect((await call("GET", p("/painel"), ADMIN)).status).toBe(404);
+    S = doAdmin;
+    expect((await call("GET", p("/painel"), ADMIN2)).status).toBe(404);
+  });
 });

@@ -46,14 +46,8 @@ export function Criar() {
     onSuccess: (e) => atualizar(e),
     // Falhou: o texto volta para a caixa, para tentar de novo (mesma chave, sem duplicar).
     onError: (erro, enviado) => {
-      // Devolve a resposta que falhou sem apagar o que a pessoa já começou a escrever.
-      setTexto((atual) =>
-        atual.trim()
-          ? `${enviado}
-
-${atual}`
-          : enviado,
-      );
+      // A caixa fica travada durante o envio: a resposta que falhou volta inteira.
+      setTexto(enviado);
       recarregar(erro);
     },
     onSettled: () => setPendente(null),
