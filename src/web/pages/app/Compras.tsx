@@ -45,9 +45,11 @@ import { useApp } from "./Aplicacao";
 export function Compras() {
   const app = useApp();
   const qc = useQueryClient();
+  const [de, setDe] = useState("");
+  const [ate, setAte] = useState("");
   const q = useQuery({
-    queryKey: ["app", app.id, "compras"],
-    queryFn: () => listarCompras(app.id),
+    queryKey: ["app", app.id, "compras", de, ate],
+    queryFn: () => listarCompras(app.id, { de, ate }),
   });
   const [nova, setNova] = useState(false);
   const [cancelando, setCancelando] = useState<CompraDto | null>(null);
@@ -64,6 +66,26 @@ export function Compras() {
           </Button>
         }
       />
+      <div className="mb-4 flex flex-wrap gap-3">
+        <div className="w-44 space-y-1.5">
+          <Label htmlFor="compras-de">Comprado de</Label>
+          <Input id="compras-de" type="date" value={de} onChange={(e) => setDe(e.target.value)} />
+        </div>
+        <div className="w-44 space-y-1.5">
+          <Label htmlFor="compras-ate">até</Label>
+          <Input
+            id="compras-ate"
+            type="date"
+            value={ate}
+            onChange={(e) => setAte(e.target.value)}
+          />
+        </div>
+      </div>
+      {q.data?.length === 200 && (
+        <p className="mb-2 text-sm text-muted-foreground">
+          Mostrando as 200 compras mais recentes do período. Use as datas para ver as anteriores.
+        </p>
+      )}
       {q.isPending ? (
         <Skeleton className="h-40 w-full rounded-xl" />
       ) : q.isError ? (
