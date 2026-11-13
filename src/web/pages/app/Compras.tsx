@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Plus, ShoppingBag, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import type { CompraDto } from "../../../shared/api";
-import { formatarDataHora } from "../../../shared/dominio/agenda";
+import { formatarDataHora, paraCampoLocal } from "../../../shared/dominio/agenda";
 import { formatarCentavos } from "../../../shared/dominio/precos";
 import {
   cancelarCompra,
@@ -169,11 +169,8 @@ const linhaVazia = (): Linha => ({
   custo: "",
 });
 
-/** Hoje (data local do navegador) como AAAA-MM-DD, para o vencimento padrão. */
-function hojeIso(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
+/** Hoje no fuso do Nexus (AAAA-MM-DD), para o vencimento padrão; não o fuso do navegador. */
+export const hojeIso = (agora = Date.now()) => paraCampoLocal(agora).slice(0, 10);
 
 function NovaCompraDialog({ onFechar, onCriada }: { onFechar: () => void; onCriada: () => void }) {
   const app = useApp();

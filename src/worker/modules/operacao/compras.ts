@@ -30,6 +30,9 @@ const CompraBody = z.object({
 });
 const CancelarBody = z.object({ motivo: z.string().trim().min(3).max(300) });
 
+/** Mesmo teto de uma conta no financeiro (CHECK de financial_entries). */
+const TETO_COMPRA_CENTAVOS = 10_000_000_000;
+
 const MENSAGENS = {
   fornecedor_inativo: "Fornecedor inativo não recebe novas compras.",
   produto_inativo: "Um dos produtos está inativo.",
@@ -196,6 +199,14 @@ export const criarCompra: Handler = async (ctx) => {
     };
   });
   const total = itens.reduce((soma, i) => soma + i.linha, 0);
+  // Teto de uma conta no financeiro (e muito abaixo do inteiro seguro do JavaScript).
+  if (!Number.isSafeInteger(total) || total > TETO_COMPRA_CENTAVOS) {
+    throw new AppError(
+      422,
+      "valor_acima_do_limite",
+      "O total desta compra passa do limite de R$ 100.000.000,00. Divida em compras menores.",
+    );
+  }
 
   const id = crypto.randomUUID();
   const now = ctx.clock.now();

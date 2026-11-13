@@ -531,6 +531,11 @@ function Rascunho({ venda, servicos }: { venda: VendaDto | null; servicos: Atend
         {venda && alterado && (
           <p className="text-sm text-muted-foreground">Salve as alterações antes de concluir.</p>
         )}
+        {venda && !alterado && formasAceitas.length > 0 && !forma && (
+          <p className="text-sm text-muted-foreground">
+            Escolha a forma de pagamento para concluir a venda.
+          </p>
+        )}
       </form>
       {venda && <ServicosVinculados venda={venda} servicos={servicos} />}
     </>

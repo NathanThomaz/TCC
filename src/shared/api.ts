@@ -184,6 +184,14 @@ export interface CompraDto {
 export type TipoLancamento = "receber" | "pagar";
 export type StatusLancamento = "pendente" | "pago" | "cancelado";
 
+export interface ResumoFinanceiroDto {
+  aReceber: { quantidade: number; totalCentavos: number };
+  aPagar: { quantidade: number; totalCentavos: number };
+  vencidos: { receber: number; pagar: number; totalCentavos: number };
+  /** A lista veio cortada no limite: há mais contas do que as mostradas. */
+  limiteAtingido: boolean;
+}
+
 export interface LancamentoDto {
   id: string;
   tipo: TipoLancamento;
@@ -263,6 +271,8 @@ export interface OperacaoApiBody {
   compra?: CompraDto;
   lancamentos?: LancamentoDto[];
   lancamento?: LancamentoDto;
+  /** Totais de todas as contas pendentes, independentes do filtro e do limite da lista. */
+  resumoFinanceiro?: ResumoFinanceiroDto;
   error?: ApiErrorBody["error"];
 }
 

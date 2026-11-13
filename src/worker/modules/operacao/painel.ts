@@ -212,7 +212,7 @@ export const obterPainel: Handler = async (ctx) => {
         `SELECT payment_method AS forma, COUNT(*) AS n, SUM(total_cents) AS total FROM sales
          WHERE system_id = ? AND status = 'completed' AND payment_method IS NOT NULL
            AND completed_at >= ? AND completed_at < ?
-         GROUP BY payment_method ORDER BY total DESC`,
+         GROUP BY payment_method ORDER BY n DESC, total DESC`,
       )
       .bind(s, inicioMes, inicioProximoMes)
       .all<{

@@ -71,6 +71,51 @@ async function call(method: string, path: string, token: string, body?: unknown,
   return { status: response.status, body: await response.json<Body>() };
 }
 
+/**
+ * Simula uma corrida: `antes` roda no banco logo antes do lote (batch) do handler, como se outra
+ * requisição tivesse gravado entre a leitura e a escrita.
+ */
+async function callComCorrida(
+  path: string,
+  body: unknown,
+  antes: () => Promise<unknown>,
+): Promise<{ status: number; body: Body }> {
+  let usado = false;
+  const db = new Proxy(env.DB, {
+    get(alvo, prop) {
+      if (prop === "batch") {
+        return async (lote: D1PreparedStatement[]) => {
+          if (!usado) {
+            usado = true;
+            await antes();
+          }
+          return alvo.batch(lote);
+        };
+      }
+      const valor: unknown = Reflect.get(alvo, prop);
+      return typeof valor === "function"
+        ? (valor as (...x: unknown[]) => unknown).bind(alvo)
+        : valor;
+    },
+  });
+  const envCorrida = new Proxy(env, {
+    get: (alvo, prop): unknown => (prop === "DB" ? db : Reflect.get(alvo, prop)),
+  });
+  const response = await app(
+    new Request(`https://app.test/api/v1${path}`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${ADMIN}`,
+        "content-type": "application/json",
+        "idempotency-key": crypto.randomUUID(),
+      },
+      body: JSON.stringify(body),
+    }),
+    envCorrida,
+  );
+  return { status: response.status, body: await response.json<Body>() };
+}
+
 async function ativar(token: string, rascunho: unknown): Promise<string> {
   const criado = await call("POST", "/systems", token, { nome: "Sistema de teste" });
   const id = criado.body.sistema!.id;
@@ -1480,6 +1525,92 @@ describe("módulos opcionais (ADR-006)", () => {
     expect(painel.financeiro!.proximos[0]).toMatchObject({
       tipo: "pagar",
       vencimento: "2026-11-01",
+    });
+  });
+
+  it("corrida na conclusão: quem perde não cria conta a receber (revisão do Codex)", async () => {
+    await ativarModulos(["pagamentos", "financeiro"]);
+    const prod = await produto();
+    await entrada(prod, 20);
+    const v = await vendaPronta(await cliente(), prod);
+    // Outra tela conclui a mesma venda em Pix entre a leitura e o lote desta, que pede a prazo.
+    const r = await callComCorrida(
+      p(`/vendas/${v.id}/concluir`),
+      { revisao: v.revisao, formaPagamento: "a_prazo" },
+      () =>
+        env.DB.prepare(
+          `UPDATE sales SET status = 'completed', completed_at = ?1, completed_by = (SELECT id FROM users WHERE email = 'a@example.com'),
+             revision = revision + 1, payment_method = 'pix', updated_at = ?1 WHERE id = ?2`,
+        )
+          .bind(agora, v.id)
+          .run(),
+    );
+    expect(r.body.venda).toMatchObject({ status: "completed", formaPagamento: "pix" });
+    expect(await lancamentos()).toEqual([]);
+  });
+
+  it("corrida entre baixa e cancelamento: quem perde recebe 409", async () => {
+    await ativarModulos(["financeiro"]);
+    const conta = (
+      await call("POST", p("/financeiro"), ADMIN, {
+        tipo: "pagar",
+        descricao: "Aluguel",
+        valorCentavos: 1000,
+        vencimento: "2026-11-30",
+      })
+    ).body.lancamento!;
+    const r = await callComCorrida(p(`/financeiro/${conta.id}/baixar`), {}, () =>
+      env.DB.prepare(
+        `UPDATE financial_entries SET status = 'cancelado', cancelled_at = ?1,
+           cancel_reason = 'Engano', updated_at = ?1 WHERE id = ?2`,
+      )
+        .bind(agora, conta.id)
+        .run(),
+    );
+    expect(r.status).toBe(409);
+    expect((await lancamentos("?status=cancelado"))[0]!.status).toBe("cancelado");
+  });
+
+  it("valores acima do teto de uma conta são recusados antes do lote (sem erro 500)", async () => {
+    await ativarModulos(["pagamentos", "fornecedores", "financeiro"]);
+    const f = await fornecedor();
+    const caro = await produto({ varejoCentavos: 100_000_000, atacadoCentavos: 99_500_000 });
+    const compra = await comprar({
+      fornecedor: f,
+      itens: [{ produto: caro, unidades: 101, custoUnitarioCentavos: 100_000_000 }],
+      vencimento: "2026-11-30",
+    });
+    expect(compra.status).toBe(422);
+    expect(compra.body.error!.code).toBe("valor_acima_do_limite");
+    await entrada(caro, 101);
+    const v = await vendaPronta(await cliente(), caro, 101);
+    const r = await concluir(v, "a_prazo");
+    expect(r.status).toBe(422);
+    expect(r.body.error!.code).toBe("valor_acima_do_limite");
+    expect((await concluir(v, "pix")).body.venda!.status).toBe("completed");
+  });
+
+  it("financeiro: o resumo soma todas as pendentes, não só a página da lista", async () => {
+    await ativarModulos(["financeiro"]);
+    for (const [tipo, valor, vencimento] of [
+      ["pagar", 1000, "2026-11-01"],
+      ["pagar", 500, "2026-12-01"],
+      ["receber", 700, "2026-11-02"],
+    ] as const) {
+      await call("POST", p("/financeiro"), ADMIN, {
+        tipo,
+        descricao: "Conta",
+        valorCentavos: valor,
+        vencimento,
+      });
+    }
+    const r = (await call("GET", p("/financeiro?tipo=receber"), ADMIN)).body;
+    expect(r.lancamentos).toHaveLength(1);
+    expect(r.resumoFinanceiro).toEqual({
+      aReceber: { quantidade: 1, totalCentavos: 700 },
+      aPagar: { quantidade: 2, totalCentavos: 1500 },
+      vencidos: { receber: 1, pagar: 1, totalCentavos: 1700 },
+      limiteAtingido: false,
     });
   });
 

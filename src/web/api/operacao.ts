@@ -3,6 +3,7 @@ import type {
   CompraDto,
   LancamentoDto,
   PainelDto,
+  ResumoFinanceiroDto,
   TipoLancamento,
   CamposInformativos,
   ClienteDto,
@@ -274,12 +275,15 @@ export interface FiltroFinanceiro {
 export async function listarLancamentos(
   sistema: string,
   filtro: FiltroFinanceiro = {},
-): Promise<LancamentoDto[]> {
+): Promise<{ lancamentos: LancamentoDto[]; resumo: ResumoFinanceiroDto }> {
   const q = new URLSearchParams(
     Object.entries(filtro).filter((e): e is [string, string] => typeof e[1] === "string"),
   ).toString();
   const r = await chamar<OperacaoApiBody>(`${base(sistema)}/financeiro${q ? `?${q}` : ""}`);
-  return exigir(r.lancamentos, "lançamentos");
+  return {
+    lancamentos: exigir(r.lancamentos, "lançamentos"),
+    resumo: exigir(r.resumoFinanceiro, "resumo"),
+  };
 }
 
 export interface NovoLancamento {

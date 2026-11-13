@@ -581,6 +581,64 @@ export const descartarVenda: Handler = async (ctx) => {
 };
 
 /** RES-08 / T21: concluir baixa o físico e encerra a reserva uma única vez. */
+/** Teto de uma conta no financeiro (CHECK de financial_entries, migration 0008). */
+export const TETO_CONTA_CENTAVOS = 10_000_000_000;
+
+/**
+ * Lote da conclusão: a venda passa de rascunho a concluída e, com venda a prazo e financeiro, a
+ * conta a receber nasce no mesmo lote. Cada passo depende do anterior por changes(): se outra
+ * conclusão venceu a corrida (UPDATE sem linhas), nem auditoria nem conta são gravadas.
+ */
+export function loteDeConclusao(
+  db: D1Database,
+  a: {
+    systemId: string;
+    vendaId: string;
+    atorId: string;
+    agora: number;
+    revisao: number;
+    forma: PaymentMethod | null;
+    conta: { id: string; cliente: string; vencimento: string } | null;
+  },
+): D1PreparedStatement[] {
+  return [
+    db
+      .prepare(
+        `UPDATE sales SET status = 'completed', completed_at = ?, completed_by = ?, revision = ?,
+           payment_method = ?, updated_at = max(updated_at, ?)
+         WHERE id = ? AND system_id = ? AND status = 'draft'`,
+      )
+      .bind(a.agora, a.atorId, a.revisao + 1, a.forma, a.agora, a.vendaId, a.systemId),
+    db
+      .prepare(
+        "INSERT INTO audit_events (system_id, actor_id, action, target_type, target_id, created_at) SELECT ?, ?, 'venda.completed', 'venda', ?, ? WHERE changes() = 1",
+      )
+      .bind(a.systemId, a.atorId, a.vendaId, a.agora),
+    ...(a.conta
+      ? [
+          db
+            .prepare(
+              `INSERT INTO financial_entries (id, system_id, kind, description, amount_cents, due_date,
+                 sale_id, customer_id, created_by, created_at, updated_at)
+               SELECT ?, system_id, 'receber', substr('Venda a prazo — ' || ?, 1, 200), total_cents, ?,
+                 id, customer_id, ?, ?, ? FROM sales
+               WHERE id = ? AND status = 'completed' AND payment_method = 'a_prazo'
+                 AND changes() = 1`,
+            )
+            .bind(
+              a.conta.id,
+              a.conta.cliente,
+              a.conta.vencimento,
+              a.atorId,
+              a.agora,
+              a.agora,
+              a.vendaId,
+            ),
+        ]
+      : []),
+  ];
+}
+
 export const concluirVenda: Handler = async (ctx) => {
   const op = await abrirOperacao(ctx, "vendas");
   const id = ctx.params.id ?? "";
@@ -599,42 +657,32 @@ export const concluirVenda: Handler = async (ctx) => {
   if ("code" in pagamento) throw new AppError(422, pagamento.code, pagamento.message);
 
   const db = ctx.env.DB;
-  // Venda a prazo com o financeiro gera a conta a receber no mesmo lote (ADR-006).
-  const conta =
-    pagamento.forma === "a_prazo" && op.config.modulos.includes("financeiro")
-      ? db
-          .prepare(
-            `INSERT INTO financial_entries (id, system_id, kind, description, amount_cents, due_date,
-               sale_id, customer_id, created_by, created_at, updated_at)
-             SELECT ?, system_id, 'receber', substr('Venda a prazo — ' || ?, 1, 200), total_cents, ?,
-               id, customer_id, ?, ?, ? FROM sales WHERE id = ? AND status = 'completed'`,
-          )
-          .bind(
-            crypto.randomUUID(),
-            venda.customer_name,
-            vencimentoEmDias(now, pagamento.prazoDias),
-            op.user.id,
-            now,
-            now,
-            id,
-          )
-      : null;
+  const comConta = pagamento.forma === "a_prazo" && op.config.modulos.includes("financeiro");
+  if (comConta && venda.total_cents > TETO_CONTA_CENTAVOS) {
+    throw new AppError(
+      422,
+      "valor_acima_do_limite",
+      "O valor desta venda passa do limite de uma conta a receber (R$ 100.000.000,00).",
+    );
+  }
   try {
-    await db.batch([
-      db
-        .prepare(
-          `UPDATE sales SET status = 'completed', completed_at = ?, completed_by = ?, revision = ?,
-             payment_method = ?, updated_at = max(updated_at, ?)
-           WHERE id = ? AND system_id = ? AND status = 'draft'`,
-        )
-        .bind(now, op.user.id, revisao + 1, pagamento.forma, now, id, op.systemId),
-      db
-        .prepare(
-          "INSERT INTO audit_events (system_id, actor_id, action, target_type, target_id, created_at) SELECT ?, ?, 'venda.completed', 'venda', ?, ? WHERE changes() = 1",
-        )
-        .bind(op.systemId, op.user.id, id, now),
-      ...(conta ? [conta] : []),
-    ]);
+    await db.batch(
+      loteDeConclusao(db, {
+        systemId: op.systemId,
+        vendaId: id,
+        atorId: op.user.id,
+        agora: now,
+        revisao,
+        forma: pagamento.forma,
+        conta: comConta
+          ? {
+              id: crypto.randomUUID(),
+              cliente: venda.customer_name,
+              vencimento: vencimentoEmDias(now, pagamento.prazoDias),
+            }
+          : null,
+      }),
+    );
   } catch (error) {
     triggerConflict(error, MENSAGENS);
   }

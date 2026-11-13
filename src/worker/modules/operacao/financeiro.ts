@@ -24,6 +24,7 @@ export const dataLocal = z
   }, "data inexistente");
 
 const TIPOS = ["receber", "pagar"] as const;
+const LIMITE_LISTA = 500;
 const STATUS = ["pendente", "pago", "cancelado"] as const;
 
 const LancamentoBody = z.object({
@@ -87,6 +88,27 @@ function publicLancamento(row: LancamentoRow, hoje: string): LancamentoDto {
   };
 }
 
+/**
+ * Depois do lote: se uma baixa e um cancelamento correram juntos, só um muda a conta. Quem perdeu
+ * recebe 409 em vez de anunciar uma operação que não aconteceu.
+ */
+async function estadoFinal(
+  ctx: RequestContext,
+  systemId: string,
+  id: string,
+  esperado: StatusLancamento,
+) {
+  const row = await carregarLancamento(ctx, systemId, id);
+  if (row.status !== esperado) {
+    throw conflict(
+      row.status === "pago"
+        ? "Esta conta acabou de ser paga."
+        : "Esta conta acabou de ser cancelada.",
+    );
+  }
+  return row;
+}
+
 async function carregarLancamento(ctx: RequestContext, systemId: string, id: string) {
   const row = await ctx.env.DB.prepare(`${SELECT_LANCAMENTO} WHERE f.id = ? AND f.system_id = ?`)
     .bind(id, systemId)
@@ -113,11 +135,34 @@ export const listarLancamentos: Handler = async (ctx) => {
      WHERE f.system_id = ?1 AND (?2 IS NULL OR f.kind = ?2) AND (?3 IS NULL OR f.status = ?3)
        AND (?4 = 0 OR (f.status = 'pendente' AND f.due_date < ?5))
        AND (?6 IS NULL OR f.due_date >= ?6) AND (?7 IS NULL OR f.due_date <= ?7)
-     ORDER BY f.due_date, f.created_at LIMIT 500`,
+     ORDER BY f.due_date, f.created_at LIMIT ${LIMITE_LISTA}`,
   )
     .bind(op.systemId, tipo, status, situacao === "vencido" ? 1 : 0, hoje, de, ate)
     .all<LancamentoRow>();
-  return json({ lancamentos: results.map((r) => publicLancamento(r, hoje)) });
+  // Resumo sobre todas as pendentes (a lista tem limite de 500 linhas).
+  const r = await ctx.env.DB.prepare(
+    `SELECT
+       COALESCE(SUM(CASE WHEN kind = 'receber' THEN amount_cents END), 0) AS rt,
+       SUM(kind = 'receber') AS rn,
+       COALESCE(SUM(CASE WHEN kind = 'pagar' THEN amount_cents END), 0) AS pt,
+       SUM(kind = 'pagar') AS pn,
+       COALESCE(SUM(CASE WHEN due_date < ?2 THEN amount_cents END), 0) AS vt,
+       SUM(kind = 'receber' AND due_date < ?2) AS vrn,
+       SUM(kind = 'pagar' AND due_date < ?2) AS vpn
+     FROM financial_entries WHERE system_id = ?1 AND status = 'pendente'`,
+  )
+    .bind(op.systemId, hoje)
+    .first<Record<string, number | null>>();
+  const n = (k: string) => r?.[k] ?? 0;
+  return json({
+    lancamentos: results.map((row) => publicLancamento(row, hoje)),
+    resumoFinanceiro: {
+      aReceber: { quantidade: n("rn"), totalCentavos: n("rt") },
+      aPagar: { quantidade: n("pn"), totalCentavos: n("pt") },
+      vencidos: { receber: n("vrn"), pagar: n("vpn"), totalCentavos: n("vt") },
+      limiteAtingido: results.length >= LIMITE_LISTA,
+    },
+  });
 };
 
 /** Lançamento manual: a receber (de um cliente, opcional) ou a pagar (a um fornecedor, opcional). */
@@ -221,7 +266,7 @@ export const baixarLancamento: Handler = async (ctx) => {
     triggerConflict(error, MENSAGENS);
   }
   return json({
-    lancamento: publicLancamento(await carregarLancamento(ctx, op.systemId, id), hoje),
+    lancamento: publicLancamento(await estadoFinal(ctx, op.systemId, id, "pago"), hoje),
   });
 };
 
@@ -265,6 +310,6 @@ export const cancelarLancamento: Handler = async (ctx) => {
     triggerConflict(error, MENSAGENS);
   }
   return json({
-    lancamento: publicLancamento(await carregarLancamento(ctx, op.systemId, id), hoje),
+    lancamento: publicLancamento(await estadoFinal(ctx, op.systemId, id, "cancelado"), hoje),
   });
 };

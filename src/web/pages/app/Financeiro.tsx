@@ -93,11 +93,6 @@ export function Financeiro() {
     queryKey: ["app", app.id, "financeiro", filtro],
     queryFn: () => listarLancamentos(app.id, filtro),
   });
-  // Resumo sempre sobre as pendentes, independente do filtro da tabela.
-  const pendentes = useQuery({
-    queryKey: ["app", app.id, "financeiro", { status: "pendente" }],
-    queryFn: () => listarLancamentos(app.id, { status: "pendente" }),
-  });
   const [nova, setNova] = useState(false);
   const [cancelando, setCancelando] = useState<LancamentoDto | null>(null);
 
@@ -114,12 +109,8 @@ export function Financeiro() {
     onError: (e) => toast.error(e.message),
   });
 
-  const soma = (f: (l: LancamentoDto) => boolean) =>
-    (pendentes.data ?? []).filter(f).reduce((s, l) => s + l.valorCentavos, 0);
-  const qtd = (f: (l: LancamentoDto) => boolean) => (pendentes.data ?? []).filter(f).length;
-  const receber = (l: LancamentoDto) => l.tipo === "receber";
-  const pagar = (l: LancamentoDto) => l.tipo === "pagar";
-  const vencido = (l: LancamentoDto) => l.vencido;
+  // Resumo calculado no backend sobre todas as pendentes (independe do filtro e do limite).
+  const r = q.data?.resumo;
 
   return (
     <>
@@ -136,26 +127,26 @@ export function Financeiro() {
         <Resumo
           rotulo="A receber"
           icone={ArrowDownCircle}
-          valor={soma(receber)}
-          detalhe={`${qtd(receber)} pendente(s)`}
+          valor={r?.aReceber.totalCentavos ?? 0}
+          detalhe={`${r?.aReceber.quantidade ?? 0} pendente(s)`}
         />
         <Resumo
           rotulo="A pagar"
           icone={ArrowUpCircle}
-          valor={soma(pagar)}
-          detalhe={`${qtd(pagar)} pendente(s)`}
+          valor={r?.aPagar.totalCentavos ?? 0}
+          detalhe={`${r?.aPagar.quantidade ?? 0} pendente(s)`}
         />
         <Resumo
           rotulo="Vencidos"
           icone={CircleAlert}
-          alerta={qtd(vencido) > 0}
-          valor={soma(vencido)}
-          detalhe={`${qtd((l) => receber(l) && vencido(l))} a receber · ${qtd((l) => pagar(l) && vencido(l))} a pagar`}
+          alerta={(r?.vencidos.receber ?? 0) + (r?.vencidos.pagar ?? 0) > 0}
+          valor={r?.vencidos.totalCentavos ?? 0}
+          detalhe={`${r?.vencidos.receber ?? 0} a receber · ${r?.vencidos.pagar ?? 0} a pagar`}
         />
         <Resumo
           rotulo="Saldo previsto"
           icone={Landmark}
-          valor={soma(receber) - soma(pagar)}
+          valor={(r?.aReceber.totalCentavos ?? 0) - (r?.aPagar.totalCentavos ?? 0)}
           detalhe="A receber menos a pagar (pendentes)"
         />
       </div>
@@ -193,7 +184,7 @@ export function Financeiro() {
         <Skeleton className="h-40 w-full rounded-xl" />
       ) : q.isError ? (
         <ErrorState mensagem={q.error.message} onTentar={() => void q.refetch()} />
-      ) : q.data.length === 0 ? (
+      ) : q.data.lancamentos.length === 0 ? (
         <EmptyState
           icone={Landmark}
           titulo="Nenhuma conta neste filtro"
@@ -211,7 +202,7 @@ export function Financeiro() {
             <span className="sr-only">Ações</span>,
           ]}
         >
-          {q.data.map((l) => (
+          {q.data.lancamentos.map((l) => (
             <tr
               key={l.id}
               className={l.status !== "pendente" ? "text-muted-foreground" : undefined}
@@ -223,14 +214,16 @@ export function Financeiro() {
                   <Link
                     to="/sistemas/$id/app/vendas/$venda"
                     params={{ id: app.id, venda: l.venda }}
-                    className="ml-2 text-xs underline"
+                    className="ml-2 text-xs whitespace-nowrap underline"
                   >
                     Ver venda
                   </Link>
                 )}
               </td>
               <td className="px-4 py-2 text-muted-foreground">{l.contraparte ?? "—"}</td>
-              <td className="px-4 py-2">{l.tipo === "receber" ? "A receber" : "A pagar"}</td>
+              <td className="px-4 py-2 whitespace-nowrap">
+                {l.tipo === "receber" ? "A receber" : "A pagar"}
+              </td>
               <td
                 className={cn(
                   "px-4 py-2 font-medium whitespace-nowrap tabular-nums",
@@ -259,6 +252,11 @@ export function Financeiro() {
             </tr>
           ))}
         </Tabela>
+      )}
+      {q.data?.resumo.limiteAtingido && (
+        <p className="mt-2 text-sm text-muted-foreground">
+          Mostrando as 500 primeiras contas pelo vencimento. Use os filtros para ver as demais.
+        </p>
       )}
       {nova && <NovaContaDialog onFechar={() => setNova(false)} onCriada={atualizar} />}
       {cancelando && (
