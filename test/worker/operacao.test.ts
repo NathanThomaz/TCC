@@ -1460,6 +1460,42 @@ describe("módulos opcionais (ADR-006)", () => {
     expect((await estoqueDe(prod)).fisico).toBe(5);
   });
 
+  it("cancelar a compra mais recente volta o custo ao da compra anterior (revisor do GitHub)", async () => {
+    await ativarModulos(["fornecedores"]);
+    const f = await fornecedor();
+    const prod = await produto();
+    const compra = async (custo: number) =>
+      (
+        await comprar({
+          fornecedor: f,
+          itens: [{ produto: prod, unidades: 10, custoUnitarioCentavos: custo }],
+        })
+      ).body.compra!;
+    await compra(100);
+    agora += MIN;
+    const errada = await compra(10_000);
+    const custo = async () =>
+      ((await call("GET", p("/produtos"), ADMIN)).body.produtos ?? []).find((x) => x.id === prod)!
+        .custoCentavos;
+    expect(await custo()).toBe(10_000);
+    await call("POST", p(`/compras/${errada.id}/cancelar`), ADMIN, { motivo: "Preço errado" });
+    expect(await custo()).toBe(100);
+  });
+
+  it("financeiro: filtro por período do vencimento", async () => {
+    await ativarModulos(["financeiro"]);
+    for (const vencimento of ["2026-10-31", "2026-11-15", "2026-12-01"]) {
+      await call("POST", p("/financeiro"), ADMIN, {
+        tipo: "pagar",
+        descricao: `Conta ${vencimento}`,
+        valorCentavos: 100,
+        vencimento,
+      });
+    }
+    const lista = await lancamentos("?de=2026-11-01&ate=2026-11-30");
+    expect(lista.map((l) => l.vencimento)).toEqual(["2026-11-15"]);
+  });
+
   it("financeiro: lançamento manual, vencidos, baixa e cancelamento", async () => {
     await ativarModulos(["financeiro"]);
     const novo = (corpo: Record<string, unknown>) => call("POST", p("/financeiro"), ADMIN, corpo);

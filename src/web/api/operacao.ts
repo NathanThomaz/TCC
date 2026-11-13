@@ -270,6 +270,9 @@ export async function cancelarCompra(sistema: string, id: string, motivo: string
 export interface FiltroFinanceiro {
   tipo?: TipoLancamento;
   status?: "pendente" | "pago" | "cancelado" | "vencido";
+  /** Período do vencimento (AAAA-MM-DD), inclusive. */
+  de?: string;
+  ate?: string;
 }
 
 export async function listarLancamentos(

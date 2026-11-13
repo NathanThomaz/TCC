@@ -85,9 +85,13 @@ export function Financeiro() {
   const qc = useQueryClient();
   const [tipo, setTipo] = useState<TipoLancamento | "todos">("todos");
   const [situacao, setSituacao] = useState<Situacao>("pendente");
+  const [de, setDe] = useState("");
+  const [ate, setAte] = useState("");
   const filtro: FiltroFinanceiro = {
     ...(tipo !== "todos" ? { tipo } : {}),
     ...(situacao !== "todas" ? { status: situacao } : {}),
+    ...(de ? { de } : {}),
+    ...(ate ? { ate } : {}),
   };
   const q = useQuery({
     queryKey: ["app", app.id, "financeiro", filtro],
@@ -179,6 +183,14 @@ export function Financeiro() {
             </SelectContent>
           </Select>
         </div>
+        <div className="w-44 space-y-1.5">
+          <Label htmlFor="fin-de">Vencimento de</Label>
+          <Input id="fin-de" type="date" value={de} onChange={(e) => setDe(e.target.value)} />
+        </div>
+        <div className="w-44 space-y-1.5">
+          <Label htmlFor="fin-ate">até</Label>
+          <Input id="fin-ate" type="date" value={ate} onChange={(e) => setAte(e.target.value)} />
+        </div>
       </div>
       {q.isPending ? (
         <Skeleton className="h-40 w-full rounded-xl" />
@@ -255,7 +267,8 @@ export function Financeiro() {
       )}
       {q.data?.resumo.limiteAtingido && (
         <p className="mt-2 text-sm text-muted-foreground">
-          Mostrando as 500 primeiras contas pelo vencimento. Use os filtros para ver as demais.
+          Mostrando as 500 primeiras contas pelo vencimento. Use o período de vencimento para ver as
+          demais.
         </p>
       )}
       {nova && <NovaContaDialog onFechar={() => setNova(false)} onCriada={atualizar} />}

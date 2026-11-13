@@ -213,8 +213,9 @@ BEGIN
   SELECT RAISE(ABORT, 'conta_ja_paga');
 END;
 
--- Cancelar a compra devolve o estoque (correção) e cancela a conta a pagar pendente. Se o
--- estoque já foi vendido ou reservado, products_physical_above_reserved recusa o lote.
+-- Cancelar a compra devolve o estoque (correção), volta o custo de cada produto ao da última
+-- compra ainda válida (ou nenhum) e cancela a conta a pagar pendente. Se o estoque já foi
+-- vendido ou reservado, products_physical_above_reserved recusa o lote.
 CREATE TRIGGER purchases_cancel_effects
 AFTER UPDATE OF status ON purchases
 WHEN OLD.status = 'completed' AND NEW.status = 'cancelled'
@@ -222,6 +223,10 @@ BEGIN
   UPDATE products
   SET physical = physical - (SELECT units FROM purchase_items
                              WHERE purchase_id = NEW.id AND product_id = products.id),
+      last_cost_cents = (
+        SELECT i.unit_cost_cents FROM purchase_items i JOIN purchases c ON c.id = i.purchase_id
+        WHERE i.product_id = products.id AND c.status = 'completed' AND c.id <> NEW.id
+        ORDER BY c.created_at DESC, c.rowid DESC LIMIT 1),
       updated_at = max(updated_at, NEW.cancelled_at)
   WHERE id IN (SELECT product_id FROM purchase_items WHERE purchase_id = NEW.id);
   INSERT INTO stock_movements
