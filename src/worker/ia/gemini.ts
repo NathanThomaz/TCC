@@ -75,9 +75,20 @@ export function geminiDoAmbiente(env: Env, fetcher: typeof fetch = fetch): Prove
       const erro = await resposta
         .json<{ error?: { status?: string; message?: string } } | null>()
         .catch(() => null);
-      const status = erro?.error?.status ? `_${erro.error.status}` : "";
-      const detalhe = (erro?.error?.message ?? "").replace(/\s+/g, " ").slice(0, 200);
-      const motivo = `http_${resposta.status}${status}${detalhe ? `: ${detalhe}` : ""}`;
+      // Status só no formato do Google (ex.: FAILED_PRECONDITION); mensagem sem nada com cara de
+      // credencial (a própria chave e o formato AIza...), e o total cabe na coluna (300).
+      const bruto = erro?.error?.status ?? "";
+      const status = /^[A-Z_]{1,40}$/.test(bruto) ? `_${bruto}` : "";
+      const detalhe = (erro?.error?.message ?? "")
+        .split(chave ?? "")
+        .join("[chave]")
+        .replace(/AIza[0-9A-Za-z_-]{20,}/g, "[chave]")
+        .replace(/\s+/g, " ")
+        .slice(0, 200);
+      const motivo = `http_${resposta.status}${status}${detalhe ? `: ${detalhe}` : ""}`.slice(
+        0,
+        300,
+      );
       // 4xx: o provedor recusou o pedido sem gerar nada, então não houve cobrança (zero tokens) e
       // a reserva não fica presa como incerta. 5xx e falha de rede continuam incertos.
       throw new IaIndisponivel(
