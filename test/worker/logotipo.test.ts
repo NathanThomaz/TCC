@@ -39,8 +39,11 @@ const app = createApp({
   }),
 });
 
-const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4]);
-const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46]);
+// Cabeçalhos mínimos reais: PNG com o bloco IHDR; JPEG com início (FFD8) e fim (FFD9).
+const PNG = new Uint8Array([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0x0d, 0x49, 0x48, 0x44, 0x52, 0, 0, 0, 1,
+]);
+const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46, 0xff, 0xd9]);
 const SVG = new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg"><script/></svg>');
 
 async function enviar(sistema: string, corpo: Uint8Array, token = ADMIN, tipo = "image/png") {
@@ -95,6 +98,10 @@ describe("logotipo", () => {
     expect(tipoDoLogotipo(SVG)).toBeNull();
     expect(tipoDoLogotipo(new TextEncoder().encode("GIF89a......"))).toBeNull();
     expect(tipoDoLogotipo(new Uint8Array([0x89, 0x50]))).toBeNull();
+    // Assinatura colada na frente de outro conteúdo não passa.
+    const disfarce = new Uint8Array([...PNG.slice(0, 8), ...SVG]);
+    expect(tipoDoLogotipo(disfarce)).toBeNull();
+    expect(tipoDoLogotipo(new Uint8Array([0xff, 0xd8, 0xff, ...SVG]))).toBeNull();
   });
 
   it("PNG enviado é servido com o tipo conferido e nosniff", async () => {
@@ -114,6 +121,34 @@ describe("logotipo", () => {
     expect((await obter(S)).status).toBe(404);
   });
 
+  it("corpo sem Content-Length acima de 200 KB é cortado durante a leitura", async () => {
+    let enviados = 0;
+    const fluxo = new ReadableStream<Uint8Array>({
+      pull(c) {
+        if (enviados > 3 * LOGO_MAX_BYTES) return c.close();
+        enviados += 64 * 1024;
+        c.enqueue(new Uint8Array(64 * 1024));
+      },
+    });
+    const r = await app(
+      new Request(`https://app.test/api/v1/systems/${S}/logotipo`, {
+        method: "PUT",
+        headers: { authorization: `Bearer ${ADMIN}` },
+        body: fluxo,
+        // @ts-expect-error duplex é exigido para corpo em fluxo
+        duplex: "half",
+      }),
+      env,
+    );
+    expect(r.status).toBe(413);
+    expect(enviados).toBeLessThan(3 * LOGO_MAX_BYTES);
+  });
+
+  it("sistema arquivado não muda de logotipo", async () => {
+    await env.DB.prepare("UPDATE systems SET status = 'archived' WHERE id = ?").bind(S).run();
+    expect((await enviar(S, PNG)).status).toBe(409);
+  });
+
   it("acima de 200 KB é recusado", async () => {
     const grande = new Uint8Array(LOGO_MAX_BYTES + 1);
     grande.set(PNG);
@@ -125,6 +160,7 @@ describe("logotipo", () => {
   it("exatamente 200 KB é aceito; trocar por JPEG substitui; remover volta às iniciais", async () => {
     const limite = new Uint8Array(LOGO_MAX_BYTES);
     limite.set(PNG);
+    limite.set([0xff, 0xd9], LOGO_MAX_BYTES - 2);
     expect((await enviar(S, limite)).status).toBe(200);
     expect((await enviar(S, JPEG, ADMIN, "image/jpeg")).status).toBe(200);
     expect((await obter(S)).headers.get("content-type")).toBe("image/jpeg");

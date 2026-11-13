@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ImageUp, Loader2, Trash2 } from "lucide-react";
 import { enviarLogotipo, obterLogotipo, removerLogotipo } from "@/api/logotipo";
@@ -35,10 +35,13 @@ export function Logotipo({
   className?: string;
 }) {
   const q = useLogotipo(sistema);
-  if (q.data) {
+  // Imagem que não carrega (arquivo corrompido) volta às iniciais.
+  const [quebrada, setQuebrada] = useState<string | null>(null);
+  if (q.data && quebrada !== q.data) {
     return (
       <img
         src={q.data}
+        onError={() => setQuebrada(q.data ?? null)}
         alt={`Logotipo de ${nome}`}
         className={cn("size-10 shrink-0 rounded-lg bg-card object-contain", className)}
       />

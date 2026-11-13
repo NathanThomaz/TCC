@@ -1,5 +1,5 @@
 import { authenticate, requireAdmin, requireSystemAccess } from "../auth/session";
-import { AppError, notFound } from "../http/errors";
+import { AppError, conflict, notFound } from "../http/errors";
 import { json } from "../http/responses";
 import type { Handler, RequestContext } from "../http/router";
 
@@ -12,11 +12,21 @@ export const LOGO_MAX_BYTES = 200 * 1024;
 const PNG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 const JPEG = [0xff, 0xd8, 0xff];
 
-/** Tipo pelo conteúdo: só PNG e JPEG são aceitos; qualquer outra coisa devolve null. */
+/**
+ * Tipo pelo conteúdo: só PNG e JPEG são aceitos. Além da assinatura, confere a estrutura mínima
+ * (PNG começa pelo bloco IHDR; JPEG termina no marcador de fim FFD9): assinatura colada na frente de
+ * outro conteúdo não passa. Qualquer outra coisa devolve null.
+ */
 export function tipoDoLogotipo(bytes: Uint8Array): "image/png" | "image/jpeg" | null {
-  const comeca = (assinatura: number[]) => assinatura.every((b, i) => bytes[i] === b);
-  if (bytes.length > PNG.length && comeca(PNG)) return "image/png";
-  if (bytes.length > JPEG.length && comeca(JPEG)) return "image/jpeg";
+  const comeca = (assinatura: number[], em = 0) => assinatura.every((b, i) => bytes[em + i] === b);
+  // PNG: assinatura (8) + tamanho do bloco (4) + "IHDR" (4).
+  if (bytes.length > 16 && comeca(PNG) && comeca([0x49, 0x48, 0x44, 0x52], 12)) {
+    return "image/png";
+  }
+  const fim = bytes.length - 2;
+  if (bytes.length > 4 && comeca(JPEG) && bytes[fim] === 0xff && bytes[fim + 1] === 0xd9) {
+    return "image/jpeg";
+  }
   return null;
 }
 
@@ -28,12 +38,40 @@ async function hexSha256(bytes: Uint8Array): Promise<string> {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-async function abrir(ctx: RequestContext, admin: boolean) {
+async function abrir(ctx: RequestContext, escrita: boolean) {
   const user = await authenticate(ctx, ctx.auth);
-  if (admin) requireAdmin(user);
+  if (escrita) requireAdmin(user);
   const systemId = ctx.params.systemId ?? "";
-  await requireSystemAccess(ctx.env.DB, user, systemId);
+  const system = await requireSystemAccess(ctx.env.DB, user, systemId);
+  if (escrita && system.status === "archived") {
+    throw conflict("Sistema arquivado não muda de logotipo.");
+  }
   return { user, systemId };
+}
+
+/** Lê o corpo em pedaços e corta assim que passar do limite (com ou sem Content-Length). */
+async function lerAteLimite(request: Request): Promise<Uint8Array> {
+  const leitor = request.body?.getReader();
+  if (!leitor) return new Uint8Array();
+  const partes: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await leitor.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > LOGO_MAX_BYTES) {
+      await leitor.cancel();
+      throw grandeDemais();
+    }
+    partes.push(value);
+  }
+  const bytes = new Uint8Array(total);
+  let pos = 0;
+  for (const parte of partes) {
+    bytes.set(parte, pos);
+    pos += parte.byteLength;
+  }
+  return bytes;
 }
 
 /** PUT: envia (ou troca) o logotipo. Corpo = o arquivo em si. Repetir o mesmo arquivo não muda nada. */
@@ -41,8 +79,7 @@ export const enviarLogotipo: Handler = async (ctx) => {
   const { user, systemId } = await abrir(ctx, true);
   const declarado = Number(ctx.request.headers.get("content-length") ?? "0");
   if (declarado > LOGO_MAX_BYTES) throw grandeDemais();
-  const bytes = new Uint8Array(await ctx.request.arrayBuffer());
-  if (bytes.length > LOGO_MAX_BYTES) throw grandeDemais();
+  const bytes = await lerAteLimite(ctx.request);
   if (bytes.length === 0) {
     throw new AppError(400, "logotipo_vazio", "Escolha um arquivo PNG ou JPEG.");
   }

@@ -1,4 +1,4 @@
-import { ApiError, tokenAtual } from "./cliente";
+import { ApiError, sessaoRecusada, tokenAtual } from "./cliente";
 
 // Logotipo do sistema (/api/v1/systems/:id/logotipo). Vem com o token de login e vira uma URL
 // data: (a CSP só aceita imagens do próprio site e data:), sem afrouxar a política de segurança.
@@ -13,6 +13,7 @@ async function cabecalhos(extra: Record<string, string> = {}) {
 }
 
 async function erroDe(r: Response): Promise<ApiError> {
+  sessaoRecusada(r.status, !!(await tokenAtual()));
   const corpo = (await r.json().catch(() => null)) as {
     error?: { code: string; message: string };
   } | null;
