@@ -18,10 +18,12 @@ import { Vendas } from "@/pages/app/Vendas";
 import { Configuracoes } from "@/pages/Configuracoes";
 import { Configurar } from "@/pages/Configurar";
 import { Criar } from "@/pages/Criar";
+import { CriarRevisao } from "@/pages/CriarRevisao";
 import { DetalheSistema } from "@/pages/DetalheSistema";
 import { Entrar } from "@/pages/Entrar";
 import { Inicio } from "@/pages/Inicio";
 import { NaoEncontrada } from "@/pages/NaoEncontrada";
+import { Pedidos } from "@/pages/Pedidos";
 import { Perfil } from "@/pages/Perfil";
 import { Sistemas } from "@/pages/Sistemas";
 // Inter hospedada no próprio app (a CSP só permite fontes do mesmo domínio).
@@ -57,6 +59,8 @@ createRoot(root).render(
                 <Route path="/sistemas/:id" element={<DetalheSistema />} />
                 <Route path="/sistemas/:id/configurar" element={<Configurar />} />
                 <Route path="/sistemas/:id/criar" element={<Criar />} />
+                <Route path="/sistemas/:id/criar/revisao" element={<CriarRevisao />} />
+                <Route path="/sistemas/:id/pedidos" element={<Pedidos />} />
                 <Route path="/sistemas/:id/app" element={<Aplicacao />}>
                   <Route index element={<Painel />} />
                   <Route path="clientes" element={<Pessoas tipo="clientes" />} />

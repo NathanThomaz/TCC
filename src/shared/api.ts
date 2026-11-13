@@ -228,12 +228,22 @@ export interface ContasApiBody {
 
 // ---- Criação por conversa (/api/v1/systems/:systemId/criacao) ----
 
+/** Assuntos da entrevista guiada (ADR-004), na ordem em que a IA conduz. */
+export type AssuntoDto =
+  "negocio" | "produtos_precos" | "pedidos_estoque" | "clientes" | "atendimentos" | "aparencia";
+
 export interface MensagemDto {
   id: string;
   papel: "usuario" | "assistente";
   texto: string;
   perguntas: string[];
+  /** Mensagens anteriores à entrevista guiada (o que hoje vira pedido ao desenvolvedor). */
   foraDoCatalogo: string[];
+  respostasRapidas: string[];
+  assunto: AssuntoDto | null;
+  /** Códigos dos requisitos sugeridos nesta mensagem e ids dos pedidos que ela registrou. */
+  sugestoes: string[];
+  pedidos: string[];
   criadoEm: number;
 }
 
@@ -242,6 +252,34 @@ export interface RequisitoDto {
   texto: string;
   status: "pendente" | "confirmado" | "substituido";
   origem: "ia" | "usuario";
+  assunto: AssuntoDto | null;
+  titulo: string | null;
+  /** Valor proposto pela IA sem o dono ter dito: só vale depois que o usuário o aceita. */
+  sugestao: boolean;
+}
+
+export type EstadoPedidoDto = "aberto" | "em_analise" | "implementado" | "recusado" | "cancelado";
+
+export interface PedidoDto {
+  id: string;
+  titulo: string;
+  assunto: AssuntoDto | null;
+  origem: "conversa" | "formulario";
+  pedidoOriginal: string;
+  contexto: string | null;
+  regraProposta: string | null;
+  exemplos: { situacao: string; esperado: string }[];
+  criteriosAceite: string[];
+  estado: EstadoPedidoDto;
+  historico: { estado: EstadoPedidoDto; em: number; nota: string | null }[];
+  comentarios: { texto: string; em: number }[];
+  criadoEm: number;
+}
+
+export interface PedidosApiBody {
+  pedidos?: PedidoDto[];
+  pedido?: PedidoDto;
+  error?: ApiErrorBody["error"];
 }
 
 export interface CriacaoApiBody {
@@ -250,6 +288,10 @@ export interface CriacaoApiBody {
   mensagens?: MensagemDto[];
   /** Requisitos vivos (pendentes e confirmados), em ordem de código. */
   requisitos?: RequisitoDto[];
+  /** Assunto da última pergunta da IA e se ela considera a entrevista pronta para revisar. */
+  assuntoAtual?: AssuntoDto | null;
+  prontoParaRevisar?: boolean;
+  pedidos?: PedidoDto[];
   /** Se a IA está configurada neste ambiente (sem ela, o formulário manual continua). */
   iaDisponivel?: boolean;
   /** Última versão gravada (formulário ou conversa) e o diagnóstico dela. */

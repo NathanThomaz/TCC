@@ -14,7 +14,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc -p tsconfig.json && tsc -p src/shared && tsc -p src/worker && tsc -p src/web && tsc -p test && tsc -p provas/d1-atomicidade",
+    "typecheck": "tsc -p tsconfig.json && tsc -p src/shared && tsc -p src/worker && tsc -p src/web && tsc -p test && tsc -p provas/d1-atomicidade && tsc -p provas/gemini-entrevista",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

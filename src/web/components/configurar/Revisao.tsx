@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { novaChave } from "@/api/cliente";
 import { aprovarVersao, ativarSistema, salvarVersao } from "@/api/sistemas";
 import type { ConfigDraft, Issue, Versao } from "@/types/nexus";
-import { centavosParaReais, ROTULO_MODULO } from "@/lib/nexus";
+import { ROTULO_MODULO, textoDaRegra } from "@/lib/nexus";
 import { IssueList } from "@/components/nexus/IssueList";
 import { StatusBadge } from "@/components/nexus/StatusBadge";
 import { HashCurto } from "@/components/nexus/HashCurto";
@@ -108,30 +108,12 @@ export function Revisao({
     ["Modelo", MODELO[draft.modelo]],
     ["Módulos", draft.modulos.map((m) => ROTULO_MODULO[m]).join(", ")],
     ["Nome / título", `${draft.aparencia.nome || "—"} / ${draft.aparencia.titulo || "—"}`],
-    [
-      "Requisitos",
-      `${draft.requisitos.length} (${draft.requisitos.filter((r) => r.status === "confirmado").length} confirmados)`,
-    ],
-    ["Campos informativos", String(draft.campos.length)],
+    ["Informações extras", String(draft.campos.length)],
     [
       "Tipos de atendimento",
       draft.modulos.includes("agenda") ? String(draft.tipos_atendimento.length) : "Não se aplica",
     ],
-    [
-      "Regras",
-      draft.regras
-        .map((r) =>
-          r.tipo === "limite_atacado"
-            ? `Atacado R$ ${centavosParaReais(r.valor_centavos)}`
-            : r.tipo === "unidades_por_caixa"
-              ? `${r.unidades} un./caixa`
-              : r.tipo === "prazo_reserva"
-                ? `Reserva ${r.minutos || "?"} min`
-                : "Par de atendimentos",
-        )
-        .join(" · ") || "Nenhuma",
-    ],
-    ["Fora do catálogo", String(draft.fora_do_catalogo.length)],
+    ["Regras", draft.regras.map((r) => textoDaRegra(r, draft)).join(" · ") || "Nenhuma"],
   ];
 
   return (
@@ -225,7 +207,7 @@ export function Revisao({
           <AlertDialogHeader>
             <AlertDialogTitle>Aprovar versão {v && `v${v.versao}`}</AlertDialogTitle>
             <AlertDialogDescription>
-              Hash do conteúdo:{" "}
+              Código de conferência:{" "}
               <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-foreground">
                 {v?.hash.slice(0, 8)}
               </code>

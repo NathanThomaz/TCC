@@ -38,11 +38,8 @@ export function IssueList({ issues, onIr }: { issues: Issue[]; onIr: (passo: num
                 </span>
                 {i.message}
               </p>
-              <p className="mt-1 font-mono text-xs text-muted-foreground">
-                {i.code} · {i.path}
-              </p>
             </div>
-            {passo !== 8 && (
+            {passo !== PASSOS.length && (
               <button
                 type="button"
                 onClick={() => onIr(passo)}

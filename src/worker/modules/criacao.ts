@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type {
+  AssuntoDto,
   CriacaoApiBody,
   IssueDto,
   MensagemDto,
@@ -34,12 +35,15 @@ import {
   type Levantamento,
 } from "../ia/prompts";
 import { isUnique, parse, triggerCode } from "./comum";
+import { pedidoDaConversa, pedidosDoSistema } from "./pedidos";
 import { versaoStatements } from "./systems";
 
-// Criação por conversa (seção 8). A IA conversa, extrai requisitos e propõe a configuração; o
-// usuário confirma cada requisito (a IA nunca confirma), pede a geração e, se houver erro, pede a
-// correção (T08). Toda configuração passa pelo mesmo validador do formulário e vira uma versão
-// comum (T33), aprovada e ativada pelo mesmo fluxo. Falha ou limite da IA não apaga nada (T30).
+// Criação por conversa (seção 8), guiada pela IA (ADR-004). A IA entrevista um assunto por vez,
+// extrai requisitos (com assunto e título para o resumo), marca o que é só sugestão dela e registra
+// pedidos ao desenvolvedor para o que o catálogo não cobre. Quem confirma é o usuário: aceitando
+// uma sugestão ou confirmando o resumo inteiro de uma vez (a IA nunca confirma). Depois pede a
+// geração e, se houver erro, a correção (T08). Toda configuração passa pelo mesmo validador do
+// formulário e vira uma versão comum (T33). Falha ou limite da IA não apaga nada (T30).
 
 const HISTORICO = 20;
 
@@ -83,6 +87,19 @@ interface RequisitoRow {
   text: string;
   status: RequisitoDto["status"];
   origin: RequisitoDto["origem"];
+  topic: RequisitoDto["assunto"];
+  label: string | null;
+  suggested: number;
+}
+
+interface DadosMensagem {
+  perguntas?: string[];
+  foraDoCatalogo?: string[];
+  respostasRapidas?: string[];
+  assunto?: AssuntoDto;
+  prontoParaRevisar?: boolean;
+  sugestoes?: string[];
+  pedidos?: string[];
 }
 
 async function conversa(ctx: RequestContext, c: Contexto): Promise<string> {
@@ -105,28 +122,37 @@ async function conversa(ctx: RequestContext, c: Contexto): Promise<string> {
   return row.id;
 }
 
-async function mensagens(ctx: RequestContext, conversaId: string): Promise<MensagemDto[]> {
+async function mensagensComDados(ctx: RequestContext, conversaId: string) {
   const { results } = await ctx.env.DB.prepare(
     "SELECT id, role, content, data_json, created_at FROM messages WHERE conversation_id = ? ORDER BY seq",
   )
     .bind(conversaId)
     .all<MensagemRow>();
   return results.map((m) => {
-    const dados = JSON.parse(m.data_json) as { perguntas?: string[]; foraDoCatalogo?: string[] };
-    return {
+    const dados = JSON.parse(m.data_json) as DadosMensagem;
+    const dto: MensagemDto = {
       id: m.id,
       papel: m.role,
       texto: m.content,
       perguntas: dados.perguntas ?? [],
       foraDoCatalogo: dados.foraDoCatalogo ?? [],
+      respostasRapidas: dados.respostasRapidas ?? [],
+      assunto: dados.assunto ?? null,
+      sugestoes: dados.sugestoes ?? [],
+      pedidos: dados.pedidos ?? [],
       criadoEm: m.created_at,
     };
+    return { dto, dados };
   });
+}
+
+async function mensagens(ctx: RequestContext, conversaId: string): Promise<MensagemDto[]> {
+  return (await mensagensComDados(ctx, conversaId)).map((m) => m.dto);
 }
 
 async function requisitosVivos(ctx: RequestContext, systemId: string): Promise<RequisitoDto[]> {
   const { results } = await ctx.env.DB.prepare(
-    `SELECT code, text, status, origin FROM requirements
+    `SELECT code, text, status, origin, topic, label, suggested FROM requirements
      WHERE system_id = ? AND status <> 'substituido' ORDER BY length(code), code`,
   )
     .bind(systemId)
@@ -136,6 +162,9 @@ async function requisitosVivos(ctx: RequestContext, systemId: string): Promise<R
     texto: r.text,
     status: r.status,
     origem: r.origin,
+    assunto: r.topic,
+    titulo: r.label,
+    sugestao: r.suggested === 1,
   }));
 }
 
@@ -231,10 +260,15 @@ async function falhaDoLote(
 async function estado(ctx: RequestContext, c: Contexto, status = 200): Promise<Response> {
   const conversaId = await conversa(ctx, c);
   const { versao, issues, draft } = await ultimaVersao(ctx, c.systemId);
+  const lidas = await mensagensComDados(ctx, conversaId);
+  const ultimaDaIa = lidas.findLast((m) => m.dto.papel === "assistente")?.dados;
   const body: CriacaoApiBody = {
     revisao: await revisaoAtual(ctx, c.systemId),
-    mensagens: await mensagens(ctx, conversaId),
+    mensagens: lidas.map((m) => m.dto),
     requisitos: await requisitosVivos(ctx, c.systemId),
+    assuntoAtual: ultimaDaIa?.assunto ?? null,
+    prontoParaRevisar: ultimaDaIa?.prontoParaRevisar ?? false,
+    pedidos: await pedidosDoSistema(ctx.env.DB, c.systemId),
     iaDisponivel: ctx.ia !== undefined,
     versao,
     issues,
@@ -260,16 +294,27 @@ async function maiorCodigo(ctx: RequestContext, systemId: string): Promise<numbe
 const codigoDe = (n: number) => `REQ-${String(n).padStart(2, "0")}`;
 const normalizar = (texto: string) => texto.trim().replace(/\s+/g, " ").toLowerCase();
 
+/** Requisito novo ou reescrito, com o que o resumo mostra (assunto, título e se é sugestão). */
+export interface ItemMescla {
+  codigo: string;
+  texto: string;
+  assunto: AssuntoDto;
+  titulo: string;
+  sugestao: boolean;
+}
+
 export interface Mescla {
-  novos: { codigo: string; texto: string }[];
+  novos: ItemMescla[];
   /** Requisito existente reescrito pela IA: o anterior vira substituído e o novo fica pendente. */
-  reescritos: { codigo: string; texto: string; eraConfirmado: boolean }[];
+  reescritos: (ItemMescla & { eraConfirmado: boolean })[];
 }
 
 /**
  * Mescla a lista proposta pela IA com os requisitos vivos. A IA não remove nem confirma: código
- * existente com texto igual fica como está; texto diferente gera versão nova pendente (T06);
- * sem código (ou código desconhecido) vira requisito novo, se já não houver um igual.
+ * existente com texto igual fica como está; texto diferente gera versão nova pendente (T06), assim
+ * como uma sugestão que o dono passou a dizer com as próprias palavras (deixa de ser sugestão, mas
+ * continua pendente); sem código (ou código desconhecido) vira requisito novo, se já não houver um
+ * igual. Valor novo que a IA marca como sugestão continua sugestão, mesmo sobre um item do dono.
  */
 export function mesclarRequisitos(
   vivos: RequisitoDto[],
@@ -284,10 +329,17 @@ export function mesclarRequisitos(
   for (const p of propostos) {
     const existente = p.codigo ? porCodigo.get(p.codigo) : undefined;
     if (existente) {
-      if (normalizar(existente.texto) !== normalizar(p.texto)) {
+      const textoMudou = normalizar(existente.texto) !== normalizar(p.texto);
+      const sugestaoDita = existente.sugestao && existente.status === "pendente" && !p.sugestao;
+      if (textoMudou || sugestaoDita) {
         mescla.reescritos.push({
           codigo: existente.codigo,
           texto: p.texto.trim(),
+          assunto: p.assunto,
+          titulo: p.titulo.trim(),
+          // Na dúvida, vale como sugestão (exige o aceite do usuário): a IA não tira a marca de
+          // um valor que ela mesma propôs sem o dono ter dito, nem a de um valor novo dela.
+          sugestao: p.sugestao,
           eraConfirmado: existente.status === "confirmado",
         });
         textos.add(normalizar(p.texto));
@@ -299,7 +351,13 @@ export function mesclarRequisitos(
     proximo += 1;
     total += 1;
     textos.add(normalizar(p.texto));
-    mescla.novos.push({ codigo: codigoDe(proximo), texto: p.texto.trim() });
+    mescla.novos.push({
+      codigo: codigoDe(proximo),
+      texto: p.texto.trim(),
+      assunto: p.assunto,
+      titulo: p.titulo.trim(),
+      sugestao: p.sugestao,
+    });
   }
   return mescla;
 }
@@ -313,14 +371,18 @@ function inserirRequisito(
     origem: "ia" | "usuario";
     mensagem: string | null;
     confirmadoPor: string | null;
+    assunto: AssuntoDto | null;
+    titulo: string | null;
+    sugestao: boolean;
     now: number;
   },
 ): D1PreparedStatement {
   return db
     .prepare(
       `INSERT INTO requirements
-         (id, system_id, code, text, status, origin, origin_message_id, confirmed_by, confirmed_at, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (id, system_id, code, text, status, origin, origin_message_id, confirmed_by, confirmed_at,
+          topic, label, suggested, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .bind(
       crypto.randomUUID(),
@@ -332,6 +394,9 @@ function inserirRequisito(
       r.mensagem,
       r.confirmadoPor,
       r.confirmadoPor ? r.now : null,
+      r.assunto,
+      r.titulo,
+      r.sugestao ? 1 : 0,
       r.now,
       r.now,
     );
@@ -418,7 +483,14 @@ export const enviarMensagem: Handler = async (ctx) => {
   const pedido: PedidoIa = {
     instrucoes: instrucoesLevantamento(
       c.nome,
-      vivos.map((r) => ({ codigo: r.codigo, texto: r.texto, status: r.status })),
+      vivos.map((r) => ({
+        codigo: r.codigo,
+        texto: r.texto,
+        status: r.status,
+        assunto: r.assunto,
+        titulo: r.titulo,
+        sugestao: r.sugestao,
+      })),
     ),
     mensagens: [
       ...historico.map((m) => ({
@@ -458,37 +530,40 @@ export const enviarMensagem: Handler = async (ctx) => {
         )
         .bind(id, conversaId, papel, texto, JSON.stringify(dados), now, conversaId);
     const algumConfirmadoMudou = mescla.reescritos.some((r) => r.eraConfirmado);
+    const pedidos = ia.pedidos_desenvolvedor.map((p) =>
+      pedidoDaConversa(db, p, { systemId: c.systemId, userId: c.user.id, mensagem: idIa, now }),
+    );
+    const daIa = (r: ItemMescla) =>
+      inserirRequisito(db, {
+        systemId: c.systemId,
+        codigo: r.codigo,
+        texto: r.texto,
+        origem: "ia",
+        mensagem: idIa,
+        confirmadoPor: null,
+        assunto: r.assunto,
+        titulo: r.titulo,
+        sugestao: r.sugestao,
+        now,
+      });
+    const dados: DadosMensagem = {
+      perguntas: ia.perguntas,
+      respostasRapidas: ia.respostas_rapidas,
+      assunto: ia.assunto_atual,
+      prontoParaRevisar: ia.pronto_para_revisar,
+      sugestoes: [...mescla.novos, ...mescla.reescritos]
+        .filter((r) => r.sugestao)
+        .map((r) => r.codigo),
+      pedidos: pedidos.map((p) => p.id),
+    };
     try {
       await db.batch([
         guarda(db, c.systemId, body.revisao),
         inserirMensagem(idUsuario, "usuario", body.texto, {}),
-        inserirMensagem(idIa, "assistente", ia.resposta, {
-          perguntas: ia.perguntas,
-          foraDoCatalogo: ia.fora_do_catalogo,
-        }),
-        ...mescla.reescritos.flatMap((r) => [
-          substituir(db, c.systemId, r.codigo, now),
-          inserirRequisito(db, {
-            systemId: c.systemId,
-            codigo: r.codigo,
-            texto: r.texto,
-            origem: "ia",
-            mensagem: idIa,
-            confirmadoPor: null,
-            now,
-          }),
-        ]),
-        ...mescla.novos.map((r) =>
-          inserirRequisito(db, {
-            systemId: c.systemId,
-            codigo: r.codigo,
-            texto: r.texto,
-            origem: "ia",
-            mensagem: idIa,
-            confirmadoPor: null,
-            now,
-          }),
-        ),
+        inserirMensagem(idIa, "assistente", ia.resposta, dados),
+        ...mescla.reescritos.flatMap((r) => [substituir(db, c.systemId, r.codigo, now), daIa(r)]),
+        ...mescla.novos.map(daIa),
+        ...pedidos.flatMap((p) => p.instrucoes),
         ...(algumConfirmadoMudou ? [invalidarVersoesDaConversa(db, c.systemId)] : []),
         auditar(db, c, "criacao.mensagem", idIa, now),
         recordStatement(ctx, cmd, started, idIa, 201, now),
@@ -506,7 +581,7 @@ export const enviarMensagem: Handler = async (ctx) => {
 
 async function requisitoVivo(ctx: RequestContext, c: Contexto, codigo: string) {
   const row = await ctx.env.DB.prepare(
-    "SELECT code, text, status, origin FROM requirements WHERE system_id = ? AND code = ? AND status <> 'substituido'",
+    "SELECT code, text, status, origin, topic, label, suggested FROM requirements WHERE system_id = ? AND code = ? AND status <> 'substituido'",
   )
     .bind(c.systemId, codigo)
     .first<RequisitoRow>();
@@ -599,6 +674,7 @@ export const editarRequisito: Handler = async (ctx) => {
     esperada,
     (db, now) => [
       substituir(db, c.systemId, codigo, now),
+      // Reescrito pelo dono: mantém o lugar no resumo e deixa de ser sugestão.
       inserirRequisito(db, {
         systemId: c.systemId,
         codigo,
@@ -606,6 +682,9 @@ export const editarRequisito: Handler = async (ctx) => {
         origem: "usuario",
         mensagem: null,
         confirmadoPor: c.user.id,
+        assunto: atual.topic,
+        titulo: atual.label,
+        sugestao: false,
         now,
       }),
       invalidarVersoesDaConversa(db, c.systemId),
@@ -667,6 +746,9 @@ export const adicionarRequisito: Handler = async (ctx) => {
         origem: "usuario",
         mensagem: null,
         confirmadoPor: c.user.id,
+        assunto: null,
+        titulo: null,
+        sugestao: false,
         now,
       }),
       invalidarVersoesDaConversa(db, c.systemId),
@@ -674,6 +756,54 @@ export const adicionarRequisito: Handler = async (ctx) => {
     ],
     { cmd, started },
     201,
+  );
+};
+
+/**
+ * Confirmação única do resumo (ADR-004): o usuário confere tudo e confirma de uma vez os
+ * requisitos que disse. Sugestão da IA ainda não aceita impede: ela precisa de um ato próprio
+ * ("Usar sugestão", que confirma só aquele requisito) ou ser mudada na conversa.
+ */
+export const confirmarResumo: Handler = async (ctx) => {
+  const c = await abrir(ctx);
+  exigirRascunho(c);
+  const body = parse(RevisaoBody, await readJson(ctx.request));
+  const idem = await iniciarAto(ctx, c, "criacao.confirmar_resumo", body);
+  if (!idem) return estado(ctx, c);
+  await conversa(ctx, c);
+  await exigirRevisao(ctx, c, body.revisao);
+  const vivos = await requisitosVivos(ctx, c.systemId);
+  const sugestoes = vivos.filter((r) => r.status === "pendente" && r.sugestao);
+  if (sugestoes.length > 0) {
+    throw new AppError(
+      409,
+      "sugestoes_pendentes",
+      `Confirme ou mude ${sugestoes.length === 1 ? "a sugestão" : `as ${sugestoes.length} sugestões`} do assistente antes de criar o sistema.`,
+    );
+  }
+  if (vivos.length === 0) {
+    throw new AppError(
+      409,
+      "sem_requisitos",
+      "A entrevista ainda não tem respostas para confirmar.",
+    );
+  }
+  const pendentes = vivos.filter((r) => r.status === "pendente");
+  return atoDoUsuario(
+    ctx,
+    c,
+    body.revisao,
+    (db, now) => [
+      db
+        .prepare(
+          `UPDATE requirements SET status = 'confirmado', confirmed_by = ?, confirmed_at = ?, updated_at = max(updated_at, ?)
+           WHERE system_id = ? AND status = 'pendente' AND suggested = 0`,
+        )
+        .bind(c.user.id, now, now, c.systemId),
+      ...(pendentes.length ? [invalidarVersoesDaConversa(db, c.systemId)] : []),
+      auditar(db, c, "requisito.resumo_confirmado", String(pendentes.length), now),
+    ],
+    idem,
   );
 };
 

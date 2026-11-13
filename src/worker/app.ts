@@ -60,6 +60,7 @@ import {
 import {
   adicionarRequisito,
   confirmarRequisito,
+  confirmarResumo,
   corrigirConfiguracao,
   descartarRequisito,
   editarRequisito,
@@ -67,6 +68,7 @@ import {
   gerarConfiguracao,
   obterCriacao,
 } from "./modules/criacao";
+import { cancelarPedido, comentarPedido, criarPedido, listarPedidos } from "./modules/pedidos";
 import { geminiDoAmbiente } from "./ia/gemini";
 import {
   activateSystem,
@@ -162,8 +164,14 @@ export function createApp(
         path: `${O}/criacao/requisitos/:codigo/descartar`,
         handler: descartarRequisito,
       },
+      { method: "POST", path: `${O}/criacao/confirmar`, handler: confirmarResumo },
       { method: "POST", path: `${O}/criacao/gerar`, handler: gerarConfiguracao },
       { method: "POST", path: `${O}/criacao/corrigir`, handler: corrigirConfiguracao },
+      // Pedidos ao desenvolvedor (ADR-004).
+      { method: "GET", path: `${O}/pedidos`, handler: listarPedidos },
+      { method: "POST", path: `${O}/pedidos`, handler: criarPedido },
+      { method: "POST", path: `${O}/pedidos/:pedidoId/comentarios`, handler: comentarPedido },
+      { method: "POST", path: `${O}/pedidos/:pedidoId/cancelar`, handler: cancelarPedido },
       // Operação do sistema ativo (seções 10 a 14).
       { method: "GET", path: `${O}/app`, handler: obterApp },
       { method: "GET", path: `${O}/consulta`, handler: obterConsulta },
