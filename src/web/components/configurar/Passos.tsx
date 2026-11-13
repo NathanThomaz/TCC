@@ -94,7 +94,22 @@ const MODELOS: { id: Modelo; nome: string; desc: string; Icone: typeof Store }[]
   },
 ];
 
-export function PassoModelo({ draft, set }: PassoProps) {
+export function PassoModelo({ draft, set, travado }: PassoProps & { travado?: boolean }) {
+  if (travado) {
+    return (
+      <>
+        <Explicacao>
+          Num sistema ativo o modelo não muda (os dados dependem dele). Você pode incluir módulos
+          opcionais e mudar regras, campos e nomes no próximo passo.
+        </Explicacao>
+        <ModulosProntos
+          modulos={draft.modulos}
+          regras={draft.regras}
+          titulo={`O que este sistema já tem (${MODELOS.find((m) => m.id === draft.modelo)?.nome ?? draft.modelo})`}
+        />
+      </>
+    );
+  }
   return (
     <>
       <Explicacao>

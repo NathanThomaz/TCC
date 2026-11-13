@@ -2,6 +2,8 @@ import type { Campo, ConfigDraft, Modelo, Modulo, Regra } from "@/types/nexus";
 import {
   OPTIONAL_MODULES,
   PAYMENT_LABELS,
+  ROTULOS_CAMPOS,
+  type RotuloCampo,
   RULE_MODULES,
   type PaymentMethod,
 } from "../../shared/contract/catalog";
@@ -221,4 +223,9 @@ export function reaisParaCentavos(texto: string): number | null {
 
 export function centavosParaReais(c: number): string {
   return (c / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+/** Nome de uma tela ou coluna no vocabulário do negócio (ou o padrão). Só visual. */
+export function rotuloCampo(config: Pick<ConfigDraft, "aparencia">, chave: RotuloCampo): string {
+  return config.aparencia.rotulos_campos?.[chave] ?? ROTULOS_CAMPOS[chave].padrao;
 }

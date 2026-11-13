@@ -24,9 +24,10 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import type { Regra } from "@/types/nexus";
+import type { Modulo, Regra } from "@/types/nexus";
 import { RegrasCatalogo } from "@/components/configurar/RegrasCatalogo";
 import { ModulosOpcionais } from "@/components/configurar/ModulosOpcionais";
+import { EditorRotulos } from "@/components/configurar/EditorRotulos";
 import { OPCIONAIS_POR_MODELO, ROTULO_MODULO } from "@/lib/nexus";
 import { cn } from "@/lib/utils";
 
@@ -136,7 +137,10 @@ export function PassoAjustes({
   sistemaId,
   sugestoes,
   setSugestoes,
+  travados = [],
 }: PassoProps & {
+  /** Módulos em uso no sistema ativo: não podem ser desligados (ADR-008). */
+  travados?: readonly Modulo[];
   sistemaId: string;
   sugestoes: Sugerida[];
   setSugestoes: (s: Sugerida[]) => void;
@@ -191,6 +195,7 @@ export function PassoAjustes({
           <ModulosOpcionais
             draft={draft}
             set={set}
+            travados={travados}
             sugerido={sugestoes.includes("formas_pagamento")}
             onSugerir={(ligado) =>
               setSugestoes(
@@ -407,6 +412,20 @@ export function PassoAjustes({
 
       <Secao titulo="Aparência" resumo={draft.aparencia.titulo || "Sem título"}>
         <PassoAparencia draft={draft} set={set} />
+      </Secao>
+
+      <Secao
+        titulo="Nomes das telas e colunas"
+        resumo={(() => {
+          const n =
+            Object.keys(draft.aparencia.rotulos_menu ?? {}).length +
+            Object.keys(draft.aparencia.rotulos_campos ?? {}).length;
+          return n
+            ? `${n} ${n === 1 ? "nome adaptado" : "nomes adaptados"} ao negócio`
+            : "Nomes padrão";
+        })()}
+      >
+        <EditorRotulos draft={draft} set={set} />
       </Secao>
 
       <PedidoAoDesenvolvedor sistemaId={sistemaId} />

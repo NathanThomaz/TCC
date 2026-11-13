@@ -4,5 +4,10 @@
     "lib": ["ES2023"],
     "types": ["@cloudflare/workers-types"]
   },
-  "include": ["./run.ts", "../../src/worker/**/*.ts", "../../src/shared/**/*.ts"]
+  "include": [
+    "./run.ts",
+    "./run-loja-carros.ts",
+    "../../src/worker/**/*.ts",
+    "../../src/shared/**/*.ts"
+  ]
 }

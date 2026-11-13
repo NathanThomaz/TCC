@@ -46,10 +46,12 @@ export async function salvarVersao(
   id: string,
   rascunho: ConfigDraft,
   chave = novaChave(),
+  /** "chat": a versão da conversa com um ajuste do dono na revisão (ex.: nomes das telas). */
+  origem: "formulario" | "chat" = "formulario",
 ): Promise<{ versao: Versao | null; issues: Issue[] }> {
   const r = await chamar<SystemsApiBody>(`/systems/${encodeURIComponent(id)}/versions`, {
     method: "POST",
-    body: { origem: "formulario", rascunho },
+    body: { origem, rascunho },
     chave,
   });
   return { versao: r.versao ?? null, issues: r.issues ?? [] };

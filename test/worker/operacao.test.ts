@@ -1731,3 +1731,48 @@ describe("módulos opcionais (ADR-006)", () => {
     ).toBe(404);
   });
 });
+
+describe("alterar um sistema ativo (ADR-008)", () => {
+  const novaVersao = (rascunho: unknown, token = ADMIN) =>
+    call("POST", `/systems/${S}/versions`, token, { origem: "formulario", rascunho });
+
+  it("incluir um módulo esquecido: versão nova, aprovada e aplicada; a operação já usa", async () => {
+    expect((await call("GET", p("/fornecedores"), ADMIN)).status).toBe(404);
+    const v = (
+      await novaVersao({
+        ...DISTRIBUIDORA,
+        modulos: [...DISTRIBUIDORA.modulos, "fornecedores"],
+        aparencia: {
+          ...DISTRIBUIDORA.aparencia,
+          rotulos_campos: { "produtos.item": "Bebida" },
+        },
+      })
+    ).body.versao!;
+    expect(v.status).toBe("valid");
+    await call("POST", `/systems/${S}/versions/${v.id}/approve`, ADMIN, { hash: v.hash });
+    const r = await call("POST", `/systems/${S}/activate`, ADMIN, { versao: v.id });
+    expect(r.status).toBe(200);
+    expect(r.body.sistema).toMatchObject({ status: "active", versaoAtiva: v.id });
+    expect((await call("GET", p("/fornecedores"), ADMIN)).status).toBe(200);
+    const app = (await call("GET", p("/app"), ADMIN)).body.config!;
+    expect(app.aparencia.rotulos_campos).toEqual({ "produtos.item": "Bebida" });
+  });
+
+  it("desligar módulo ou trocar o modelo de um sistema ativo é recusado", async () => {
+    const semAgenda = await novaVersao({
+      ...DISTRIBUIDORA,
+      modelo: "comercio",
+      modulos: ["clientes", "produtos", "vendas", "estoque"],
+      tipos_atendimento: [],
+      campos: DISTRIBUIDORA.campos.filter((c) => c.entidade !== "agendamentos"),
+      regras: DISTRIBUIDORA.regras.filter((r) => r.tipo !== "par_atendimento"),
+    });
+    expect(semAgenda.body.versao!.status).toBe("invalid");
+    expect(semAgenda.body.issues!.map((i) => i.code)).toContain("alteracao_incompativel");
+  });
+
+  it("conta secundária não altera o sistema", async () => {
+    const r = await novaVersao(DISTRIBUIDORA, SEC);
+    expect(r.status).toBe(403);
+  });
+});

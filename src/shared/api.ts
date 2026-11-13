@@ -423,7 +423,31 @@ export interface InicioDto {
 
 /** Assuntos da entrevista guiada (ADR-004), na ordem em que a IA conduz. */
 export type AssuntoDto =
-  "negocio" | "produtos_precos" | "pedidos_estoque" | "clientes" | "atendimentos" | "aparencia";
+  | "negocio"
+  | "produtos_precos"
+  | "pedidos_estoque"
+  | "vendas_pagamentos"
+  | "clientes"
+  | "atendimentos"
+  | "modulos_extras"
+  | "regras"
+  | "aparencia"
+  | "revisao";
+
+/** Os seis assuntos que a coluna topic aceita (0006); as etapas novas ficam em stage (0009). */
+export type TopicoGravado = Extract<
+  AssuntoDto,
+  "negocio" | "produtos_precos" | "pedidos_estoque" | "clientes" | "atendimentos" | "aparencia"
+>;
+const TOPICO_DA_ETAPA: Partial<Record<AssuntoDto, TopicoGravado>> = {
+  vendas_pagamentos: "pedidos_estoque",
+  modulos_extras: "negocio",
+  regras: "negocio",
+  revisao: "negocio",
+};
+/** Assunto equivalente para a coluna topic (CHECK da 0006). */
+export const topicoGravado = (a: AssuntoDto): TopicoGravado =>
+  TOPICO_DA_ETAPA[a] ?? (a as TopicoGravado);
 
 export interface MensagemDto {
   id: string;

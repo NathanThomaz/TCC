@@ -1,5 +1,13 @@
 import { z } from "zod";
-import { FIELD_TYPES, LIMITS, MODULES, PAYMENT_METHODS, RULE_TYPES, TEMPLATES } from "./catalog";
+import {
+  FIELD_TYPES,
+  LIMITS,
+  MODULES,
+  PAYMENT_METHODS,
+  ROTULOS_CAMPOS_CHAVES,
+  RULE_TYPES,
+  TEMPLATES,
+} from "./catalog";
 
 // Contrato de configuração (seção 17). Fonte única (ADR-001, item 3): valida o formulário
 // manual, a resposta do Gemini e o que o backend grava. Identidade, versões e hash são do
@@ -134,6 +142,10 @@ export const AppearanceSchema = z.strictObject({
   titulo: z.string().trim().min(1).max(80),
   texto_boas_vindas: z.string().trim().max(300).optional(),
   rotulos_menu: z.partialRecord(z.enum(MODULES), z.string().trim().min(1).max(40)).optional(),
+  /** Nomes de telas e colunas adaptados ao negócio (só visual; o banco não muda). */
+  rotulos_campos: z
+    .partialRecord(z.enum(ROTULOS_CAMPOS_CHAVES), z.string().trim().min(1).max(40))
+    .optional(),
 });
 
 export const OutOfCatalogSchema = z.strictObject({

@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { rotuloModulo, useApp } from "./Aplicacao";
+import { rotuloCampo } from "@/lib/nexus";
 
 // Clientes e profissionais (seção 14): cadastrar, editar, inativar e reativar; sem exclusão.
 // Cadastro de técnico não cria login (seção 7).
@@ -135,7 +136,7 @@ export function Pessoas({ tipo }: { tipo: TipoPessoa }) {
 
   const ativos = (q.data ?? []).filter((p) => p.status === "active").length;
   const cabecalho = [
-    "Nome",
+    rotuloCampo(app.config, `${tipo}.nome` as const),
     "Situação",
     ...campos.map((c) => c.rotulo),
     ...(temVendas ? ["Compras", "Total comprado", "Última compra"] : []),
@@ -353,7 +354,7 @@ function PessoaDialog({
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-1.5">
-            <Label htmlFor="pessoa-nome">Nome</Label>
+            <Label htmlFor="pessoa-nome">{rotuloCampo(app.config, `${tipo}.nome` as const)}</Label>
             <Input
               id="pessoa-nome"
               value={nome}

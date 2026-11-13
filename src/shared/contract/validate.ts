@@ -333,3 +333,43 @@ export function semanticIssues(draft: ConfigDraft): ValidationIssue[] {
 
   return issues;
 }
+
+/**
+ * Alteração de um sistema já ativo (ADR-008): só o que soma. O modelo continua o mesmo e nenhum
+ * módulo nem tipo de atendimento sai, porque já há dados (vendas, estoque, agenda) que dependem
+ * deles. Campos, regras, aparência e módulos novos podem mudar.
+ */
+export function compatibilidadeComAtiva(ativa: ConfigDraft, nova: ConfigDraft): ValidationIssue[] {
+  const issues: ValidationIssue[] = [];
+  if (nova.modelo !== ativa.modelo) {
+    issues.push(
+      block(
+        "alteracao_incompativel",
+        "modelo",
+        "Num sistema ativo o modelo não muda. Para outro modelo, crie um sistema novo.",
+      ),
+    );
+  }
+  const saem = ativa.modulos.filter((m) => !nova.modulos.includes(m));
+  if (saem.length) {
+    issues.push(
+      block(
+        "alteracao_incompativel",
+        "modulos",
+        `Módulos de um sistema ativo não podem ser desligados (já têm dados): ${saem.join(", ")}.`,
+      ),
+    );
+  }
+  const tipos = new Set(nova.tipos_atendimento.map((t) => t.id));
+  const tiposQueSaem = ativa.tipos_atendimento.filter((t) => !tipos.has(t.id));
+  if (tiposQueSaem.length) {
+    issues.push(
+      block(
+        "alteracao_incompativel",
+        "tipos_atendimento",
+        `Tipos de atendimento de um sistema ativo não podem ser removidos: ${tiposQueSaem.map((t) => t.rotulo).join(", ")}.`,
+      ),
+    );
+  }
+  return issues;
+}

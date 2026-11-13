@@ -26,7 +26,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { centavosParaReais, reaisParaCentavos } from "@/lib/nexus";
+import { centavosParaReais, reaisParaCentavos, rotuloCampo } from "@/lib/nexus";
 import { rotuloModulo, useApp } from "./Aplicacao";
 
 // Produtos e saldos (seções 10 e 11). Físico, reservado e disponível vêm do backend, calculados
@@ -56,11 +56,12 @@ export function Produtos() {
     onError: (e) => toast.error(e.message),
   });
 
+  const r = (c: Parameters<typeof rotuloCampo>[1]) => rotuloCampo(app.config, c);
   const cabecalho = [
-    "Produto",
-    "Varejo",
-    ...(temAtacado ? ["Atacado"] : []),
-    ...(temCaixa ? ["Caixa"] : []),
+    r("produtos.item"),
+    r("produtos.varejo"),
+    ...(temAtacado ? [r("produtos.atacado")] : []),
+    ...(temCaixa ? [r("produtos.caixa")] : []),
     ...(temEstoque ? ["Físico", "Reservado", "Disponível"] : []),
     <span className="sr-only">Ações</span>,
   ];
@@ -76,7 +77,7 @@ export function Produtos() {
         }
         acoes={
           <Button onClick={() => setDialogo({ tipo: "produto", atual: null })}>
-            <Plus aria-hidden /> Novo produto
+            <Plus aria-hidden /> Novo {rotuloCampo(app.config, "produtos.item").toLowerCase()}
           </Button>
         }
       />
@@ -242,13 +243,17 @@ function ProdutoDialog({ atual, onFechar }: { atual: ProdutoDto | null; onFechar
           }}
         >
           <DialogHeader>
-            <DialogTitle>{atual ? `Editar ${atual.nome}` : "Novo produto"}</DialogTitle>
+            <DialogTitle>
+              {atual
+                ? `Editar ${atual.nome}`
+                : `Novo ${rotuloCampo(app.config, "produtos.item").toLowerCase()}`}
+            </DialogTitle>
             <DialogDescription>
               Preços por unidade. A caixa usa o preço da unidade × unidades por caixa.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-1.5">
-            <Label htmlFor="produto-nome">Nome</Label>
+            <Label htmlFor="produto-nome">{rotuloCampo(app.config, "produtos.nome")}</Label>
             <Input
               id="produto-nome"
               value={nome}
@@ -260,7 +265,9 @@ function ProdutoDialog({ atual, onFechar }: { atual: ProdutoDto | null; onFechar
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label htmlFor="produto-varejo">Varejo (R$)</Label>
+              <Label htmlFor="produto-varejo">
+                {rotuloCampo(app.config, "produtos.varejo")} (R$)
+              </Label>
               <Input
                 id="produto-varejo"
                 inputMode="decimal"
@@ -271,7 +278,9 @@ function ProdutoDialog({ atual, onFechar }: { atual: ProdutoDto | null; onFechar
             </div>
             {temAtacado && (
               <div className="space-y-1.5">
-                <Label htmlFor="produto-atacado">Atacado (R$)</Label>
+                <Label htmlFor="produto-atacado">
+                  {rotuloCampo(app.config, "produtos.atacado")} (R$)
+                </Label>
                 <Input
                   id="produto-atacado"
                   inputMode="decimal"
