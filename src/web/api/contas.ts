@@ -13,11 +13,39 @@ export async function listarContas(): Promise<ContaDto[]> {
 }
 
 export async function convidarConta(
-  dados: { email: string; nome?: string | undefined; sistemas: string[] },
+  dados: {
+    email: string;
+    nome?: string | undefined;
+    sistemas: string[];
+    senha?: string | undefined;
+    papel?: ContaDto["papel"];
+  },
   chave: string,
-): Promise<{ conta: ContaDto; conviteEnviado: boolean }> {
+): Promise<{ conta: ContaDto; conviteEnviado: boolean; acessoCriado: boolean }> {
   const r = await chamar<ContasApiBody>("/contas", { method: "POST", body: dados, chave });
-  return { conta: exigirConta(r), conviteEnviado: r.conviteEnviado === true };
+  return {
+    conta: exigirConta(r),
+    conviteEnviado: r.conviteEnviado === true,
+    acessoCriado: r.acessoCriado === true,
+  };
+}
+
+/** Define uma nova senha para a conta (o administrador manda à pessoa). */
+export async function definirSenhaConta(id: string, senha: string) {
+  return exigirConta(
+    await chamar<ContasApiBody>(`/contas/${encodeURIComponent(id)}/senha`, {
+      method: "POST",
+      body: { senha },
+      chave: novaChave(),
+    }),
+  );
+}
+
+/** Senha forte e fácil de ditar: sem letras parecidas (l, I, O, 0). */
+export function gerarSenha(tamanho = 12): string {
+  const alfabeto = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const bytes = crypto.getRandomValues(new Uint8Array(tamanho));
+  return Array.from(bytes, (b) => alfabeto[b % alfabeto.length]).join("");
 }
 
 export async function reenviarConvite(id: string) {

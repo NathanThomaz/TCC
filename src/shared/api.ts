@@ -45,6 +45,7 @@ export interface SystemsApiBody {
   /** Configuração da versão mais recente (só para o administrador), ponto de partida do assistente. */
   ultimaConfig?: ConfigDraft | null;
   issues?: IssueDto[];
+  inicio?: InicioDto;
   error?: ApiErrorBody["error"];
 }
 
@@ -301,6 +302,8 @@ export interface ContaDto {
   id: string;
   email: string;
   nome: string | null;
+  /** secondary = opera os sistemas liberados; admin = administrador independente (só o dono cria). */
+  papel: "admin" | "secondary";
   /** pending = convidada, ainda sem primeiro acesso; disabled = desativada (não entra). */
   status: "pending" | "active" | "disabled";
   /** Sistemas do administrador e se esta conta tem acesso a cada um. */
@@ -312,6 +315,8 @@ export interface ContasApiBody {
   conta?: ContaDto;
   /** O convite (link de definir senha) foi pedido ao Firebase com sucesso. */
   conviteEnviado?: boolean;
+  /** Conta criada com senha: o acesso já existe no Firebase e a pessoa entra direto. */
+  acessoCriado?: boolean;
   error?: ApiErrorBody["error"];
 }
 
@@ -376,6 +381,44 @@ export interface PainelDto {
     profissionaisAtivos: number;
     proximos: { id: string; inicio: number; tipo: string; cliente: string; profissional: string }[];
   };
+}
+
+/** Números de um sistema ativo na tela inicial (só os blocos dos módulos que ele tem). */
+export interface ResumoSistemaDto {
+  vendas?: {
+    hoje: { quantidade: number; totalCentavos: number };
+    mes: { quantidade: number; totalCentavos: number };
+  };
+  clientesAtivos?: number;
+  /** Produtos sem estoque (sem a regra) ou abaixo do mínimo (com a regra estoque_minimo). */
+  estoque?: { criticos: number; comMinimo: boolean };
+  atendimentosHoje?: number;
+  contasVencidas?: { quantidade: number; totalCentavos: number };
+}
+
+/** Resumo da tela inicial do Nexus: cada sistema do usuário com os números principais. */
+export interface InicioDto {
+  /** Hoje no fuso do Nexus (AAAA-MM-DD). */
+  hoje: string;
+  sistemas: {
+    sistema: SystemDto;
+    /** Da versão ativa (sistema ativo) ou da última versão salva (rascunho). */
+    modelo: ConfigDraft["modelo"] | null;
+    modulos: ConfigDraft["modulos"];
+    corPrimaria: string | null;
+    /** Só para sistema ativo. */
+    resumo: ResumoSistemaDto | null;
+    /** Só para o administrador (pedidos são da configuração). */
+    pedidosAbertos: number;
+    /** Última mudança na configuração: sistema, versão salva ou mensagem da conversa. */
+    ultimaAtividade: number;
+  }[];
+  /** Mais sistemas do que os mostrados (os ativos vêm primeiro). */
+  truncado: boolean;
+  /** Só para o administrador. */
+  pedidos: { abertos: number; emAnalise: number; implementados: number } | null;
+  /** Só para o administrador: o teto é do Nexus inteiro. */
+  ia: { gastoCentavos: number; tetoCentavos: number } | null;
 }
 
 /** Assuntos da entrevista guiada (ADR-004), na ordem em que a IA conduz. */
@@ -460,7 +503,15 @@ export interface PublicConfig {
 
 /** GET /api/v1/session — quem está logado, segundo o backend (nunca segundo o navegador). */
 export interface SessionResponse {
-  usuario: { id: string; email: string; papel: "admin" | "secondary" };
+  usuario: {
+    id: string;
+    email: string;
+    papel: "admin" | "secondary";
+    /** Nome cadastrado; null quando a pessoa ainda não informou. */
+    nome: string | null;
+    /** Dono do Nexus (primeiro administrador): cria administradores independentes. */
+    dono: boolean;
+  };
 }
 
 export interface HealthResponse {

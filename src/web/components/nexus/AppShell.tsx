@@ -87,7 +87,13 @@ export function AppShell({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="flex min-h-screen flex-col">
+    <div className="relative isolate flex min-h-screen flex-col">
+      {/* Fundo vivo: manchas de cor que derivam devagar (styles.css). */}
+      <div className="fundo-vivo" aria-hidden>
+        <span />
+        <span />
+        <span />
+      </div>
       <a
         href="#conteudo"
         className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-card focus:px-3 focus:py-2"
@@ -165,10 +171,10 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </header>
       <div className="flex flex-1">
-        <aside className="hidden w-60 shrink-0 border-r bg-sidebar p-3 md:block">
+        <aside className="relative z-10 hidden w-60 shrink-0 border-r bg-sidebar/85 p-3 backdrop-blur-md md:block">
           <Navegacao />
         </aside>
-        <main id="conteudo" className="min-w-0 flex-1 px-4 py-6 sm:px-8 sm:py-8">
+        <main id="conteudo" className="relative z-10 min-w-0 flex-1 px-4 py-6 sm:px-8 sm:py-8">
           <div className="mx-auto max-w-5xl">{children}</div>
         </main>
       </div>

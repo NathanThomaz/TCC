@@ -1,4 +1,5 @@
 import type { PainelDto } from "../../../shared/api";
+import type { ConfigDraft } from "../../../shared/contract/schema";
 import { deCampoLocal, paraCampoLocal } from "../../../shared/dominio/agenda";
 import { json } from "../../http/responses";
 import type { Handler } from "../../http/router";
@@ -14,8 +15,18 @@ const CRITICOS = 6;
 
 export const obterPainel: Handler = async (ctx) => {
   const op = await abrirOperacao(ctx, null);
-  const db = ctx.env.DB;
-  const agora = ctx.clock.now();
+  return json({
+    painel: await calcularPainel(ctx.env.DB, op.systemId, op.config, ctx.clock.now()),
+  });
+};
+
+/** Números do painel de um sistema ativo (também usados no resumo da tela inicial). */
+export async function calcularPainel(
+  db: D1Database,
+  systemId: string,
+  config: ConfigDraft,
+  agora: number,
+): Promise<PainelDto> {
   const hoje = paraCampoLocal(agora).slice(0, 10);
   const [ano, mes, dia] = hoje.split("-").map(Number) as [number, number, number];
   const iso = (a: number, m: number, d: number) =>
@@ -24,8 +35,8 @@ export const obterPainel: Handler = async (ctx) => {
   const inicioAmanha = deCampoLocal(`${iso(ano, mes, dia + 1)}T00:00`)!;
   const inicioMes = deCampoLocal(`${iso(ano, mes, 1)}T00:00`)!;
   const inicioProximoMes = deCampoLocal(`${iso(ano, mes + 1, 1)}T00:00`)!;
-  const tem = (m: string) => op.config.modulos.includes(m as never);
-  const s = op.systemId;
+  const tem = (m: string) => config.modulos.includes(m as never);
+  const s = systemId;
   const painel: PainelDto = { hoje };
 
   if (tem("vendas")) {
@@ -82,7 +93,7 @@ export const obterPainel: Handler = async (ctx) => {
   }
 
   if (tem("produtos")) {
-    const regra = op.config.regras.find(
+    const regra = config.regras.find(
       (r): r is { tipo: "estoque_minimo"; unidades: number; requisitos: string[] } =>
         (r.tipo as string) === "estoque_minimo",
     );
@@ -184,8 +195,7 @@ export const obterPainel: Handler = async (ctx) => {
         .bind(s, agora, inicioMes, inicioProximoMes)
         .first<{ semana: number; concluidos: number; cancelados: number; profissionais: number }>(),
     ]);
-    const rotulo = (id: string) =>
-      op.config.tipos_atendimento.find((t) => t.id === id)?.rotulo ?? id;
+    const rotulo = (id: string) => config.tipos_atendimento.find((t) => t.id === id)?.rotulo ?? id;
     painel.agenda = {
       hoje: {
         agendados: contagem?.agendados ?? 0,
@@ -300,5 +310,5 @@ export const obterPainel: Handler = async (ctx) => {
     };
   }
 
-  return json({ painel });
-};
+  return painel;
+}

@@ -111,6 +111,7 @@ export function CriarRevisao() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["sistema", id] });
       void qc.invalidateQueries({ queryKey: ["sistemas"] });
+      void qc.invalidateQueries({ queryKey: ["inicio"] });
       toast.success("Sistema ativado.");
       navigate({ to: "/sistemas/$id/app", params: { id } });
     },

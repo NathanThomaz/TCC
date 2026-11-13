@@ -11,15 +11,19 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { useApp } from "./Aplicacao";
 
-// Perguntar ao sistema (seção 15): somente leitura. Os números vêm do sistema, com os filtros e a
-// origem de cada resposta; a conversa é só sua e só deste sistema.
+// Perguntar ao sistema (seção 15): somente leitura, sobre todos os módulos do sistema (vendas,
+// estoque, clientes, agenda, compras, financeiro, regras e como usar). Os números vêm do sistema,
+// com os filtros e a origem de cada resposta; a conversa é só sua e só deste sistema.
 
 const SUGESTOES = [
+  "Como está o meu negócio?",
   "Quanto vendi hoje?",
-  "Quanto tenho de estoque?",
-  "Quais pedidos estão segurando estoque?",
+  "Quais produtos mais venderam este mês?",
+  "Quem são os clientes que mais compram?",
+  "O que está acabando no estoque?",
+  "Tenho contas vencidas?",
   "O que tem na agenda amanhã?",
-  "Como funciona o atacado?",
+  "Como cadastro um produto?",
 ];
 
 export function Consulta() {

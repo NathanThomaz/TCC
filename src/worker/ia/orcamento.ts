@@ -216,3 +216,22 @@ export async function chamarComOrcamento(
     .run();
   return { ...resposta, usoId: id };
 }
+
+/** Consumo da IA no mês corrente e o teto, em centavos (tela inicial do administrador). */
+export async function consumoDoMes(
+  env: Env,
+  agora: number,
+): Promise<{ gastoCentavos: number; tetoCentavos: number }> {
+  const row = await env.DB.prepare(
+    `SELECT COALESCE(SUM(CASE state
+       WHEN 'concluido' THEN cost_micro_brl
+       WHEN 'falhou' THEN COALESCE(cost_micro_brl, 0)
+       ELSE reserved_micro_brl END), 0) AS gasto FROM ai_usage WHERE created_at >= ?`,
+  )
+    .bind(inicioDoMes(agora))
+    .first<{ gasto: number }>();
+  return {
+    gastoCentavos: Math.ceil((row?.gasto ?? 0) / 10_000),
+    tetoCentavos: tetoMicroBrl(env) / 10_000,
+  };
+}

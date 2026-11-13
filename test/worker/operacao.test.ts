@@ -1,4 +1,4 @@
-import type { ClienteDto, PainelDto } from "../../src/shared/api";
+import type { ClienteDto, InicioDto, PainelDto } from "../../src/shared/api";
 import { env } from "cloudflare:workers";
 import { beforeEach, describe, expect, it } from "vitest";
 import c1 from "../../experiments/cenarios/c1-gabarito.json";
@@ -1664,6 +1664,53 @@ describe("módulos opcionais (ADR-006)", () => {
       vencidos: { receber: 1, pagar: 1, totalCentavos: 1700 },
       limiteAtingido: false,
     });
+  });
+
+  it("tela inicial: cada sistema com o painel, pedidos e uso da IA (só o administrador)", async () => {
+    const doSecundario = S; // sistema do beforeEach, liberado para a conta secundária
+    await ativarModulos(["financeiro"]);
+    const prod = await produto();
+    await entrada(prod, 3);
+    await call("POST", p("/financeiro"), ADMIN, {
+      tipo: "pagar",
+      descricao: "Luz",
+      valorCentavos: 9000,
+      vencimento: "2026-11-01",
+    });
+    const rascunho = (await call("POST", "/systems", ADMIN, { nome: "Loja nova" })).body.sistema!;
+
+    const r = await call("GET", "/inicio", ADMIN);
+    expect(r.status).toBe(200);
+    const inicio = (r.body as unknown as { inicio: InicioDto }).inicio;
+    expect(inicio.hoje).toBe("2026-11-05");
+    expect(inicio.ia).toEqual({ gastoCentavos: 0, tetoCentavos: 2000 });
+    const deste = inicio.sistemas.find((x) => x.sistema.id === S)!;
+    expect(deste).toMatchObject({
+      modelo: "comercio_com_servicos",
+      corPrimaria: DISTRIBUIDORA.aparencia.cor_primaria,
+      pedidosAbertos: 0,
+    });
+    expect(deste.modulos).toContain("financeiro");
+    expect(deste.resumo).toEqual({
+      vendas: {
+        hoje: { quantidade: 0, totalCentavos: 0 },
+        mes: { quantidade: 0, totalCentavos: 0 },
+      },
+      clientesAtivos: 0,
+      estoque: { criticos: 0, comMinimo: false },
+      atendimentosHoje: 0,
+      contasVencidas: { quantidade: 1, totalCentavos: 9000 },
+    });
+    expect(inicio.truncado).toBe(false);
+    expect(inicio.pedidos).toEqual({ abertos: 0, emAnalise: 0, implementados: 0 });
+    const doRascunho = inicio.sistemas.find((x) => x.sistema.id === rascunho.id)!;
+    expect(doRascunho).toMatchObject({ resumo: null, modelo: null, modulos: [] });
+
+    const sec = ((await call("GET", "/inicio", SEC)).body as unknown as { inicio: InicioDto })
+      .inicio;
+    expect(sec.ia).toBeNull();
+    expect(sec.pedidos).toBeNull();
+    expect(sec.sistemas.map((x) => x.sistema.id)).toEqual([doSecundario]);
   });
 
   it("isolamento: outro dono não vê compras nem contas deste sistema", async () => {

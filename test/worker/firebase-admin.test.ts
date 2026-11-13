@@ -173,6 +173,39 @@ describe("createAccountAdmin", () => {
     });
   });
 
+  it("conta com senha: cria com e-mail confirmado; com uid órfão, atualiza; trocar senha confirma o e-mail", async () => {
+    const nova = fakeGoogle({ localId: "uid-novo" });
+    await expect(
+      admin(nova.fetcher).createWithPassword("novo@example.com", "Senha-123456", "Bruno"),
+    ).resolves.toBe("uid-novo");
+    expect(JSON.parse(nova.calls.at(-1)!.body)).toEqual({
+      email: "novo@example.com",
+      password: "Senha-123456",
+      emailVerified: true,
+      displayName: "Bruno",
+    });
+    const orfa = fakeGoogle({});
+    await admin(orfa.fetcher).createWithPassword(
+      "x@example.com",
+      "Senha-123456",
+      undefined,
+      "uid-7",
+    );
+    expect(orfa.calls.at(-1)!.url).toContain("accounts:update");
+    expect(JSON.parse(orfa.calls.at(-1)!.body)).toMatchObject({
+      localId: "uid-7",
+      emailVerified: true,
+      disableUser: false,
+    });
+    const troca = fakeGoogle({});
+    await admin(troca.fetcher).setPassword("uid-7", "Outra-123456");
+    expect(JSON.parse(troca.calls.at(-1)!.body)).toEqual({
+      localId: "uid-7",
+      password: "Outra-123456",
+      emailVerified: true,
+    });
+  });
+
   it("convite para conta que já existe no Firebase só reenvia o link", async () => {
     const google = fakeGoogle({ users: [{ localId: "uid-1" }] });
     await admin(google.fetcher).invite("novo@example.com");

@@ -205,3 +205,188 @@ describe("chat de consulta", () => {
     expect((await call("GET", p("/consulta"), ADMIN)).body.mensagens).toHaveLength(0);
   });
 });
+
+describe("chat de consulta: todos os módulos (pedido do dono, 2026-11-13)", () => {
+  const ultima = async (dados: Record<string, unknown>, texto = "pergunta") => {
+    roteiro.push(consulta(dados));
+    return (await perguntar(texto)).body.mensagens!.at(-1)!;
+  };
+
+  it("resumo geral traz os números do painel, sem a IA calcular nada", async () => {
+    const r = await ultima({ intencao: "resumo_geral" }, "Como está meu negócio?");
+    expect(r.texto).toContain("Vendas hoje: R$ 50,00 em 1 venda.");
+    expect(r.texto).toContain("Clientes ativos: 1");
+    expect(r.origem).toBe("mesmos números do painel do sistema");
+  });
+
+  it("mais vendidos e clientes que mais compram, no mês quando não há período", async () => {
+    const mais = await ultima({ intencao: "mais_vendidos" });
+    expect(mais.texto).toBe("1. Cerveja lata: 10 unidades, R$ 50,00");
+    expect(mais.filtros[0]).toContain("este mês, 01/11/2026 a 30/11/2026");
+    const top = await ultima({ intencao: "clientes" });
+    expect(top.texto).toContain("Clientes ativos: 1; inativos: 0.");
+    expect(top.texto).toContain("1. Bar do Zé: R$ 50,00 em 1 compra");
+    const um = await ultima({ intencao: "clientes", cliente: "zé" });
+    expect(um.texto).toContain("Bar do Zé (ativo): 1 compra no período, total R$ 50,00");
+    expect(um.filtros[1]).toContain("este mês");
+  });
+
+  it("produtos com preços; regras completas; como usar", async () => {
+    const prod = await ultima({ intencao: "produtos", produto: "cerveja" });
+    expect(prod.texto).toBe("Cerveja lata: varejo R$ 5,00, atacado R$ 4,00, caixa com 12");
+    const regras = await ultima({ intencao: "regras" });
+    expect(regras.texto).toContain("Um pedido aberto segura o estoque por 30 minutos");
+    const como = await ultima({ intencao: "como_usar", modulo: "vendas" }, "Como faço uma venda?");
+    expect(como.texto).toContain("“Nova venda”");
+    expect(como.filtros).toEqual(["Módulo: Vendas"]);
+  });
+
+  it("módulo que o sistema não tem: diz que não há, sem inventar", async () => {
+    const r = await ultima({ intencao: "financeiro" }, "Tenho contas vencidas?");
+    expect(r.texto).toBe(
+      "Este sistema não tem o módulo de financeiro, então não há o que consultar sobre isso.",
+    );
+  });
+
+  it("a IA recebe as intenções novas e os argumentos de cliente, fornecedor e módulo", async () => {
+    await ultima({ intencao: "resumo_geral" });
+    const instrucoes = pedidos.at(-1)!.instrucoes;
+    for (const termo of [
+      "resumo_geral",
+      "financeiro",
+      "compras",
+      "como_usar",
+      "cliente:",
+      "fornecedor:",
+    ]) {
+      expect(instrucoes).toContain(termo);
+    }
+  });
+});
+
+describe("chat de consulta: módulos opcionais e bordas (revisão do Codex)", () => {
+  const ultima = async (dados: Record<string, unknown>) => {
+    roteiro.push(consulta(dados));
+    return (await perguntar("pergunta")).body.mensagens!.at(-1)!;
+  };
+
+  /** Liga pagamentos, fornecedores e financeiro num sistema novo e põe dados nele. */
+  async function comModulos() {
+    const id = (await call("POST", "/systems", ADMIN, { nome: "Completo" })).body.sistema!.id;
+    const v = (
+      await call("POST", `/systems/${id}/versions`, ADMIN, {
+        origem: "formulario",
+        rascunho: {
+          ...DISTRIBUIDORA,
+          modulos: [...DISTRIBUIDORA.modulos, "pagamentos", "fornecedores", "financeiro"],
+          regras: [
+            ...DISTRIBUIDORA.regras,
+            {
+              tipo: "formas_pagamento",
+              formas: ["pix", "a_prazo"],
+              prazo_dias: 30,
+              requisitos: ["REQ-01"],
+            },
+          ],
+        },
+      })
+    ).body.versao!;
+    await call("POST", `/systems/${id}/versions/${v.id}/approve`, ADMIN, { hash: v.hash });
+    await call("POST", `/systems/${id}/activate`, ADMIN, { versao: v.id });
+    S = id;
+    const cliente = (await call("POST", p("/clientes"), ADMIN, { nome: "Ana" })).body.cliente!.id;
+    const prod = (
+      await call("POST", p("/produtos"), ADMIN, {
+        nome: "Água",
+        varejoCentavos: 300,
+        atacadoCentavos: 250,
+        unidadesPorCaixa: 12,
+      })
+    ).body.produto!.id;
+    for (const nome of ["Sul", "Norte"]) {
+      const f = (await call("POST", p("/fornecedores"), ADMIN, { nome })).body.fornecedor!.id;
+      await call("POST", p("/compras"), ADMIN, {
+        fornecedor: f,
+        itens: [{ produto: prod, unidades: 20, custoUnitarioCentavos: 100 }],
+        vencimento: "2026-11-01",
+      });
+    }
+    const venda = (
+      await call("POST", p("/vendas"), ADMIN, { cliente, itens: [{ produto: prod, unidades: 4 }] })
+    ).body.venda!;
+    await call("POST", p(`/vendas/${venda.id}/concluir`), ADMIN, {
+      revisao: venda.revisao,
+      formaPagamento: "a_prazo",
+    });
+  }
+
+  it("compras somam todos os fornecedores; pagamentos e financeiro com os números reais", async () => {
+    const original = S;
+    await comModulos();
+    const compras = await ultima({ intencao: "compras" });
+    expect(compras.texto).toContain("Total comprado: R$ 40,00.");
+    expect(compras.texto).toContain("Sul: 1 compra, R$ 20,00");
+    const so = await ultima({ intencao: "compras", fornecedor: "nor" });
+    expect(so.texto).toContain("Total comprado: R$ 20,00.");
+    const pag = await ultima({ intencao: "pagamentos" });
+    expect(pag.texto).toBe("A prazo: 1 venda, R$ 12,00");
+    const fin = await ultima({ intencao: "financeiro" });
+    expect(fin.texto).toContain("A receber (pendente): R$ 12,00. A pagar (pendente): R$ 40,00.");
+    expect(fin.texto).toContain("Vencidas: 2 (R$ 40,00).");
+    const prod = await ultima({ intencao: "produtos", produto: "água" });
+    expect(prod.texto).toContain("custo R$ 1,00 (margem de 67% no varejo)");
+    // Isolamento: no sistema original (sem os módulos), nada disso aparece.
+    S = original;
+    expect((await ultima({ intencao: "compras" })).texto).toContain("não tem o módulo");
+  });
+
+  it("mais de 15 fornecedores: o total soma todos; cliente com compra fora do período", async () => {
+    await comModulos();
+    const prod = (await call("GET", p("/produtos"), ADMIN)).body.produtos![0]!.id;
+    for (let i = 0; i < 16; i++) {
+      const f = (await call("POST", p("/fornecedores"), ADMIN, { nome: `F${i}` })).body.fornecedor!
+        .id;
+      await call("POST", p("/compras"), ADMIN, {
+        fornecedor: f,
+        itens: [{ produto: prod, unidades: 1, custoUnitarioCentavos: 1000 }],
+        vencimento: "2026-11-30",
+      });
+    }
+    const compras = await ultima({ intencao: "compras" });
+    // 2 compras de R$ 20,00 do comModulos + 16 de R$ 10,00.
+    expect(compras.texto).toContain("Total comprado: R$ 200,00.");
+    expect(compras.texto).toContain("(Mostrando os 15 maiores fornecedores.)");
+    const outubro = await ultima({
+      intencao: "clientes",
+      cliente: "ana",
+      periodo: { de: "2026-10-01", ate: "2026-10-31" },
+    });
+    expect(outubro.texto).toContain("Ana (ativo): 0 compras no período, total R$ 0,00");
+    expect(outubro.texto).toContain("última compra (em qualquer data)");
+  });
+
+  it("busca sem acento acha nome gravado com acento separado (forma decomposta)", async () => {
+    await call("POST", p("/produtos"), ADMIN, {
+      nome: "Água tônica",
+      varejoCentavos: 500,
+      atacadoCentavos: 400,
+      unidadesPorCaixa: 12,
+    });
+    const r = await ultima({ intencao: "produtos", produto: "agua" });
+    expect(r.texto).toContain("tônica");
+  });
+
+  it("profissionais, ticket médio e data inexistente", async () => {
+    const prof = await ultima({ intencao: "profissionais" });
+    expect(prof.texto).toBe("Nenhum profissional encontrado.");
+    const vendas = await ultima({
+      intencao: "vendas",
+      periodo: { de: "2026-11-05", ate: "2026-11-05" },
+    });
+    expect(vendas.texto).toContain("ticket médio de R$ 50,00");
+    for (const intencao of ["vendas", "mais_vendidos", "clientes"]) {
+      const r = await ultima({ intencao, periodo: { de: "2026-02-31", ate: "2026-02-31" } });
+      expect(r.texto).toBe("Não entendi o período. Pode repetir as datas?");
+    }
+  });
+});

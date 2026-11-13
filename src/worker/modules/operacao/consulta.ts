@@ -23,6 +23,8 @@ import {
 } from "../../ia/prompts";
 import { isUnique, parse } from "../comum";
 import { abrirOperacao, type Operacao } from "./contexto";
+import * as modulos from "./consulta-modulos";
+import { PAYMENT_LABELS } from "../../../shared/contract/catalog";
 
 // Chat de consulta (seção 15): SOMENTE LEITURA. A IA só classifica a pergunta em uma intenção
 // permitida e extrai período, produto e profissional; o backend autoriza, consulta com SQL
@@ -94,6 +96,7 @@ const dataBr = (iso: string) => iso.split("-").reverse().join("/");
 
 /** [início do dia "de", início do dia seguinte a "ate") em ms UTC, no fuso do Nexus. */
 function intervalo(periodo: NonNullable<Consulta["periodo"]>): { de: number; ate: number } | null {
+  if (!modulos.dataExiste(periodo.de) || !modulos.dataExiste(periodo.ate)) return null;
   const [ano, mes, dia] = periodo.ate.split("-").map(Number) as [number, number, number];
   const seguinte = new Date(Date.UTC(ano, mes - 1, dia + 1)).toISOString().slice(0, 10);
   const de = deCampoLocal(`${periodo.de}T00:00`);
@@ -142,7 +145,7 @@ async function vendas(ctx: RequestContext, op: Operacao, c: Consulta): Promise<R
     texto:
       n === 0
         ? `Não há vendas concluídas de ${periodo}.`
-        : `De ${periodo}: ${n} ${n === 1 ? "venda concluída" : "vendas concluídas"}, total vendido de ${formatarCentavos(concluidas?.total ?? 0)}. ` +
+        : `De ${periodo}: ${n} ${n === 1 ? "venda concluída" : "vendas concluídas"}, total vendido de ${formatarCentavos(concluidas?.total ?? 0)} (ticket médio de ${formatarCentavos(Math.round((concluidas?.total ?? 0) / n))}). ` +
           `Cancelamentos no período: ${canceladas?.n ?? 0}. O total vendido não é lucro nem dinheiro recebido.`,
     filtros: [`Período: ${periodo} (horário de Brasília)`],
     origem: "vendas concluídas pela data de conclusão, sem as canceladas",
@@ -155,10 +158,10 @@ async function estoque(ctx: RequestContext, op: Operacao, c: Consulta): Promise<
     `SELECT p.name, p.physical, (SELECT COALESCE(SUM(r.quantity), 0) FROM reservations r
        WHERE r.product_id = p.id AND r.status = 'active' AND r.expires_at > ?1) AS reserved
      FROM products p WHERE p.system_id = ?2 AND p.status = 'active'
-       AND (?3 IS NULL OR instr(lower(p.name), lower(?3)) > 0)
+       AND (?3 IS NULL OR instr(${modulos.semAcentoSql("p.name")}, ?3) > 0)
      ORDER BY p.name COLLATE NOCASE LIMIT 20`,
   )
-    .bind(ctx.clock.now(), op.systemId, c.produto)
+    .bind(ctx.clock.now(), op.systemId, modulos.termoBusca(c.produto))
     .all<{ name: string; physical: number; reserved: number }>();
   const filtros = c.produto ? [`Produto: contém “${c.produto}”`] : ["Todos os produtos ativos"];
   if (results.length === 0) {
@@ -216,10 +219,10 @@ async function agenda(ctx: RequestContext, op: Operacao, c: Consulta): Promise<R
      JOIN customers c ON c.id = a.customer_id AND c.system_id = a.system_id
      JOIN professionals p ON p.id = a.professional_id AND p.system_id = a.system_id
      WHERE a.system_id = ?1 AND a.status <> 'cancelled' AND a.start_at < ?3 AND a.end_at > ?2
-       AND (?4 IS NULL OR instr(lower(p.name), lower(?4)) > 0)
+       AND (?4 IS NULL OR instr(${modulos.semAcentoSql("p.name")}, ?4) > 0)
      ORDER BY a.start_at LIMIT 31`,
   )
-    .bind(op.systemId, faixa.de, faixa.ate, c.profissional)
+    .bind(op.systemId, faixa.de, faixa.ate, modulos.termoBusca(c.profissional))
     .all<{
       start_at: number;
       end_at: number;
@@ -276,6 +279,22 @@ function regras(config: ConfigDraft): Resposta {
         return `Um pedido aberto segura o estoque por ${r.minutos} minutos sem alteração.`;
       case "par_atendimento":
         return `${nome(r.primeiro)} e ${nome(r.segundo)} com o mesmo profissional, nessa ordem.`;
+      case "estoque_minimo":
+        return `Estoque mínimo de ${r.unidades} unidades por produto (abaixo disso, aparece como crítico).`;
+      case "pedido_minimo":
+        return `Pedido mínimo de ${formatarCentavos(r.valor_centavos)} para concluir uma venda.`;
+      case "limite_unidades_por_item":
+        return `No máximo ${r.unidades} unidades de um mesmo produto por venda.`;
+      case "prazo_cancelamento_venda":
+        return `Venda concluída pode ser cancelada até ${r.dias} dias depois.`;
+      case "horario_funcionamento":
+        return `Atendimentos das ${r.abre} às ${r.fecha}, nos dias ${r.dias_semana.map((d) => ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"][d]).join(", ")}.`;
+      case "antecedencia_minima":
+        return `Agendar com pelo menos ${r.minutos} minutos de antecedência.`;
+      case "prazo_cancelamento_atendimento":
+        return `Cancelar ou remarcar atendimento até ${r.horas} horas antes do início.`;
+      case "formas_pagamento":
+        return `Formas de pagamento aceitas: ${r.formas.map((f) => PAYMENT_LABELS[f]).join(", ")}${r.prazo_dias ? `; a prazo vence em ${r.prazo_dias} dias` : ""}.`;
     }
   });
   return {
@@ -287,7 +306,7 @@ function regras(config: ConfigDraft): Resposta {
 
 const foraDoEscopo: Resposta = {
   texto:
-    "Eu só consulto informações deste sistema. Para vender, cancelar, ajustar estoque ou agendar, use as telas do sistema.",
+    "Eu consulto e explico as informações deste sistema, mas não altero nada pelo chat. Para vender, cancelar, ajustar estoque, agendar ou pagar, use as telas do sistema (pergunte “como faço…?” que eu explico o caminho).",
   filtros: [],
   origem: "chat de consulta (somente leitura)",
 };
@@ -304,6 +323,24 @@ async function responder(ctx: RequestContext, op: Operacao, c: Consulta): Promis
       return agenda(ctx, op, c);
     case "regras":
       return regras(op.config);
+    case "resumo_geral":
+      return modulos.resumoGeral(ctx, op);
+    case "mais_vendidos":
+      return modulos.maisVendidos(ctx, op, c);
+    case "clientes":
+      return modulos.clientes(ctx, op, c);
+    case "produtos":
+      return modulos.produtos(ctx, op, c);
+    case "profissionais":
+      return modulos.profissionais(ctx, op, c);
+    case "pagamentos":
+      return modulos.pagamentos(ctx, op, c);
+    case "compras":
+      return modulos.compras(ctx, op, c);
+    case "financeiro":
+      return modulos.financeiro(ctx, op, c);
+    case "como_usar":
+      return modulos.comoUsar(op.config, c.modulo);
     case "fora_do_escopo":
       return foraDoEscopo;
   }

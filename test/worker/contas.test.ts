@@ -1,6 +1,11 @@
 import { env } from "cloudflare:workers";
 import { beforeEach, describe, expect, it } from "vitest";
-import type { ContasApiBody, OperacaoApiBody, SystemsApiBody } from "../../src/shared/api";
+import type {
+  ContasApiBody,
+  OperacaoApiBody,
+  SessionResponse,
+  SystemsApiBody,
+} from "../../src/shared/api";
 import type { VerifiedToken } from "../../src/worker/auth/firebase-token";
 import { InvalidTokenError } from "../../src/worker/auth/firebase-token";
 import { createApp } from "../../src/worker/app";
@@ -44,6 +49,8 @@ let falharDesativar = false;
 let falharLookup = false;
 let aoConsultar: (() => Promise<unknown>) | undefined;
 let firebaseDesativado = new Set<string>();
+/** Logins que já existem no Firebase (e-mail → uid). */
+let loginsExistentes = new Map<string, string>();
 
 const app = createApp({
   clock: { now: () => agora },
@@ -71,6 +78,22 @@ const app = createApp({
       enable: (uid) => {
         chamadas.push(`reativar:${uid}`);
         firebaseDesativado.delete(uid);
+        return Promise.resolve();
+      },
+      findUid: (email) => Promise.resolve(loginsExistentes.get(email) ?? null),
+      createWithPassword: (email, senha, nome, existente) => {
+        // A senha não entra no registro, só o tamanho (o teste confere que chegou).
+        chamadas.push(
+          existente
+            ? `atualizar:${existente}:${senha.length}`
+            : `criar:${email}:${senha.length}:${nome ?? ""}`,
+        );
+        return falharConvite
+          ? Promise.reject(new Error("rede"))
+          : Promise.resolve(existente ?? `fb-${email}`);
+      },
+      setPassword: (uid, senha) => {
+        chamadas.push(`senha:${uid}:${senha.length}`);
         return Promise.resolve();
       },
     },
@@ -119,6 +142,7 @@ beforeEach(async () => {
   falharLookup = false;
   aoConsultar = undefined;
   firebaseDesativado = new Set();
+  loginsExistentes = new Map();
   await limparBanco();
   const T = NOW - 1000;
   await env.DB.prepare(
@@ -325,5 +349,164 @@ describe("contas: revisão cruzada", () => {
     const c = await call("POST", "/contas", ADMIN, corpo, "chave-convite-2");
     expect(c.body.conviteEnviado).toBe(true);
     expect(chamadas).toEqual(["convite:novo@example.com", "convite:novo@example.com"]);
+  });
+});
+
+describe("contas com senha e administradores (pedido do dono, 2026-11-13)", () => {
+  const SENHA = "Senha-forte-123";
+
+  it("secundária com senha: o acesso é criado na hora, sem e-mail, e o primeiro login ativa", async () => {
+    const r = await call("POST", "/contas", ADMIN, {
+      email: "novo@example.com",
+      nome: "Bruno",
+      sistemas: [S1],
+      senha: SENHA,
+    });
+    expect(r.status).toBe(201);
+    expect(r.body.acessoCriado).toBe(true);
+    expect(r.body.conta).toMatchObject({ papel: "secondary", status: "pending" });
+    expect(chamadas).toEqual([`criar:novo@example.com:${SENHA.length}:Bruno`]);
+    expect((await call("GET", `/systems/${S1}/produtos`, NOVO)).status).toBe(200);
+    // A senha nunca é gravada nem devolvida.
+    const linha = await env.DB.prepare(
+      "SELECT * FROM users WHERE email = 'novo@example.com'",
+    ).first();
+    expect(JSON.stringify(linha)).not.toContain(SENHA);
+    expect(JSON.stringify(r.body)).not.toContain(SENHA);
+  });
+
+  it("senha curta é recusada; falha no Firebase deixa a conta pendente e a repetição cria", async () => {
+    const curta = await call("POST", "/contas", ADMIN, {
+      email: "novo@example.com",
+      senha: "123",
+    });
+    expect(curta.status).toBe(422);
+    falharConvite = true;
+    const chave = crypto.randomUUID();
+    const corpo = { email: "novo@example.com", sistemas: [S1], senha: SENHA };
+    expect((await call("POST", "/contas", ADMIN, corpo, chave)).body.acessoCriado).toBe(false);
+    falharConvite = false;
+    expect((await call("POST", "/contas", ADMIN, corpo, chave)).body.acessoCriado).toBe(true);
+  });
+
+  it("só o dono do Nexus cria administrador independente, que não recebe acessos", async () => {
+    const outro = await call("POST", "/contas", ADMIN2, {
+      email: "novo@example.com",
+      senha: SENHA,
+      papel: "admin",
+    });
+    expect(outro.status).toBe(403);
+    expect(outro.body.error!.code).toBe("so_o_dono");
+
+    const r = await call("POST", "/contas", ADMIN, {
+      email: "novo@example.com",
+      nome: "Cliente",
+      senha: SENHA,
+      papel: "admin",
+    });
+    expect(r.status).toBe(201);
+    expect(r.body.conta).toMatchObject({ papel: "admin", nome: "Cliente" });
+    const acesso = await call("POST", `/contas/${r.body.conta!.id}/acessos`, ADMIN, {
+      sistema: S1,
+      ativo: true,
+    });
+    expect(acesso.status).toBe(422);
+
+    // O novo administrador entra, cria o próprio sistema e não vê os do dono.
+    const sistema = await call("POST", "/systems", NOVO, { nome: "Loja da cliente" });
+    expect(sistema.status).toBe(201);
+    const lista = (await call("GET", "/systems", NOVO)).body.sistemas!.map((s) => s.nome);
+    expect(lista).toEqual(["Loja da cliente"]);
+    expect((await call("GET", `/systems/${S1}/produtos`, NOVO)).status).toBe(404);
+    // O dono vê, desativa e o login para.
+    const contas = (await call("GET", "/contas", ADMIN)).body.contas!;
+    expect(contas.map((c) => c.papel)).toEqual(["admin"]);
+    await call("POST", `/contas/${r.body.conta!.id}/status`, ADMIN, { status: "disabled" });
+    expect((await call("GET", "/systems", NOVO)).status).toBe(403);
+  });
+
+  it("login do Firebase de outra conta do Nexus não é tomado (e-mail mudou só no Firebase)", async () => {
+    // O dono (uid-a) trocou o e-mail no Firebase; o D1 ainda tem o antigo.
+    loginsExistentes.set("novo-do-dono@example.com", "uid-a");
+    const r = await call("POST", "/contas", ADMIN2, {
+      email: "novo-do-dono@example.com",
+      senha: SENHA,
+    });
+    expect(r.status).toBe(409);
+    expect(r.body.error!.code).toBe("email_em_uso");
+    expect(chamadas).toEqual([]); // nenhuma senha trocada
+  });
+
+  it("login órfão no Firebase (sem conta no Nexus) é reaproveitado com a senha nova", async () => {
+    loginsExistentes.set("novo@example.com", "fb-antigo");
+    const r = await call("POST", "/contas", ADMIN, { email: "novo@example.com", senha: SENHA });
+    expect(r.body.acessoCriado).toBe(true);
+    expect(chamadas).toEqual([`atualizar:fb-antigo:${SENHA.length}`]);
+  });
+
+  it("repetição atrasada não cria o acesso de novo nem volta a senha inicial", async () => {
+    const chave = crypto.randomUUID();
+    const corpo = { email: "novo@example.com", senha: SENHA };
+    const primeira = await call("POST", "/contas", ADMIN, corpo, chave);
+    await call("POST", `/contas/${primeira.body.conta!.id}/senha`, ADMIN, {
+      senha: "Senha-nova-789",
+    });
+    chamadas = [];
+    // Mesma chave, até com outra senha: é repetição; nada vai ao Firebase.
+    const repetida = await call(
+      "POST",
+      "/contas",
+      ADMIN,
+      { ...corpo, senha: "Outra-123456" },
+      chave,
+    );
+    expect(repetida.status).toBe(201);
+    expect(repetida.body.acessoCriado).toBe(true);
+    expect(chamadas).toEqual([]);
+    // A senha não fica no registro de idempotência.
+    const registros = await env.DB.prepare("SELECT * FROM operation_requests").all();
+    expect(JSON.stringify(registros.results)).not.toContain(SENHA);
+  });
+
+  it("provisionamento interrompido: a reserva expira e a repetição cria o acesso", async () => {
+    const chave = crypto.randomUUID();
+    const corpo = { email: "novo@example.com", senha: SENHA };
+    const r = await call("POST", "/contas", ADMIN, corpo, chave);
+    // Simula a requisição que morreu depois de reservar e antes de criar o login.
+    await env.DB.prepare("UPDATE users SET invited_uid = NULL, invite_sent_at = ? WHERE id = ?")
+      .bind(agora, r.body.conta!.id)
+      .run();
+    chamadas = [];
+    const reservada = await call("POST", "/contas", ADMIN, corpo, chave);
+    expect(reservada.body.acessoCriado).toBe(false); // em andamento, não "concluído"
+    expect(chamadas).toEqual([]);
+    agora += 3 * 60_000;
+    const retomada = await call("POST", "/contas", ADMIN, corpo, chave);
+    expect(retomada.body.acessoCriado).toBe(true);
+    expect(chamadas).toEqual([`criar:novo@example.com:${SENHA.length}:`]);
+  });
+
+  it("o administrador redefine a senha de uma conta sua; de outra, não", async () => {
+    const id = (await call("POST", "/contas", ADMIN, { email: "novo@example.com", senha: SENHA }))
+      .body.conta!.id;
+    chamadas = [];
+    const r = await call("POST", `/contas/${id}/senha`, ADMIN, { senha: "Outra-senha-456" });
+    expect(r.status).toBe(200);
+    expect(chamadas).toEqual(["senha:fb-novo@example.com:15"]);
+    expect((await call("POST", `/contas/${id}/senha`, ADMIN2, { senha: SENHA })).status).toBe(404);
+  });
+
+  it("sessão: nome cadastrado e dono do Nexus; a pessoa edita o próprio nome", async () => {
+    const antes = (await call("GET", "/session", ADMIN)).body as unknown as SessionResponse;
+    expect(antes.usuario).toMatchObject({ nome: null, dono: true });
+    expect(
+      ((await call("GET", "/session", ADMIN2)).body as unknown as SessionResponse).usuario.dono,
+    ).toBe(false);
+    const r = await call("PATCH", "/session", ADMIN, { nome: "Nathan Thomaz" });
+    expect((r.body as unknown as SessionResponse).usuario.nome).toBe("Nathan Thomaz");
+    expect(
+      ((await call("GET", "/session", ADMIN)).body as unknown as SessionResponse).usuario.nome,
+    ).toBe("Nathan Thomaz");
+    expect((await call("PATCH", "/session", ADMIN, { nome: "" })).status).toBe(422);
   });
 });
