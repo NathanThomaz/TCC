@@ -971,7 +971,7 @@ export const corrigirConfiguracao: Handler = async (ctx) => {
 /**
  * Deixa a mensagem com UMA pergunta: corta depois da primeira interrogação e separa duas perguntas
  * unidas por "e qual/e como/e quanto…" ("Qual o nome da loja e qual a cor?" → "Qual o nome da
- * loja?"). `cortada` diz se havia uma segunda pergunta (os botões dela não valem mais).
+ * loja?"). "onde e quando" e "e que" ficam: costumam ser uma pergunta só. `cortada` diz se havia uma segunda pergunta (os botões dela não valem mais).
  */
 export function umaPergunta(texto: string): { texto: string; cortada: boolean } {
   const t = texto.trim();
@@ -982,8 +982,7 @@ export function umaPergunta(texto: string): { texto: string; cortada: boolean } 
   // Início da frase da pergunta (depois do último ponto final ou exclamação).
   const inicio = Math.max(resultado.lastIndexOf(". "), resultado.lastIndexOf("! ")) + 1;
   const pergunta = resultado.slice(inicio);
-  const emenda =
-    /,?\s+e\s+(qual|quais|como|quanto|quantos|quantas|quando|onde|que cor|que)\b/i.exec(pergunta);
+  const emenda = /,?\s+e\s+(qual|quais|como|quanto|quantos|quantas|que cor)\b/i.exec(pergunta);
   if (emenda && emenda.index > 3) {
     resultado = `${resultado.slice(0, inicio + emenda.index).trimEnd()}?`;
     cortada = true;

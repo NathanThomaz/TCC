@@ -335,9 +335,9 @@ export function semanticIssues(draft: ConfigDraft): ValidationIssue[] {
 }
 
 /**
- * Alteração de um sistema já ativo (ADR-008): só o que soma. O modelo continua o mesmo e nenhum
- * módulo nem tipo de atendimento sai, porque já há dados (vendas, estoque, agenda) que dependem
- * deles. Campos, regras, aparência e módulos novos podem mudar.
+ * Alteração de um sistema já ativo (ADR-008): só o que soma. O modelo continua o mesmo; nenhum
+ * módulo, tipo de atendimento ou campo com dados sai (há vendas, estoque, agenda e cadastros que
+ * dependem deles). Regras, aparência, nomes, campos e módulos novos podem mudar.
  */
 export function compatibilidadeComAtiva(ativa: ConfigDraft, nova: ConfigDraft): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
@@ -359,6 +359,39 @@ export function compatibilidadeComAtiva(ativa: ConfigDraft, nova: ConfigDraft): 
         `Módulos de um sistema ativo não podem ser desligados (já têm dados): ${saem.join(", ")}.`,
       ),
     );
+  }
+  // Campos já em uso guardam valores nos cadastros: continuam existindo, com o mesmo tipo e, se
+  // for lista, sem perder opções (senão editar um registro antigo falharia).
+  for (const campo of ativa.campos) {
+    const novo = nova.campos.find((c) => c.id === campo.id && c.entidade === campo.entidade);
+    if (!novo) {
+      issues.push(
+        block(
+          "alteracao_incompativel",
+          "campos",
+          `O campo “${campo.rotulo}” já guarda informação nos cadastros e não pode ser removido.`,
+        ),
+      );
+    } else if (novo.tipo !== campo.tipo) {
+      issues.push(
+        block(
+          "alteracao_incompativel",
+          "campos",
+          `O campo “${campo.rotulo}” já guarda informação e não pode mudar de tipo.`,
+        ),
+      );
+    } else if (campo.tipo === "lista") {
+      const faltam = (campo.opcoes ?? []).filter((o) => !(novo.opcoes ?? []).includes(o));
+      if (faltam.length) {
+        issues.push(
+          block(
+            "alteracao_incompativel",
+            "campos",
+            `A lista “${campo.rotulo}” não pode perder opções já usadas: ${faltam.join(", ")}.`,
+          ),
+        );
+      }
+    }
   }
   const tipos = new Set(nova.tipos_atendimento.map((t) => t.id));
   const tiposQueSaem = ativa.tipos_atendimento.filter((t) => !tipos.has(t.id));

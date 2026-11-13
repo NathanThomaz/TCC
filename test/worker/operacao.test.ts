@@ -1750,7 +1750,12 @@ describe("alterar um sistema ativo (ADR-008)", () => {
     ).body.versao!;
     expect(v.status).toBe("valid");
     await call("POST", `/systems/${S}/versions/${v.id}/approve`, ADMIN, { hash: v.hash });
-    const r = await call("POST", `/systems/${S}/activate`, ADMIN, { versao: v.id });
+    const base = (await call("GET", `/systems/${S}`, ADMIN)).body.sistema!.versaoAtiva;
+    // Sem a versão de onde a alteração partiu, aplicar é recusado.
+    expect(
+      (await call("POST", `/systems/${S}/activate`, ADMIN, { versao: v.id })).body.error!.code,
+    ).toBe("versao_desatualizada");
+    const r = await call("POST", `/systems/${S}/activate`, ADMIN, { versao: v.id, base });
     expect(r.status).toBe(200);
     expect(r.body.sistema).toMatchObject({ status: "active", versaoAtiva: v.id });
     expect((await call("GET", p("/fornecedores"), ADMIN)).status).toBe(200);
@@ -1769,6 +1774,50 @@ describe("alterar um sistema ativo (ADR-008)", () => {
     });
     expect(semAgenda.body.versao!.status).toBe("invalid");
     expect(semAgenda.body.issues!.map((i) => i.code)).toContain("alteracao_incompativel");
+  });
+
+  it("campo com dados não sai nem muda de tipo; lista não perde opção", async () => {
+    const semCampo = await novaVersao({ ...DISTRIBUIDORA, campos: [] });
+    expect(semCampo.body.issues!.map((i) => i.message).join(" ")).toContain(
+      "não pode ser removido",
+    );
+    const outroTipo = await novaVersao({
+      ...DISTRIBUIDORA,
+      campos: DISTRIBUIDORA.campos.map((c) => ({ ...c, tipo: "numero", opcoes: undefined })),
+    });
+    expect(outroTipo.body.versao!.status).toBe("invalid");
+  });
+
+  it("duas alterações a partir da mesma versão: a segunda a aplicar é recusada", async () => {
+    const base = (await call("GET", `/systems/${S}`, ADMIN)).body.sistema!.versaoAtiva;
+    const criar = async (cor: string) => {
+      const v = (
+        await novaVersao({
+          ...DISTRIBUIDORA,
+          aparencia: { ...DISTRIBUIDORA.aparencia, cor_destaque: cor },
+        })
+      ).body.versao!;
+      await call("POST", `/systems/${S}/versions/${v.id}/approve`, ADMIN, { hash: v.hash });
+      return v;
+    };
+    const a = await criar("#111111");
+    const b = await criar("#222222");
+    expect(
+      (await call("POST", `/systems/${S}/activate`, ADMIN, { versao: a.id, base })).status,
+    ).toBe(200);
+    const tarde = await call("POST", `/systems/${S}/activate`, ADMIN, { versao: b.id, base });
+    expect(tarde.status).toBe(409);
+    expect(tarde.body.error!.code).toBe("versao_desatualizada");
+  });
+
+  it("versão nova com base desatualizada é recusada (outra tela gravou antes)", async () => {
+    const r = await call("POST", `/systems/${S}/versions`, ADMIN, {
+      origem: "chat",
+      rascunho: DISTRIBUIDORA,
+      base: "versao-antiga",
+    });
+    expect(r.status).toBe(409);
+    expect(r.body.error!.code).toBe("versao_desatualizada");
   });
 
   it("conta secundária não altera o sistema", async () => {

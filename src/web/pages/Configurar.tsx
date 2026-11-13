@@ -59,6 +59,9 @@ export function Configurar() {
   const [draft, setDraft] = useState<ConfigDraft | null>(null);
   const [sugestoes, setSugestoesEstado] = useState<Sugerida[]>([]);
   const [resultado, setResultado] = useState<Resultado | null>(null);
+  // Versão ativa no início da alteração (ADR-008): fixada uma vez, para outra troca no meio ser
+  // detectada ao aplicar, mesmo que a tela recarregue os dados do sistema.
+  const [versaoBase, setVersaoBase] = useState<string | null>(null);
   const tituloRef = useRef<HTMLHeadingElement>(null);
   const ativo = q.data?.sistema.status === "active";
   // Alteração de sistema ativo (ADR-008) guarda o rascunho à parte da criação.
@@ -70,6 +73,7 @@ export function Configurar() {
   // Carrega o rascunho guardado (ou a última versão, ou o padrão) uma única vez, durante a
   // renderização (estado derivado com guarda, sem efeito em cascata).
   if (!draft && q.data) {
+    setVersaoBase(q.data.sistema.versaoAtiva);
     const salvo = ler<ConfigDraft>(chave);
     if (salvo) {
       setDraft(salvo);
@@ -209,6 +213,7 @@ export function Configurar() {
               irPara={irPara}
               alteracao={ativo}
               chavesLocais={[chave, chaveSugestoes]}
+              versaoBase={versaoBase}
             />
           )}
         </div>

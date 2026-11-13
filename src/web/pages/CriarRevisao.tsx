@@ -308,7 +308,14 @@ export function CriarRevisao() {
       {e.config && pronto && <ComoFunciona config={e.config} />}
 
       {e.config && pronto && (
-        <NomesDoNegocio sistemaId={id} config={e.config} onSalvo={() => void q.refetch()} />
+        <NomesDoNegocio
+          // Versão nova (regerada em outra tela) recomeça o editor do zero.
+          key={v?.id ?? "sem-versao"}
+          sistemaId={id}
+          config={e.config}
+          versaoVista={v?.id ?? null}
+          onSalvo={() => void q.refetch()}
+        />
       )}
 
       {e.config && pronto && (
@@ -538,16 +545,34 @@ function ComoFunciona({ config }: { config: ConfigDraft }) {
 function NomesDoNegocio({
   sistemaId,
   config,
+  versaoVista,
   onSalvo,
 }: {
   sistemaId: string;
   config: ConfigDraft;
+  versaoVista: string | null;
   onSalvo: () => void;
 }) {
   const [rascunho, setRascunho] = useState(config);
   const alterado = JSON.stringify(rascunho.aparencia) !== JSON.stringify(config.aparencia);
   const m = useMutation({
-    mutationFn: () => salvarVersao(sistemaId, rascunho, novaChave(), "chat"),
+    // Só os nomes mudam, sobre a configuração atual; a versão vista vai junto, e se outra tela
+    // regerou o sistema no meio, o backend recusa em vez de restaurar a antiga.
+    mutationFn: () =>
+      salvarVersao(
+        sistemaId,
+        {
+          ...config,
+          aparencia: {
+            ...config.aparencia,
+            rotulos_menu: rascunho.aparencia.rotulos_menu ?? {},
+            rotulos_campos: rascunho.aparencia.rotulos_campos ?? {},
+          },
+        },
+        novaChave(),
+        "chat",
+        versaoVista ?? undefined,
+      ),
     onSuccess: () => {
       toast.success("Nomes salvos.");
       onSalvo();

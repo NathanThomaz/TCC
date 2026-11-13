@@ -45,6 +45,7 @@ export function Revisao({
   irPara,
   alteracao = false,
   chavesLocais = [],
+  versaoBase = null,
 }: {
   sistemaId: string;
   draft: ConfigDraft;
@@ -53,8 +54,10 @@ export function Revisao({
   irPara: (n: number) => void;
   /** Sistema já ativo (ADR-008): "Aplicar alterações" em vez de "Ativar". */
   alteracao?: boolean;
-  /** Rascunho guardado no navegador, apagado depois de aplicar. */
+  /** Rascunho guardado no navegador (sessionStorage), apagado depois de aplicar. */
   chavesLocais?: string[];
+  /** Versão ativa de onde a alteração partiu: outra troca no meio é recusada. */
+  versaoBase?: string | null;
 }) {
   const qc = useQueryClient();
   const navigate = useNavigate();
@@ -98,13 +101,13 @@ export function Revisao({
     },
   });
   const ativar = useMutation({
-    mutationFn: (v: Versao) => ativarSistema(sistemaId, v.id),
+    mutationFn: (v: Versao) => ativarSistema(sistemaId, v.id, alteracao ? versaoBase : null),
     onSuccess: () => {
       void qc.invalidateQueries();
       if (alteracao) {
         for (const k of chavesLocais) {
           try {
-            localStorage.removeItem(k);
+            window.sessionStorage.removeItem(k);
           } catch {
             // Sem armazenamento local: nada a apagar.
           }

@@ -48,9 +48,15 @@ const CreateSystemBody = z.object({ nome: z.string().trim().min(1).max(80) });
 const CreateVersionBody = z.object({
   origem: z.enum(["formulario", "chat"]),
   rascunho: z.unknown(),
+  /** Última versão que a tela viu: se outra foi gravada depois, a nova é recusada. */
+  base: z.string().min(1).max(100).optional(),
 });
 const ApproveBody = z.object({ hash: z.string().regex(/^[0-9a-f]{64}$/) });
-const ActivateBody = z.object({ versao: z.string().min(1).max(100) });
+const ActivateBody = z.object({
+  versao: z.string().min(1).max(100),
+  /** Sistema ativo (ADR-008): versão ativa que a edição partiu; outra troca no meio recusa. */
+  base: z.string().min(1).max(100).optional(),
+});
 
 function publicSystem(row: SystemRow): SystemDto {
   return {
@@ -388,6 +394,20 @@ export const createVersion: Handler = async (ctx) => {
     return versionResponse(ctx, started.resourceId, started.statusCode);
   }
   if (system.status === "archived") throw conflict("Sistema arquivado não recebe novas versões.");
+  if (body.base) {
+    const ultima = await ctx.env.DB.prepare(
+      "SELECT id FROM model_versions WHERE system_id = ? ORDER BY version DESC LIMIT 1",
+    )
+      .bind(systemId)
+      .first<{ id: string }>();
+    if (ultima && ultima.id !== body.base) {
+      throw new AppError(
+        409,
+        "versao_desatualizada",
+        "O sistema mudou em outra tela. Recarregue para conferir a versão atual.",
+      );
+    }
+  }
   const result = validateDraft(body.rascunho);
   if (!result.draft) {
     // Estrutura inválida não vira versão: devolve o diagnóstico para correção.
@@ -568,13 +588,23 @@ export const activateSystem: Handler = async (ctx) => {
   requireAdmin(user);
   const systemId = ctx.params.systemId ?? "";
   const system = await requireSystemAccess(ctx.env.DB, user, systemId);
-  const { versao } = parse(ActivateBody, await readJson(ctx.request));
+  const { versao, base } = parse(ActivateBody, await readJson(ctx.request));
   const row = await loadSystem(ctx, systemId);
 
   if (row.status === "active" && row.active_version_id === versao) {
     return json({ sistema: publicSystem(row) });
   }
-  if (system.status === "active") return aplicarAlteracao(ctx, user.id, row, versao);
+  if (system.status === "active") {
+    // A alteração parte de uma versão ativa: se outra foi aplicada no meio, esta não sobrescreve.
+    if (!base || base !== row.active_version_id) {
+      throw new AppError(
+        409,
+        "versao_desatualizada",
+        "O sistema foi alterado em outra tela. Recarregue e confira antes de aplicar.",
+      );
+    }
+    return aplicarAlteracao(ctx, user.id, row, versao);
+  }
   if (system.status !== "draft") {
     throw conflict("Só um sistema em rascunho ou ativo pode receber uma versão.");
   }

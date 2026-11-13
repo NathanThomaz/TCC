@@ -31,6 +31,11 @@ describe("umaPergunta", () => {
     });
   });
 
+  it("'onde e quando' é uma pergunta só (revisão do Codex)", () => {
+    const t = "Você quer registrar onde e quando cada atendimento acontece?";
+    expect(umaPergunta(t)).toEqual({ texto: t, cortada: false });
+  });
+
   it("mensagem sem pergunta fica igual", () => {
     expect(umaPergunta("Tudo certo por aqui.")).toEqual({
       texto: "Tudo certo por aqui.",

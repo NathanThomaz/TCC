@@ -13,8 +13,6 @@ const DESCRICAO: Partial<Record<RotuloCampo, string>> = {
   "produtos.item": "Como chamar um item (ex.: Veículo, Peça, Bebida)",
   "produtos.nome": "Coluna do nome do item (ex.: Modelo)",
   "produtos.varejo": "Coluna do preço (ex.: Preço de venda)",
-  "clientes.item": "Como chamar um cliente (ex.: Paciente, Aluno)",
-  "profissionais.item": "Como chamar quem atende (ex.: Técnico, Tosadora)",
 };
 
 export function EditorRotulos({ draft, set }: PassoProps) {

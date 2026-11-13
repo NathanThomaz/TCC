@@ -59,15 +59,9 @@ export const ROTULOS_CAMPOS = {
   "produtos.varejo": { padrao: "Preço de varejo", modulo: "produtos" },
   "produtos.atacado": { padrao: "Preço de atacado", modulo: "produtos" },
   "produtos.caixa": { padrao: "Unidades por caixa", modulo: "produtos" },
-  "produtos.estoque": { padrao: "Estoque", modulo: "estoque" },
-  "clientes.item": { padrao: "Cliente", modulo: "clientes" },
   "clientes.nome": { padrao: "Nome", modulo: "clientes" },
-  "profissionais.item": { padrao: "Profissional", modulo: "profissionais" },
   "profissionais.nome": { padrao: "Nome", modulo: "profissionais" },
-  "fornecedores.item": { padrao: "Fornecedor", modulo: "fornecedores" },
   "fornecedores.nome": { padrao: "Nome", modulo: "fornecedores" },
-  "vendas.item": { padrao: "Venda", modulo: "vendas" },
-  "agenda.item": { padrao: "Atendimento", modulo: "agenda" },
 } as const satisfies Record<string, { padrao: string; modulo: ModuleId }>;
 export type RotuloCampo = keyof typeof ROTULOS_CAMPOS;
 export const ROTULOS_CAMPOS_CHAVES = Object.keys(ROTULOS_CAMPOS) as [RotuloCampo, ...RotuloCampo[]];
