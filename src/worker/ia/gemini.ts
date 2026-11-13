@@ -69,7 +69,22 @@ export function geminiDoAmbiente(env: Env, fetcher: typeof fetch = fetch): Prove
         }),
       },
     );
-    if (!resposta.ok) throw new IaIndisponivel(`http_${resposta.status}`);
+    if (!resposta.ok) {
+      // Guarda o código e a explicação do provedor (sem a chave, que vai só no cabeçalho), para o
+      // consumo de IA dizer por que falhou; ao usuário continua indo a mensagem genérica.
+      const erro = await resposta
+        .json<{ error?: { status?: string; message?: string } } | null>()
+        .catch(() => null);
+      const status = erro?.error?.status ? `_${erro.error.status}` : "";
+      const detalhe = (erro?.error?.message ?? "").replace(/\s+/g, " ").slice(0, 200);
+      const motivo = `http_${resposta.status}${status}${detalhe ? `: ${detalhe}` : ""}`;
+      // 4xx: o provedor recusou o pedido sem gerar nada, então não houve cobrança (zero tokens) e
+      // a reserva não fica presa como incerta. 5xx e falha de rede continuam incertos.
+      throw new IaIndisponivel(
+        motivo,
+        resposta.status < 500 ? { entrada: 0, saida: 0 } : undefined,
+      );
+    }
     const corpo = await resposta.json<{
       candidates?: { content?: { parts?: { text?: string }[] }; finishReason?: string }[];
       usageMetadata?: {

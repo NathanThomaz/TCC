@@ -63,4 +63,17 @@ describe("cliente do Gemini", () => {
       )!.gerar(pedido),
     ).rejects.toMatchObject({ motivo: "vazia_SAFETY" });
   });
+
+  it("4xx guarda código e explicação do provedor e vale como falha sem custo; 5xx fica incerto", async () => {
+    const recusa = comResposta(400, {
+      error: { status: "FAILED_PRECONDITION", message: "User location is not supported." },
+    });
+    await expect(geminiDoAmbiente(env, recusa.fetcher)!.gerar(pedido)).rejects.toMatchObject({
+      motivo: "http_400_FAILED_PRECONDITION: User location is not supported.",
+      tokens: { entrada: 0, saida: 0 },
+    });
+    await expect(
+      geminiDoAmbiente(env, comResposta(503, {}).fetcher)!.gerar(pedido),
+    ).rejects.toMatchObject({ motivo: "http_503", tokens: undefined });
+  });
 });
