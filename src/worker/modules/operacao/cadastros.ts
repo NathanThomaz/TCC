@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { ClienteDto, ProdutoDto, ProfissionalDto } from "../../../shared/api";
+import type { ClienteDto, ProdutoDto, ProfissionalDto, ResumoPessoaDto } from "../../../shared/api";
 import type { FieldEntity, ModuleId } from "../../../shared/contract/catalog";
 import type { ConfigDraft } from "../../../shared/contract/schema";
 import { readJson } from "../../http/body";
@@ -32,6 +32,8 @@ function publicPessoa(row: PessoaRow): ClienteDto & ProfissionalDto {
 
 interface Pessoa {
   table: "customers" | "professionals";
+  /** Coluna que liga vendas e atendimentos ao cadastro. */
+  coluna: "customer_id" | "professional_id";
   modulo: ModuleId;
   entidade: FieldEntity;
   chave: "cliente" | "profissional";
@@ -41,6 +43,7 @@ interface Pessoa {
 
 const CLIENTES: Pessoa = {
   table: "customers",
+  coluna: "customer_id",
   modulo: "clientes",
   entidade: "clientes",
   chave: "cliente",
@@ -49,6 +52,7 @@ const CLIENTES: Pessoa = {
 };
 const PROFISSIONAIS: Pessoa = {
   table: "professionals",
+  coluna: "professional_id",
   modulo: "profissionais",
   entidade: "profissionais",
   chave: "profissional",
@@ -75,13 +79,56 @@ function listarPessoas(p: Pessoa): Handler {
   return async (ctx) => {
     const op = await abrirOperacao(ctx, p.modulo);
     const status = filtroDaQuery(ctx.url, "status", STATUS);
-    const { results } = await ctx.env.DB.prepare(
-      `SELECT id, name, status, extra_json FROM ${p.table}
-       WHERE system_id = ?1 AND (?2 IS NULL OR status = ?2) ORDER BY name COLLATE NOCASE LIMIT 500`,
-    )
-      .bind(op.systemId, status)
-      .all<PessoaRow>();
-    return json({ [p.plural]: results.map(publicPessoa) });
+    const db = ctx.env.DB;
+    const tem = (m: ModuleId) => op.config.modulos.includes(m);
+    const [{ results }, vendas, agenda] = await Promise.all([
+      db
+        .prepare(
+          `SELECT id, name, status, extra_json, created_at FROM ${p.table}
+           WHERE system_id = ?1 AND (?2 IS NULL OR status = ?2) ORDER BY name COLLATE NOCASE LIMIT 500`,
+        )
+        .bind(op.systemId, status)
+        .all<PessoaRow & { created_at: number }>(),
+      // Só cliente compra; profissional só tem atendimentos.
+      p.table === "customers" && tem("vendas")
+        ? db
+            .prepare(
+              `SELECT customer_id AS id, COUNT(*) AS n, SUM(total_cents) AS total, MAX(completed_at) AS ultima
+               FROM sales WHERE system_id = ? AND status = 'completed' GROUP BY customer_id`,
+            )
+            .bind(op.systemId)
+            .all<{ id: string; n: number; total: number; ultima: number }>()
+        : null,
+      tem("agenda")
+        ? db
+            .prepare(
+              `SELECT ${p.coluna} AS id, COUNT(*) AS n,
+                 MIN(CASE WHEN status = 'scheduled' AND start_at >= ?2 THEN start_at END) AS proximo
+               FROM appointments WHERE system_id = ?1 AND status <> 'cancelled' GROUP BY ${p.coluna}`,
+            )
+            .bind(op.systemId, ctx.clock.now())
+            .all<{ id: string; n: number; proximo: number | null }>()
+        : null,
+    ]);
+    const porVenda = new Map(vendas?.results.map((v) => [v.id, v]));
+    const porAgenda = new Map(agenda?.results.map((a) => [a.id, a]));
+    return json({
+      [p.plural]: results.map((row) => {
+        const resumo: ResumoPessoaDto = { desde: row.created_at };
+        if (vendas) {
+          const v = porVenda.get(row.id);
+          resumo.compras = v?.n ?? 0;
+          resumo.totalCentavos = v?.total ?? 0;
+          resumo.ultimaCompra = v?.ultima ?? null;
+        }
+        if (agenda) {
+          const a = porAgenda.get(row.id);
+          resumo.atendimentos = a?.n ?? 0;
+          resumo.proximoAtendimento = a?.proximo ?? null;
+        }
+        return { ...publicPessoa(row), resumo };
+      }),
+    });
   };
 }
 

@@ -35,7 +35,7 @@ export const obterPainel: Handler = async (ctx) => {
         )
         .bind(s, de, ate)
         .first<{ n: number; total: number }>();
-    const [dia_, mes_, abertas, canceladas, ultimas] = await Promise.all([
+    const [dia_, mes_, abertas, canceladas, ultimas, clientesNoMes] = await Promise.all([
       soma(inicioHoje, inicioAmanha),
       soma(inicioMes, inicioProximoMes),
       db
@@ -58,12 +58,19 @@ export const obterPainel: Handler = async (ctx) => {
         )
         .bind(s)
         .all<{ id: string; cliente: string; total_cents: number; completed_at: number }>(),
+      db
+        .prepare(
+          "SELECT COUNT(DISTINCT customer_id) AS n FROM sales WHERE system_id = ? AND status = 'completed' AND completed_at >= ? AND completed_at < ?",
+        )
+        .bind(s, inicioMes, inicioProximoMes)
+        .first<{ n: number }>(),
     ]);
     painel.vendas = {
       hoje: { quantidade: dia_?.n ?? 0, totalCentavos: dia_?.total ?? 0 },
       mes: { quantidade: mes_?.n ?? 0, totalCentavos: mes_?.total ?? 0 },
       abertas: abertas?.n ?? 0,
       canceladasNoMes: canceladas?.n ?? 0,
+      clientesNoMes: clientesNoMes?.n ?? 0,
       ultimas: ultimas.results.map((v) => ({
         id: v.id,
         cliente: v.cliente,
@@ -81,13 +88,19 @@ export const obterPainel: Handler = async (ctx) => {
     const minimo = regra?.unidades ?? null;
     const { results } = await db
       .prepare(
-        `SELECT p.id, p.name, p.physical,
+        `SELECT p.id, p.name, p.physical, p.retail_cents,
            (SELECT COALESCE(SUM(r.quantity), 0) FROM reservations r
              WHERE r.product_id = p.id AND r.status = 'active' AND r.expires_at > ?1) AS reserved
          FROM products p WHERE p.system_id = ?2 AND p.status = 'active'`,
       )
       .bind(agora, s)
-      .all<{ id: string; name: string; physical: number; reserved: number }>();
+      .all<{
+        id: string;
+        name: string;
+        physical: number;
+        retail_cents: number;
+        reserved: number;
+      }>();
     const produtos = results.map((p) => ({
       id: p.id,
       nome: p.name,
@@ -103,21 +116,29 @@ export const obterPainel: Handler = async (ctx) => {
       criticos: [...produtos]
         .sort((a, b) => a.disponivel - b.disponivel || a.nome.localeCompare(b.nome, "pt-BR"))
         .slice(0, CRITICOS),
+      unidades: results.reduce((soma, p) => soma + p.physical, 0),
+      valorVarejoCentavos: results.reduce((soma, p) => soma + p.physical * p.retail_cents, 0),
     };
   }
 
   if (tem("clientes")) {
     const r = await db
       .prepare(
-        "SELECT SUM(status = 'active') AS ativos, SUM(status = 'inactive') AS inativos FROM customers WHERE system_id = ?",
+        `SELECT SUM(status = 'active') AS ativos, SUM(status = 'inactive') AS inativos,
+           SUM(created_at >= ?2 AND created_at < ?3) AS novos
+         FROM customers WHERE system_id = ?1`,
       )
-      .bind(s)
-      .first<{ ativos: number | null; inativos: number | null }>();
-    painel.clientes = { ativos: r?.ativos ?? 0, inativos: r?.inativos ?? 0 };
+      .bind(s, inicioMes, inicioProximoMes)
+      .first<{ ativos: number | null; inativos: number | null; novos: number | null }>();
+    painel.clientes = {
+      ativos: r?.ativos ?? 0,
+      inativos: r?.inativos ?? 0,
+      novosNoMes: r?.novos ?? 0,
+    };
   }
 
   if (tem("agenda")) {
-    const [contagem, proximos] = await Promise.all([
+    const [contagem, proximos, periodo] = await Promise.all([
       db
         .prepare(
           `SELECT SUM(status = 'scheduled') AS agendados, SUM(status = 'in_progress') AS em_atendimento,
@@ -147,6 +168,20 @@ export const obterPainel: Handler = async (ctx) => {
           cliente: string;
           profissional: string;
         }>(),
+      db
+        .prepare(
+          `SELECT
+             (SELECT COUNT(*) FROM appointments WHERE system_id = ?1 AND status = 'scheduled'
+                AND start_at >= ?2 AND start_at < ?2 + 7 * 86400000) AS semana,
+             (SELECT COUNT(*) FROM appointments WHERE system_id = ?1 AND status = 'done'
+                AND start_at >= ?3 AND start_at < ?4) AS concluidos,
+             (SELECT COUNT(*) FROM appointments WHERE system_id = ?1 AND status = 'cancelled'
+                AND cancelled_at >= ?3 AND cancelled_at < ?4) AS cancelados,
+             (SELECT COUNT(*) FROM professionals WHERE system_id = ?1 AND status = 'active')
+                AS profissionais`,
+        )
+        .bind(s, agora, inicioMes, inicioProximoMes)
+        .first<{ semana: number; concluidos: number; cancelados: number; profissionais: number }>(),
     ]);
     const rotulo = (id: string) =>
       op.config.tipos_atendimento.find((t) => t.id === id)?.rotulo ?? id;
@@ -156,6 +191,10 @@ export const obterPainel: Handler = async (ctx) => {
         emAtendimento: contagem?.em_atendimento ?? 0,
         concluidos: contagem?.concluidos ?? 0,
       },
+      proximos7Dias: periodo?.semana ?? 0,
+      concluidosNoMes: periodo?.concluidos ?? 0,
+      canceladosNoMes: periodo?.cancelados ?? 0,
+      profissionaisAtivos: periodo?.profissionais ?? 0,
       proximos: proximos.results.map((a) => ({
         id: a.id,
         inicio: a.start_at,

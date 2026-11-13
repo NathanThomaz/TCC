@@ -1,4 +1,4 @@
-import type { PainelDto } from "../../src/shared/api";
+import type { ClienteDto, PainelDto } from "../../src/shared/api";
 import { env } from "cloudflare:workers";
 import { beforeEach, describe, expect, it } from "vitest";
 import c1 from "../../experiments/cenarios/c1-gabarito.json";
@@ -1108,10 +1108,20 @@ describe("regras do catálogo (ADR-005)", () => {
       abertas: 1,
       canceladasNoMes: 0,
     });
-    expect(painel.clientes).toEqual({ ativos: 1, inativos: 1 });
+    expect(painel.clientes).toMatchObject({ ativos: 1, inativos: 1 });
     expect(painel.estoque).toMatchObject({ produtosAtivos: 2, minimo: 10, abaixoDoMinimo: 1 });
     expect(painel.estoque!.criticos[0]).toMatchObject({ nome: "Água", disponivel: 8 });
     expect(painel.agenda!.proximos).toHaveLength(2);
+    // Indicadores novos: clientes que compraram, valor do estoque e agenda do período.
+    expect(painel.vendas!.clientesNoMes).toBe(1);
+    expect(painel.clientes!.novosNoMes).toBe(2);
+    expect(painel.estoque).toMatchObject({ unidades: 104, valorVarejoCentavos: 104 * 500 });
+    expect(painel.agenda).toMatchObject({
+      proximos7Dias: 2,
+      concluidosNoMes: 0,
+      canceladosNoMes: 0,
+      profissionaisAtivos: 1,
+    });
   });
   const painelDe = async (token = ADMIN) =>
     (
@@ -1119,6 +1129,48 @@ describe("regras do catálogo (ADR-005)", () => {
         painel: PainelDto;
       }
     ).painel;
+
+  it("lista de clientes traz compras, total, última compra e próximo atendimento", async () => {
+    await ativarCom([]);
+    const ze = await cliente();
+    const ana = await cliente("Ana");
+    const prod = await produto();
+    await entrada(prod, 100);
+    for (const unidades of [2, 3]) {
+      const v = (await venda(ze, [{ produto: prod, unidades }])).body.venda!;
+      await call("POST", p(`/vendas/${v.id}/concluir`), ADMIN, { revisao: v.revisao });
+      agora += H;
+    }
+    const cancelada = (await venda(ze, [{ produto: prod, unidades: 1 }])).body.venda!;
+    await call("POST", p(`/vendas/${cancelada.id}/concluir`), ADMIN, {
+      revisao: cancelada.revisao,
+    });
+    await call("POST", p(`/vendas/${cancelada.id}/cancelar`), ADMIN, { motivo: "Erro" });
+    const t = await tecnico();
+    await par(ze, t, AMANHA);
+
+    const r = await call("GET", p("/clientes"), ADMIN);
+    const lista = r.body.clientes as unknown as ClienteDto[];
+    const doZe = lista.find((c) => c.id === ze)!;
+    expect(doZe.resumo).toMatchObject({
+      compras: 2,
+      totalCentavos: 2500,
+      ultimaCompra: NOW + H,
+      atendimentos: 2,
+      proximoAtendimento: AMANHA,
+    });
+    expect(lista.find((c) => c.id === ana)!.resumo).toMatchObject({
+      compras: 0,
+      totalCentavos: 0,
+      ultimaCompra: null,
+      atendimentos: 0,
+      proximoAtendimento: null,
+    });
+    const profissionais = (await call("GET", p("/profissionais"), ADMIN)).body
+      .profissionais as unknown as ClienteDto[];
+    expect(profissionais[0]!.resumo).toMatchObject({ atendimentos: 2 });
+    expect(profissionais[0]!.resumo).not.toHaveProperty("compras");
+  });
 
   it("painel: dia e mês contados no fuso de São Paulo, sem a virada errada", async () => {
     await ativarCom([]);
@@ -1163,7 +1215,7 @@ describe("regras do catálogo (ADR-005)", () => {
     });
     const outro = await painelDe(ADMIN2);
     expect(outro.vendas!.mes.quantidade).toBe(0);
-    expect(outro.clientes).toEqual({ ativos: 0, inativos: 0 });
+    expect(outro.clientes).toEqual({ ativos: 0, inativos: 0, novosNoMes: 0 });
     expect(outro.estoque!.produtosAtivos).toBe(0);
     expect(outro.agenda).toBeUndefined();
     expect((await call("GET", p("/painel"), ADMIN)).status).toBe(404);

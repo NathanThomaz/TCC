@@ -52,11 +52,25 @@ export interface SystemsApiBody {
 export type StatusCadastro = "active" | "inactive";
 export type CamposInformativos = Record<string, string | number>;
 
+/**
+ * Números de cada cadastro para a tabela (só na listagem e só dos módulos ativos): compras
+ * concluídas e não canceladas; atendimentos não cancelados.
+ */
+export interface ResumoPessoaDto {
+  desde: number;
+  compras?: number;
+  totalCentavos?: number;
+  ultimaCompra?: number | null;
+  atendimentos?: number;
+  proximoAtendimento?: number | null;
+}
+
 export interface ClienteDto {
   id: string;
   nome: string;
   status: StatusCadastro;
   campos: CamposInformativos;
+  resumo?: ResumoPessoaDto;
 }
 
 export interface ProfissionalDto {
@@ -64,6 +78,7 @@ export interface ProfissionalDto {
   nome: string;
   status: StatusCadastro;
   campos: CamposInformativos;
+  resumo?: ResumoPessoaDto;
 }
 
 export interface ProdutoDto {
@@ -238,6 +253,8 @@ export interface PainelDto {
     mes: { quantidade: number; totalCentavos: number };
     abertas: number;
     canceladasNoMes: number;
+    /** Clientes diferentes com venda concluída no mês. */
+    clientesNoMes: number;
     ultimas: { id: string; cliente: string; totalCentavos: number; concluidaEm: number }[];
   };
   estoque?: {
@@ -247,10 +264,18 @@ export interface PainelDto {
     minimo: number | null;
     abaixoDoMinimo: number | null;
     criticos: { id: string; nome: string; fisico: number; reservado: number; disponivel: number }[];
+    /** Unidades físicas e valor delas a preço de varejo (produtos ativos). */
+    unidades: number;
+    valorVarejoCentavos: number;
   };
-  clientes?: { ativos: number; inativos: number };
+  clientes?: { ativos: number; inativos: number; novosNoMes: number };
   agenda?: {
     hoje: { agendados: number; emAtendimento: number; concluidos: number };
+    /** Agendados nos próximos 7 dias, a partir de agora. */
+    proximos7Dias: number;
+    concluidosNoMes: number;
+    canceladosNoMes: number;
+    profissionaisAtivos: number;
     proximos: { id: string; inicio: number; tipo: string; cliente: string; profissional: string }[];
   };
 }

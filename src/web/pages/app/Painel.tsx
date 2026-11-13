@@ -1,17 +1,25 @@
 import { useQuery } from "@tanstack/react-query";
 import {
+  Ban,
+  CalendarCheck,
+  CalendarClock,
   CalendarDays,
   CircleAlert,
   ClipboardList,
   Package,
   PackageX,
+  Receipt,
   ShoppingCart,
   TrendingUp,
   TriangleAlert,
+  UserCheck,
+  UserPlus,
   Users,
+  Warehouse,
   Wrench,
   type LucideIcon,
 } from "lucide-react";
+import type { PainelDto } from "../../../shared/api";
 import type { ModuleId } from "../../../shared/contract/catalog";
 import { formatarDataHora } from "../../../shared/dominio/agenda";
 import { formatarCentavos } from "../../../shared/dominio/precos";
@@ -44,9 +52,9 @@ function Indicador({
 }: {
   rotulo: string;
   valor: string;
-  detalhe?: string;
+  detalhe?: string | undefined;
   icone: LucideIcon;
-  alerta?: boolean;
+  alerta?: boolean | undefined;
 }) {
   return (
     <div
@@ -66,6 +74,185 @@ function Indicador({
 }
 
 const vendasTexto = (n: number) => `${n} ${n === 1 ? "venda" : "vendas"}`;
+const plural = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um : varios}`;
+
+export interface IndicadorDados {
+  id: string;
+  rotulo: string;
+  valor: string;
+  detalhe?: string;
+  icone: LucideIcon;
+  alerta?: boolean;
+  /** Menor = mais importante. O painel mostra os 8 mais importantes que o sistema tem. */
+  prioridade: number;
+}
+
+export const LIMITE_INDICADORES = 8;
+
+/**
+ * Indicadores do painel, a partir dos blocos que o backend devolveu (um por módulo ativo). As
+ * prioridades fazem os três modelos completarem 8: comércio, serviços e comércio com serviços.
+ */
+export function indicadores(p: PainelDto): IndicadorDados[] {
+  const lista: IndicadorDados[] = [];
+  const add = (i: IndicadorDados) => lista.push(i);
+  if (p.vendas) {
+    const v = p.vendas;
+    add({
+      id: "vendas-hoje",
+      prioridade: 1,
+      rotulo: "Vendas hoje",
+      icone: ShoppingCart,
+      valor: formatarCentavos(v.hoje.totalCentavos),
+      detalhe: vendasTexto(v.hoje.quantidade),
+    });
+    add({
+      id: "vendas-mes",
+      prioridade: 2,
+      rotulo: "Vendas no mês",
+      icone: TrendingUp,
+      valor: formatarCentavos(v.mes.totalCentavos),
+      detalhe: `${vendasTexto(v.mes.quantidade)} · ${plural(v.canceladasNoMes, "cancelada", "canceladas")}`,
+    });
+    add({
+      id: "ticket",
+      prioridade: 6,
+      rotulo: "Ticket médio no mês",
+      icone: Receipt,
+      valor: formatarCentavos(
+        v.mes.quantidade ? Math.round(v.mes.totalCentavos / v.mes.quantidade) : 0,
+      ),
+      detalhe: "Valor médio por venda concluída",
+    });
+    add({
+      id: "abertas",
+      prioridade: 9,
+      rotulo: "Pedidos abertos",
+      icone: ClipboardList,
+      valor: String(v.abertas),
+      detalhe: "Rascunhos segurando estoque",
+    });
+  }
+  if (p.clientes) {
+    const c = p.clientes;
+    add({
+      id: "clientes",
+      prioridade: 3,
+      rotulo: "Clientes ativos",
+      icone: Users,
+      valor: String(c.ativos),
+      detalhe: `${plural(c.novosNoMes, "novo", "novos")} no mês · ${plural(c.inativos, "inativo", "inativos")}`,
+    });
+    if (p.vendas) {
+      add({
+        id: "compraram",
+        prioridade: 10,
+        rotulo: "Clientes que compraram",
+        icone: UserCheck,
+        valor: String(p.vendas.clientesNoMes),
+        detalhe:
+          c.ativos > 0
+            ? `${Math.round((p.vendas.clientesNoMes / c.ativos) * 100)}% dos ativos, no mês`
+            : "No mês",
+      });
+    } else {
+      add({
+        id: "novos",
+        prioridade: 13,
+        rotulo: "Clientes novos no mês",
+        icone: UserPlus,
+        valor: String(c.novosNoMes),
+        detalhe: "Cadastrados neste mês",
+      });
+    }
+  }
+  if (p.estoque) {
+    const e = p.estoque;
+    const critico = e.minimo === null ? e.semEstoque : (e.abaixoDoMinimo ?? 0);
+    add({
+      id: "estoque-critico",
+      prioridade: 4,
+      rotulo: e.minimo === null ? "Sem estoque" : "Abaixo do mínimo",
+      icone: PackageX,
+      alerta: critico > 0,
+      valor: String(critico),
+      detalhe: `de ${plural(e.produtosAtivos, "produto ativo", "produtos ativos")}${e.minimo !== null ? ` (mínimo de ${e.minimo})` : ""}`,
+    });
+    add({
+      id: "valor-estoque",
+      prioridade: 8,
+      rotulo: "Valor em estoque",
+      icone: Warehouse,
+      valor: formatarCentavos(e.valorVarejoCentavos),
+      detalhe: `${plural(e.unidades, "unidade", "unidades")} a preço de varejo`,
+    });
+  }
+  if (p.agenda) {
+    const a = p.agenda;
+    add({
+      id: "atendimentos-hoje",
+      prioridade: 5,
+      rotulo: "Atendimentos hoje",
+      icone: CalendarDays,
+      valor: String(a.hoje.agendados + a.hoje.emAtendimento + a.hoje.concluidos),
+      detalhe: `${a.hoje.emAtendimento} em atendimento · ${plural(a.hoje.concluidos, "concluído", "concluídos")}`,
+    });
+    add({
+      id: "proximos-7",
+      prioridade: 7,
+      rotulo: "Próximos 7 dias",
+      icone: CalendarClock,
+      valor: String(a.proximos7Dias),
+      detalhe: "Atendimentos agendados",
+    });
+    add({
+      id: "concluidos-mes",
+      prioridade: 11,
+      rotulo: "Concluídos no mês",
+      icone: CalendarCheck,
+      valor: String(a.concluidosNoMes),
+      detalhe:
+        a.concluidosNoMes + a.canceladosNoMes > 0
+          ? `${Math.round((a.concluidosNoMes / (a.concluidosNoMes + a.canceladosNoMes)) * 100)}% dos que saíram da agenda`
+          : "Nenhum atendimento encerrado ainda",
+    });
+    add({
+      id: "profissionais",
+      prioridade: 12,
+      rotulo: "Profissionais ativos",
+      icone: Wrench,
+      valor: String(a.profissionaisAtivos),
+      detalhe: "Na agenda",
+    });
+    add({
+      id: "cancelados-mes",
+      prioridade: 14,
+      rotulo: "Cancelados no mês",
+      icone: Ban,
+      alerta: a.canceladosNoMes > 0 && a.canceladosNoMes >= a.concluidosNoMes,
+      valor: String(a.canceladosNoMes),
+      detalhe: "Atendimentos cancelados",
+    });
+    const prox = a.proximos[0];
+    const quando = prox ? formatarDataHora(prox.inicio) : "";
+    add({
+      id: "proximo",
+      prioridade: 15,
+      rotulo: "Próximo atendimento",
+      icone: CalendarDays,
+      valor: prox ? `${quando.slice(0, 5)} ${quando.slice(11)}` : "—",
+      detalhe: prox ? `${prox.cliente} · ${prox.tipo}` : "Nada agendado",
+    });
+  }
+  // Os mais importantes, mostrados na ordem dos módulos (vendas, clientes, estoque, agenda).
+  const escolhidos = new Set(
+    [...lista]
+      .sort((x, y) => x.prioridade - y.prioridade)
+      .slice(0, LIMITE_INDICADORES)
+      .map((i) => i.id),
+  );
+  return lista.filter((i) => escolhidos.has(i.id));
+}
 
 export function Painel() {
   const app = useApp();
@@ -87,7 +274,7 @@ export function Painel() {
         </h2>
         {q.isPending ? (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-busy="true">
-            {[0, 1, 2, 3].map((i) => (
+            {Array.from({ length: LIMITE_INDICADORES }, (_, i) => (
               <Skeleton key={i} className="h-28 rounded-xl" />
             ))}
           </div>
@@ -95,63 +282,17 @@ export function Painel() {
           <ErrorState mensagem={q.error.message} onTentar={() => void q.refetch()} />
         ) : (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {p?.vendas && (
-              <>
+            {p &&
+              indicadores(p).map((i) => (
                 <Indicador
-                  rotulo="Vendas hoje"
-                  icone={ShoppingCart}
-                  valor={formatarCentavos(p.vendas.hoje.totalCentavos)}
-                  detalhe={vendasTexto(p.vendas.hoje.quantidade)}
+                  key={i.id}
+                  rotulo={i.rotulo}
+                  valor={i.valor}
+                  detalhe={i.detalhe}
+                  icone={i.icone}
+                  alerta={i.alerta}
                 />
-                <Indicador
-                  rotulo="Vendas no mês"
-                  icone={TrendingUp}
-                  valor={formatarCentavos(p.vendas.mes.totalCentavos)}
-                  detalhe={`${vendasTexto(p.vendas.mes.quantidade)} · ${p.vendas.canceladasNoMes} ${p.vendas.canceladasNoMes === 1 ? "cancelada" : "canceladas"}`}
-                />
-                <Indicador
-                  rotulo="Pedidos abertos"
-                  icone={ClipboardList}
-                  valor={String(p.vendas.abertas)}
-                  detalhe="Rascunhos segurando estoque"
-                />
-              </>
-            )}
-            {p?.clientes && (
-              <Indicador
-                rotulo="Clientes ativos"
-                icone={Users}
-                valor={String(p.clientes.ativos)}
-                detalhe={`${p.clientes.inativos} ${p.clientes.inativos === 1 ? "inativo" : "inativos"}`}
-              />
-            )}
-            {p?.estoque && (
-              <Indicador
-                rotulo={p.estoque.minimo === null ? "Sem estoque" : "Abaixo do mínimo"}
-                icone={PackageX}
-                alerta={
-                  (p.estoque.minimo === null
-                    ? p.estoque.semEstoque
-                    : (p.estoque.abaixoDoMinimo ?? 0)) > 0
-                }
-                valor={String(
-                  p.estoque.minimo === null
-                    ? p.estoque.semEstoque
-                    : (p.estoque.abaixoDoMinimo ?? 0),
-                )}
-                detalhe={`de ${p.estoque.produtosAtivos} ${p.estoque.produtosAtivos === 1 ? "produto ativo" : "produtos ativos"}${p.estoque.minimo !== null ? ` (mínimo de ${p.estoque.minimo})` : ""}`}
-              />
-            )}
-            {p?.agenda && (
-              <Indicador
-                rotulo="Atendimentos hoje"
-                icone={CalendarDays}
-                valor={String(
-                  p.agenda.hoje.agendados + p.agenda.hoje.emAtendimento + p.agenda.hoje.concluidos,
-                )}
-                detalhe={`${p.agenda.hoje.emAtendimento} em atendimento · ${p.agenda.hoje.concluidos} concluídos`}
-              />
-            )}
+              ))}
           </div>
         )}
       </section>
