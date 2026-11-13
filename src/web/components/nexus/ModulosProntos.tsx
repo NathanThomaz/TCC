@@ -31,6 +31,13 @@ const FUNCOES: Record<Modulo, { texto: string; regra?: Regra["tipo"] }[]> = {
   ],
 };
 
+/** Campos de fábrica que só entram em uso quando a regra correspondente está ligada. */
+const CAMPO_DEPENDE_DE: Record<string, Regra["tipo"]> = {
+  "Preço de atacado": "limite_atacado",
+  "Faixa de preço (varejo ou atacado)": "limite_atacado",
+  "Unidades por caixa": "unidades_por_caixa",
+};
+
 const ENTIDADE: Partial<Record<Modulo, FieldEntity>> = {
   clientes: "clientes",
   produtos: "produtos",
@@ -75,7 +82,16 @@ export function ModulosProntos({
               </ul>
               {entidade && (
                 <p className="mt-1 pl-6 text-xs text-muted-foreground">
-                  Campos: {NATIVE_FIELDS[entidade].map((n) => n.label).join(" · ")}
+                  Campos:{" "}
+                  {NATIVE_FIELDS[entidade]
+                    .filter((n) => {
+                      const regra = CAMPO_DEPENDE_DE[n.label];
+                      return !regras || !regra || ativa(regra);
+                    })
+                    .map((n) =>
+                      !regras && CAMPO_DEPENDE_DE[n.label] ? `${n.label} (opcional)` : n.label,
+                    )
+                    .join(" · ")}
                 </p>
               )}
             </div>
