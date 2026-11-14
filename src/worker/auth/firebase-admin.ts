@@ -243,15 +243,19 @@ export function createAccountAdmin(options: {
       // Criado agora: se a pessoa se cadastrou no meio, o Firebase recusa (EMAIL_EXISTS).
       const uid = encontrado ?? (await admin("accounts", { email, emailVerified: false })).localId;
       if (!uid) throw new AccountLookupError("conta criada sem uid");
-      const envio = await options.fetch(
-        `https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${encodeURIComponent(options.webApiKey)}`,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ requestType: "PASSWORD_RESET", email }),
-        },
-      );
-      if (!envio.ok) throw new ConviteNaoEnviadoError(uid);
+      // Qualquer falha no envio (resposta de erro ou queda de rede) devolve o uid: o login já
+      // existe e a repetição precisa reconhecê-lo como desta conta.
+      const envio = await options
+        .fetch(
+          `https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${encodeURIComponent(options.webApiKey)}`,
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ requestType: "PASSWORD_RESET", email }),
+          },
+        )
+        .catch(() => null);
+      if (!envio?.ok) throw new ConviteNaoEnviadoError(uid);
       return uid;
     }),
     findUid: segura(async (email: string) => {
