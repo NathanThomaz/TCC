@@ -85,6 +85,16 @@ describe("ler planilha", () => {
     ]);
   });
 
+  it("quebra de linha dentro das aspas fica na célula, sem criar linha nova", () => {
+    const csv = 'Nome;Endereço\nBar do Zé;"Rua A\nCentro"\nMercado;Rua B';
+    expect(lerTabela(csv)).toEqual([
+      ["Nome", "Endereço"],
+      ["Bar do Zé", "Rua A\nCentro"],
+      ["Mercado", "Rua B"],
+    ]);
+    expect(lerClientes(csv).linhas).toEqual([{ nome: "Bar do Zé" }, { nome: "Mercado" }]);
+  });
+
   it("clientes: a primeira coluna, pulando o título", () => {
     expect(lerClientes("Cliente\tTelefone\nBar do Zé\t5199\n\nMercado Bom").linhas).toEqual([
       { nome: "Bar do Zé" },
@@ -105,5 +115,10 @@ describe("reposição sugerida", () => {
       p("Suco", 1, 10, "inactive"),
     ]);
     expect(r.map((x) => [x.produto.nome, x.unidades])).toEqual([["Vinho", 7]]);
+  });
+
+  it("os mais longe do mínimo primeiro", () => {
+    const r = sugestaoDeReposicao([p("Vinho", 4, 5), p("Água", 0, 20), p("Suco", 2, 10)]);
+    expect(r.map((x) => x.produto.nome)).toEqual(["Água", "Suco", "Vinho"]);
   });
 });

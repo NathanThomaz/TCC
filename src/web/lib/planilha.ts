@@ -6,39 +6,49 @@ import { reaisParaCentavos } from "./nexus";
 // (separadas por tabulação) ou envia um CSV (";" ou ","). A primeira linha pode ter os nomes das
 // colunas; sem ela, vale a ordem que a tela mostra (ordemSemTitulo). Tudo é conferido antes.
 
-/** Linhas e células, com aspas do CSV. */
+/**
+ * Linhas e células, com aspas do CSV: separador e quebra de linha dentro das aspas fazem parte da
+ * célula ("Rua A\nCentro" é um endereço, não uma linha nova).
+ */
 export function lerTabela(texto: string): string[][] {
-  const linhas = texto
-    .replace(/\r\n?/g, "\n")
-    .split("\n")
-    .filter((l) => l.trim() !== "");
-  if (linhas.length === 0) return [];
-  // Separador contado fora das aspas: "Vinho, suave";45,90 é ponto e vírgula, não vírgula.
-  const primeira = linhas[0]!.replace(/"[^"]*"/g, "");
-  const sep = primeira.includes("	")
-    ? "	"
+  const t = texto.replace(/\r\n?/g, "\n");
+  // Separador contado fora das aspas na primeira linha: "Vinho, suave";45,90 é ponto e vírgula.
+  const primeira =
+    t
+      .replace(/"[^"]*"/g, "")
+      .split("\n")
+      .find((l) => l.trim() !== "") ?? "";
+  const sep = primeira.includes("\t")
+    ? "\t"
     : (primeira.match(/;/g)?.length ?? 0) >= (primeira.match(/,/g)?.length ?? 0)
       ? ";"
       : ",";
-  return linhas.map((linha) => {
-    const celulas: string[] = [];
-    let atual = "";
-    let aspas = false;
-    for (let i = 0; i < linha.length; i++) {
-      const c = linha[i]!;
-      if (c === '"') {
-        if (aspas && linha[i + 1] === '"') {
-          atual += '"';
-          i++;
-        } else aspas = !aspas;
-      } else if (c === sep && !aspas) {
-        celulas.push(atual.trim());
-        atual = "";
-      } else atual += c;
-    }
+  const linhas: string[][] = [];
+  let celulas: string[] = [];
+  let atual = "";
+  let aspas = false;
+  const fecharLinha = () => {
     celulas.push(atual.trim());
-    return celulas;
-  });
+    if (celulas.some((c) => c !== "")) linhas.push(celulas);
+    celulas = [];
+    atual = "";
+  };
+  for (let i = 0; i < t.length; i++) {
+    const c = t[i]!;
+    if (c === '"') {
+      if (aspas && t[i + 1] === '"') {
+        atual += '"';
+        i++;
+      } else aspas = !aspas;
+    } else if (c === sep && !aspas) {
+      celulas.push(atual.trim());
+      atual = "";
+    } else if (c === "\n" && !aspas) {
+      fecharLinha();
+    } else atual += c;
+  }
+  fecharLinha();
+  return linhas;
 }
 
 export type Coluna = "nome" | "preco" | "atacado" | "caixa" | "estoque" | "minimo" | "codigo";
@@ -173,9 +183,21 @@ export function lerClientes(texto: string) {
  * disponível ao dobro do mínimo.
  */
 export function sugestaoDeReposicao(produtos: ProdutoDto[]) {
-  return produtos
-    .filter(
-      (p) => p.status === "active" && p.estoqueMinimo !== null && p.disponivel < p.estoqueMinimo,
-    )
-    .map((p) => ({ produto: p, unidades: p.estoqueMinimo! * 2 - p.disponivel }));
+  return (
+    produtos
+      .filter(
+        (p) => p.status === "active" && p.estoqueMinimo !== null && p.disponivel < p.estoqueMinimo,
+      )
+      .map((p) => ({ produto: p, unidades: p.estoqueMinimo! * 2 - p.disponivel }))
+      // Os que estão mais longe do mínimo primeiro (uma compra aceita até 50 itens).
+      .sort(
+        (a, b) =>
+          a.produto.disponivel -
+          a.produto.estoqueMinimo! -
+          (b.produto.disponivel - b.produto.estoqueMinimo!),
+      )
+  );
 }
+
+/** Itens de uma compra (limite do servidor). */
+export const MAX_ITENS_COMPRA = 50;

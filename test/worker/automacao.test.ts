@@ -326,6 +326,11 @@ describe("código de barras", () => {
       codigoBarras: "12 34",
     });
     expect(invalido.status).toBe(422);
+    // Procura pelo código no servidor (a lista da tela tem limite); inativo não aparece.
+    const achado = await call("GET", p("/produtos/codigo/7891234567890"));
+    expect(achado.body.produto!.id).toBe(a.id);
+    await call("POST", p(`/produtos/${a.id}/status`), { status: "inactive" });
+    expect((await call("GET", p("/produtos/codigo/7891234567890"))).status).toBe(404);
   });
 });
 

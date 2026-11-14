@@ -37,7 +37,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { centavosParaReais, reaisParaCentavos } from "@/lib/nexus";
-import { sugestaoDeReposicao } from "@/lib/planilha";
+import { MAX_ITENS_COMPRA, sugestaoDeReposicao } from "@/lib/planilha";
 import { Link } from "@/lib/rotas";
 import { useApp } from "./Aplicacao";
 
@@ -213,7 +213,7 @@ function NovaCompraDialog({ onFechar, onCriada }: { onFechar: () => void; onCria
   // Produtos abaixo do mínimo entram com a quantidade que leva ao dobro dele e o último custo.
   const sugerirReposicao = () => {
     setLinhas(
-      reposicao.map(({ produto, unidades }) => ({
+      reposicao.slice(0, MAX_ITENS_COMPRA).map(({ produto, unidades }) => ({
         ...linhaVazia(),
         produto: produto.id,
         unidades: String(unidades),
@@ -221,7 +221,9 @@ function NovaCompraDialog({ onFechar, onCriada }: { onFechar: () => void; onCria
       })),
     );
     toast.success(
-      `${reposicao.length} ${reposicao.length === 1 ? "produto" : "produtos"} abaixo do mínimo na lista.`,
+      reposicao.length > MAX_ITENS_COMPRA
+        ? `Os ${MAX_ITENS_COMPRA} mais urgentes na lista (limite de uma compra). Registre e sugira de novo para os outros ${reposicao.length - MAX_ITENS_COMPRA}.`
+        : `${reposicao.length} ${reposicao.length === 1 ? "produto" : "produtos"} abaixo do mínimo na lista.`,
     );
   };
   const [vencimento, setVencimento] = useState(hojeIso());

@@ -30,6 +30,7 @@ import {
   listarProdutos,
   obterVenda,
   salvarItens,
+  produtoPorCodigo,
   ultimaCompra,
   type ItemPedido,
 } from "@/api/operacao";
@@ -297,9 +298,22 @@ function Rascunho({ venda, servicos }: { venda: VendaDto | null; servicos: Atend
       }
       return proximas.length ? proximas : [linhaVazia()];
     });
-  const lerCodigo = (codigo: string) => {
-    const p = (produtos.data ?? []).find((x) => x.status === "active" && x.codigoBarras === codigo);
-    if (!p) return toast.error(`Nenhum produto ativo com o código ${codigo}.`);
+  const qc = useQueryClient();
+  const lerCodigo = async (codigo: string) => {
+    let p = (produtos.data ?? []).find((x) => x.status === "active" && x.codigoBarras === codigo);
+    if (!p) {
+      // A lista carregada tem limite: procura no servidor e junta à lista desta tela.
+      try {
+        p = (await produtoPorCodigo(app.id, codigo)) ?? undefined;
+      } catch (e) {
+        return toast.error(e instanceof Error ? e.message : "Não foi possível procurar o código.");
+      }
+      if (!p) return toast.error(`Nenhum produto ativo com o código ${codigo}.`);
+      const achado = p;
+      qc.setQueryData<ProdutoDto[]>(["app", app.id, "produtos"], (lista) =>
+        lista?.some((x) => x.id === achado.id) ? lista : [...(lista ?? []), achado],
+      );
+    }
     somarItens([{ produto: p.id, caixas: 0, unidades: 1 }]);
     toast.success(`${p.nome}: +1 unidade.`);
   };
@@ -462,7 +476,7 @@ function Rascunho({ venda, servicos }: { venda: VendaDto | null; servicos: Atend
         <fieldset className="space-y-3">
           <legend className="mb-1 text-sm font-medium">Itens</legend>
           {(produtos.data ?? []).some((p) => p.codigoBarras) && (
-            <LeitorCodigo onCodigo={lerCodigo} />
+            <LeitorCodigo onCodigo={(c) => void lerCodigo(c)} />
           )}
           {linhas.map((l, i) => {
             const p = produtoDe(l.produto);

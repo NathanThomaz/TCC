@@ -214,6 +214,19 @@ export async function interpretarVenda(sistema: string, texto: string) {
   return r.venda;
 }
 
+/** Produto ativo com este código de barras; null se não houver. */
+export async function produtoPorCodigo(sistema: string, codigo: string) {
+  try {
+    const r = await chamar<OperacaoApiBody>(
+      `${base(sistema)}/produtos/codigo/${encodeURIComponent(codigo)}`,
+    );
+    return r.produto ?? null;
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) return null;
+    throw error;
+  }
+}
+
 /** Itens da última venda concluída do cliente (só produtos ativos); null se nunca comprou. */
 export async function ultimaCompra(sistema: string, cliente: string) {
   const r = await chamar<{

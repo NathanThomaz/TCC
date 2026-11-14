@@ -394,6 +394,18 @@ export const listarProdutos: Handler = async (ctx) => {
   return json({ produtos: await listarProdutosDoSistema(ctx, op.systemId, status) });
 };
 
+/** GET /produtos/codigo/:codigo — produto ativo com este código de barras (a lista tem limite). */
+export const produtoPorCodigo: Handler = async (ctx) => {
+  const op = await abrirOperacao(ctx, "produtos");
+  const row = await ctx.env.DB.prepare(
+    `${SELECT_PRODUTO} WHERE p.system_id = ?2 AND p.barcode = ?3 AND p.status = 'active'`,
+  )
+    .bind(ctx.clock.now(), op.systemId, ctx.params.codigo ?? "")
+    .first<ProdutoRow>();
+  if (!row) throw notFound();
+  return json({ produto: publicProduto(row) });
+};
+
 export const criarProduto: Handler = async (ctx) => {
   const op = await abrirOperacao(ctx, "produtos");
   const body = parse(ProdutoBody, await readJson(ctx.request));
