@@ -44,20 +44,23 @@ export function EditorRotulos({ draft, set }: PassoProps) {
       <fieldset className="space-y-2">
         <legend className="mb-1 text-sm font-medium">Nomes do menu</legend>
         <div className="grid gap-3 sm:grid-cols-2">
-          {draft.modulos.map((m) => (
-            <div key={m} className="space-y-1">
-              <Label htmlFor={`menu-${m}`} className="text-xs text-muted-foreground">
-                {ROTULO_MODULO[m]}
-              </Label>
-              <Input
-                id={`menu-${m}`}
-                value={menu[m] ?? ""}
-                placeholder={ROTULO_MODULO[m]}
-                maxLength={40}
-                onChange={(e) => mudarMenu(m, e.target.value)}
-              />
-            </div>
-          ))}
+          {/* Formas de pagamento não têm tela própria no menu (ficam dentro de Vendas). */}
+          {draft.modulos
+            .filter((m) => m !== "pagamentos")
+            .map((m) => (
+              <div key={m} className="space-y-1">
+                <Label htmlFor={`menu-${m}`} className="text-xs text-muted-foreground">
+                  {ROTULO_MODULO[m]}
+                </Label>
+                <Input
+                  id={`menu-${m}`}
+                  value={menu[m] ?? ""}
+                  placeholder={ROTULO_MODULO[m]}
+                  maxLength={40}
+                  onChange={(e) => mudarMenu(m, e.target.value)}
+                />
+              </div>
+            ))}
         </div>
       </fieldset>
       {chaves.length > 0 && (

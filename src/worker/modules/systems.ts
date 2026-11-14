@@ -433,10 +433,20 @@ export const createVersion: Handler = async (ctx) => {
         draft: result.draft,
         issues: result.issues,
         now,
+        base: body.base,
       })),
       recordStatement(ctx, cmd, started, id, 201, now),
     ]);
   } catch (error) {
+    // Com base, a versão só é inserida se a última ainda for ela; se outra entrou no meio, o
+    // diagnóstico sem versão falha e o lote inteiro é desfeito.
+    if (body.base && !isUnique(error)) {
+      throw new AppError(
+        409,
+        "versao_desatualizada",
+        "O sistema mudou em outra tela. Recarregue para conferir a versão atual.",
+      );
+    }
     if (!isUnique(error)) throw error;
     const replay = await replayAfterRace(ctx, cmd, started);
     if (replay?.kind === "replay")
@@ -461,6 +471,8 @@ export async function versaoStatements(
     draft: ConfigDraft;
     issues: IssueDto[];
     now: number;
+    /** Só grava se a última versão ainda for esta (na mesma instrução: sem janela de corrida). */
+    base?: string | undefined;
   },
 ): Promise<D1PreparedStatement[]> {
   const db = ctx.env.DB;
@@ -473,7 +485,9 @@ export async function versaoStatements(
         `INSERT INTO model_versions
            (id, system_id, version, schema_version, catalog_version, config_json, hash, origin, status, created_by, created_at)
          SELECT ?, ?, COALESCE(MAX(version), 0) + 1, ?, ?, ?, ?, ?, ?, ?, ?
-         FROM model_versions WHERE system_id = ?`,
+         FROM model_versions WHERE system_id = ?
+         HAVING ? IS NULL
+           OR (SELECT id FROM model_versions WHERE system_id = ? ORDER BY version DESC LIMIT 1) = ?`,
       )
       .bind(
         v.id,
@@ -487,6 +501,9 @@ export async function versaoStatements(
         v.userId,
         v.now,
         v.systemId,
+        v.base ?? null,
+        v.systemId,
+        v.base ?? null,
       ),
     db
       .prepare(

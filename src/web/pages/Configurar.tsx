@@ -73,7 +73,12 @@ export function Configurar() {
   // Carrega o rascunho guardado (ou a última versão, ou o padrão) uma única vez, durante a
   // renderização (estado derivado com guarda, sem efeito em cascata).
   if (!draft && q.data) {
-    setVersaoBase(q.data.sistema.versaoAtiva);
+    // A base acompanha o rascunho: reabrir um rascunho antigo mantém a versão de onde ele partiu.
+    const chaveBase = `${chave}:base`;
+    const baseSalva = ler<string>(chaveBase);
+    const base = baseSalva ?? q.data.sistema.versaoAtiva;
+    setVersaoBase(base);
+    if (!baseSalva && base) gravar(chaveBase, base);
     const salvo = ler<ConfigDraft>(chave);
     if (salvo) {
       setDraft(salvo);
@@ -212,7 +217,7 @@ export function Configurar() {
               setResultado={setResultado}
               irPara={irPara}
               alteracao={ativo}
-              chavesLocais={[chave, chaveSugestoes]}
+              chavesLocais={[chave, chaveSugestoes, `${chave}:base`]}
               versaoBase={versaoBase}
             />
           )}

@@ -36,6 +36,11 @@ describe("umaPergunta", () => {
     expect(umaPergunta(t)).toEqual({ texto: t, cortada: false });
   });
 
+  it("'quanto… e quanto…' é uma pergunta só", () => {
+    const t = "Deseja registrar quanto compra e quanto vende?";
+    expect(umaPergunta(t)).toEqual({ texto: t, cortada: false });
+  });
+
   it("mensagem sem pergunta fica igual", () => {
     expect(umaPergunta("Tudo certo por aqui.")).toEqual({
       texto: "Tudo certo por aqui.",
