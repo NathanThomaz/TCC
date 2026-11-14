@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, ClipboardList, SlidersHorizontal, TriangleAlert } from "lucide-react";
@@ -27,6 +27,17 @@ export function Criar() {
   const [texto, setTexto] = useState("");
   // Mensagem já enviada, à espera da IA: aparece na conversa na hora (envio fluido).
   const [pendente, setPendente] = useState<string | null>(null);
+  const resumoRef = useRef<HTMLDivElement>(null);
+  const totalItens = q.data?.requisitos.length ?? 0;
+  const itensAntes = useRef(totalItens);
+  useEffect(() => {
+    // Item novo no resumo: rola até ele, sem mexer quando a lista diminui ou só muda.
+    if (totalItens > itensAntes.current) {
+      const el = resumoRef.current;
+      if (el) el.scrollTop = el.scrollHeight; // suave pelo scroll-smooth do contêiner
+    }
+    itensAntes.current = totalItens;
+  }, [totalItens]);
   const [pedidoAberto, setPedidoAberto] = useState<string | null>(null);
   const [resumoAberto, setResumoAberto] = useState(false);
   const campo = useRef<HTMLTextAreaElement>(null);
@@ -196,10 +207,21 @@ export function Criar() {
         </div>
         <aside
           aria-label="Resumo do seu sistema"
-          className="hidden min-w-0 self-start border-l pl-6 lg:sticky lg:top-20 lg:col-span-2 lg:block lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto"
+          className="hidden min-w-0 self-start border-l pl-6 lg:sticky lg:top-20 lg:col-span-2 lg:flex lg:flex-col"
         >
-          <h2 className="mb-5 text-lg font-semibold">Resumo do seu sistema</h2>
-          {resumo}
+          <h2 className="mb-3 flex items-center justify-between gap-2 text-lg font-semibold">
+            Resumo do seu sistema
+            <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+              {estado.requisitos.length} {estado.requisitos.length === 1 ? "item" : "itens"}
+            </span>
+          </h2>
+          {/* Rolagem própria (pedido do dono): a lista cresce e o item novo aparece sozinho. */}
+          <div
+            ref={resumoRef}
+            className="h-[min(70vh,44rem)] scroll-smooth overflow-y-auto overscroll-contain pr-2 [scrollbar-gutter:stable] motion-reduce:scroll-auto"
+          >
+            {resumo}
+          </div>
         </aside>
       </div>
       <div className="fixed inset-x-0 bottom-0 z-20 border-t bg-card p-3 lg:hidden">

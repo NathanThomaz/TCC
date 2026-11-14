@@ -185,7 +185,7 @@ describe("ciclo de configuração pela API", () => {
     expect(count?.n).toBe(0);
   });
 
-  it("bloqueia nova versão em sistema ativo (personalização pós-ativação é P2)", async () => {
+  it("sistema ativo aceita versão nova só compatível com a ativa (ADR-008)", async () => {
     const { id, version } = await systemWithValidVersion();
     await call("POST", `/systems/${id}/versions/${version.id}/approve`, ADMIN, {
       hash: version.hash,
@@ -196,7 +196,9 @@ describe("ciclo de configuração pela API", () => {
       origem: "chat",
       rascunho: c1,
     });
-    expect(next.body.error!.code).toBe("personalizacao_pos_ativacao_indisponivel");
+    // Mesma configuração: compatível (nada sai); vira versão válida, aplicável depois.
+    expect(next.status).toBe(201);
+    expect(next.body.versao!.status).toBe("valid");
   });
 });
 

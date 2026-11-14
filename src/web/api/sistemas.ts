@@ -46,10 +46,14 @@ export async function salvarVersao(
   id: string,
   rascunho: ConfigDraft,
   chave = novaChave(),
+  /** "chat": a versão da conversa com um ajuste do dono na revisão (ex.: nomes das telas). */
+  origem: "formulario" | "chat" = "formulario",
+  /** Última versão que a tela viu: se outra foi gravada depois, o backend recusa. */
+  base?: string,
 ): Promise<{ versao: Versao | null; issues: Issue[] }> {
   const r = await chamar<SystemsApiBody>(`/systems/${encodeURIComponent(id)}/versions`, {
     method: "POST",
-    body: { origem: "formulario", rascunho },
+    body: { origem, rascunho, ...(base ? { base } : {}) },
     chave,
   });
   return { versao: r.versao ?? null, issues: r.issues ?? [] };
@@ -63,10 +67,15 @@ export async function aprovarVersao(id: string, versaoId: string, hash: string):
   return exigir(r.versao, "versão");
 }
 
-export async function ativarSistema(id: string, versaoId: string): Promise<Sistema> {
+/** `base`: versão ativa de onde a alteração partiu (sistema já ativo, ADR-008). */
+export async function ativarSistema(
+  id: string,
+  versaoId: string,
+  base?: string | null,
+): Promise<Sistema> {
   const r = await chamar<SystemsApiBody>(`/systems/${encodeURIComponent(id)}/activate`, {
     method: "POST",
-    body: { versao: versaoId },
+    body: { versao: versaoId, ...(base ? { base } : {}) },
   });
   return exigir(r.sistema, "sistema");
 }

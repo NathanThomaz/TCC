@@ -88,11 +88,20 @@ export function Detalhe() {
               </>
             )}
             {sistema.status === "active" && (
-              <Button asChild>
-                <Link to="/sistemas/$id/app" params={{ id }}>
-                  <AppWindow aria-hidden /> Abrir aplicação
-                </Link>
-              </Button>
+              <>
+                <Button asChild>
+                  <Link to="/sistemas/$id/app" params={{ id }}>
+                    <AppWindow aria-hidden /> Abrir aplicação
+                  </Link>
+                </Button>
+                {usuario?.papel === "administrador" && (
+                  <Button asChild variant="outline">
+                    <Link to="/sistemas/$id/configurar" params={{ id }}>
+                      <SlidersHorizontal aria-hidden /> Alterar sistema
+                    </Link>
+                  </Button>
+                )}
+              </>
             )}
             <Button asChild variant="outline">
               <Link to="/sistemas/$id/pedidos" params={{ id }}>
@@ -115,13 +124,16 @@ export function Detalhe() {
         </section>
       )}
 
-      {sistema.status === "active" && (
+      {sistema.status === "active" && usuario?.papel === "administrador" && (
         <div
           role="note"
           className="mb-6 flex gap-3 rounded-lg border border-info/30 bg-info-soft p-4 text-sm"
         >
           <Info className="size-5 shrink-0 text-info" aria-hidden />
-          <p>Alterar a configuração de um sistema ativo ainda não está disponível nesta versão.</p>
+          <p>
+            Esqueceu um módulo ou quer mudar regras, campos ou nomes? Use “Alterar sistema”: os
+            dados continuam e as telas passam a usar a versão nova assim que você aplicar.
+          </p>
         </div>
       )}
       {sistema.status === "archived" && (

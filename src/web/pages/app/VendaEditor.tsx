@@ -56,7 +56,7 @@ import { Link, useNavigate } from "@/lib/rotas";
 import { useApp } from "./Aplicacao";
 import { SituacaoVenda } from "./Vendas";
 import type { PaymentMethod } from "../../../shared/contract/catalog";
-import { ROTULO_PAGAMENTO } from "@/lib/nexus";
+import { ROTULO_PAGAMENTO, rotuloCampo } from "@/lib/nexus";
 
 // Editor da venda (seções 10 a 12). Salvar o rascunho reserva o estoque (RES-01), tudo ou nada
 // (RES-02), e reinicia o prazo (RES-03). A prévia do total usa as mesmas regras do backend,
@@ -355,7 +355,9 @@ function Rascunho({ venda, servicos }: { venda: VendaDto | null; servicos: Atend
             return (
               <div key={i} className="flex flex-wrap items-end gap-2 rounded-lg border bg-card p-3">
                 <div className="min-w-48 flex-1 space-y-1.5">
-                  <Label htmlFor={`item-${i}-produto`}>Produto</Label>
+                  <Label htmlFor={`item-${i}-produto`}>
+                    {rotuloCampo(app.config, "produtos.item")}
+                  </Label>
                   <Select value={l.produto} onValueChange={(v) => mudarLinha(i, "produto", v)}>
                     <SelectTrigger id={`item-${i}-produto`}>
                       <SelectValue placeholder="Escolha" />
@@ -543,8 +545,17 @@ function Rascunho({ venda, servicos }: { venda: VendaDto | null; servicos: Atend
 }
 
 function Itens({ venda }: { venda: VendaDto }) {
+  const app = useApp();
   return (
-    <Tabela cabecalho={["Produto", "Quantidade", "Unidades", "Preço unit.", "Total"]}>
+    <Tabela
+      cabecalho={[
+        rotuloCampo(app.config, "produtos.item"),
+        "Quantidade",
+        "Unidades",
+        "Preço unit.",
+        "Total",
+      ]}
+    >
       {venda.itens.map((i) => (
         <tr key={i.produto}>
           <td className="px-4 py-2 font-medium">{i.nomeProduto}</td>

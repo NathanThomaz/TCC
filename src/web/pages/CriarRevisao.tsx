@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import type { CriacaoApiBody, IssueDto } from "../../shared/api";
+import type { ConfigDraft } from "../../shared/contract/schema";
 import {
   confirmarResumo,
   corrigirConfiguracao,
@@ -21,7 +22,9 @@ import {
   gerarConfiguracao,
   obterCriacao,
 } from "@/api/criacao";
-import { aprovarVersao, ativarSistema, obterSistema } from "@/api/sistemas";
+import { aprovarVersao, ativarSistema, obterSistema, salvarVersao } from "@/api/sistemas";
+import { novaChave } from "@/api/cliente";
+import { EditorRotulos } from "@/components/configurar/EditorRotulos";
 import { codigoDoErro, ErroApi, useChavePorConteudo } from "@/components/app/Comum";
 import { EstadoPedido } from "@/components/criacao/Pedido";
 import { ErrorState, PageHeader } from "@/components/nexus/Estados";
@@ -302,6 +305,19 @@ export function CriarRevisao() {
         </section>
       )}
 
+      {e.config && pronto && <ComoFunciona config={e.config} />}
+
+      {e.config && pronto && (
+        <NomesDoNegocio
+          // Versão nova (regerada em outra tela) recomeça o editor do zero.
+          key={v?.id ?? "sem-versao"}
+          sistemaId={id}
+          config={e.config}
+          versaoVista={v?.id ?? null}
+          onSalvo={() => void q.refetch()}
+        />
+      )}
+
       {e.config && pronto && (
         <section aria-labelledby="previa" className="mb-8">
           <h2 id="previa" className="mb-4 text-lg font-semibold">
@@ -479,5 +495,111 @@ export function CriarRevisao() {
         )}
       </section>
     </>
+  );
+}
+
+/** Como o sistema vai funcionar no dia a dia, pelos módulos escolhidos (pedido do dono). */
+const FUNCIONA: Partial<Record<ConfigDraft["modulos"][number], string>> = {
+  vendas:
+    "Você abre uma venda, escolhe o cliente e os itens; o estoque fica reservado enquanto o pedido está aberto e baixa sozinho ao concluir.",
+  estoque:
+    "Entradas e saídas ficam registradas com quem fez e quando; o painel avisa o que está acabando.",
+  agenda:
+    "A agenda mostra cada profissional; o sistema não deixa marcar duas pessoas no mesmo horário para a mesma pessoa.",
+  pagamentos:
+    "Ao concluir a venda, você escolhe a forma de pagamento; a prazo vira conta a receber.",
+  fornecedores: "Cada compra registrada dá entrada no estoque e guarda o custo dos produtos.",
+  financeiro: "Contas a pagar e a receber ficam com vencimento; as vencidas aparecem em destaque.",
+};
+
+function ComoFunciona({ config }: { config: ConfigDraft }) {
+  const linhas = config.modulos.flatMap((m) => (FUNCIONA[m] ? [FUNCIONA[m]] : []));
+  return (
+    <section aria-labelledby="como-funciona" className="mb-8">
+      <h2 id="como-funciona" className="mb-3 text-lg font-semibold">
+        Como o seu sistema vai funcionar
+      </h2>
+      <ul className="space-y-2 rounded-lg border bg-card p-4 text-sm shadow-card">
+        <li>A tela inicial mostra os números do dia e o que precisa de atenção.</li>
+        {linhas.map((l) => (
+          <li key={l}>{l}</li>
+        ))}
+        <li>
+          Em “Perguntar”, você conversa com a IA sobre qualquer parte do sistema (vendas, estoque,
+          clientes, contas…), e as respostas usam os números reais.
+        </li>
+      </ul>
+      <p className="mt-3 rounded-lg border border-info/30 bg-info-soft p-3 text-sm">
+        Depois de ativar, você pode alterar o sistema quando quiser em Sistemas → este sistema →
+        “Alterar sistema”: incluir um módulo que esqueceu, mudar regras, campos e nomes. Os dados
+        continuam.
+      </p>
+    </section>
+  );
+}
+
+/**
+ * Nomes das telas e colunas que a IA sugeriu para o negócio: o dono confere e muda antes de
+ * ativar. Salvar gera uma versão nova da conversa só com os nomes ajustados (o banco não muda).
+ */
+function NomesDoNegocio({
+  sistemaId,
+  config,
+  versaoVista,
+  onSalvo,
+}: {
+  sistemaId: string;
+  config: ConfigDraft;
+  versaoVista: string | null;
+  onSalvo: () => void;
+}) {
+  const [rascunho, setRascunho] = useState(config);
+  const alterado = JSON.stringify(rascunho.aparencia) !== JSON.stringify(config.aparencia);
+  const m = useMutation({
+    // Só os nomes mudam, sobre a configuração atual; a versão vista vai junto, e se outra tela
+    // regerou o sistema no meio, o backend recusa em vez de restaurar a antiga.
+    mutationFn: () =>
+      salvarVersao(
+        sistemaId,
+        {
+          ...config,
+          aparencia: {
+            ...config.aparencia,
+            rotulos_menu: rascunho.aparencia.rotulos_menu ?? {},
+            rotulos_campos: rascunho.aparencia.rotulos_campos ?? {},
+          },
+        },
+        novaChave(),
+        "chat",
+        versaoVista ?? undefined,
+      ),
+    onSuccess: () => {
+      toast.success("Nomes salvos.");
+      onSalvo();
+    },
+  });
+  return (
+    <section aria-labelledby="nomes-negocio" className="mb-8">
+      <h2 id="nomes-negocio" className="mb-1 text-lg font-semibold">
+        Nomes das telas e colunas
+      </h2>
+      <p className="mb-4 text-sm text-muted-foreground">
+        O assistente adaptou os nomes ao seu negócio. Mude o que quiser antes de ativar.
+      </p>
+      <div className="rounded-lg border bg-card p-4 shadow-card">
+        <EditorRotulos draft={rascunho} set={(fn) => setRascunho((d) => fn(d))} />
+        <ErroApi erro={m.error} />
+        <div className="mt-4 flex gap-2">
+          <Button disabled={!alterado || m.isPending} onClick={() => m.mutate()}>
+            {m.isPending && <Loader2 className="animate-spin" aria-hidden />}Salvar nomes
+          </Button>
+          {alterado && (
+            <Button variant="outline" onClick={() => setRascunho(config)}>
+              Desfazer
+            </Button>
+          )}
+        </div>
+      </div>
+    </section>
   );
 }

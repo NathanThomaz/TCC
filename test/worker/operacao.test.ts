@@ -1731,3 +1731,125 @@ describe("módulos opcionais (ADR-006)", () => {
     ).toBe(404);
   });
 });
+
+describe("alterar um sistema ativo (ADR-008)", () => {
+  const novaVersao = (rascunho: unknown, token = ADMIN) =>
+    call("POST", `/systems/${S}/versions`, token, { origem: "formulario", rascunho });
+
+  it("incluir um módulo esquecido: versão nova, aprovada e aplicada; a operação já usa", async () => {
+    expect((await call("GET", p("/fornecedores"), ADMIN)).status).toBe(404);
+    const v = (
+      await novaVersao({
+        ...DISTRIBUIDORA,
+        modulos: [...DISTRIBUIDORA.modulos, "fornecedores"],
+        aparencia: {
+          ...DISTRIBUIDORA.aparencia,
+          rotulos_campos: { "produtos.item": "Bebida" },
+        },
+      })
+    ).body.versao!;
+    expect(v.status).toBe("valid");
+    await call("POST", `/systems/${S}/versions/${v.id}/approve`, ADMIN, { hash: v.hash });
+    const base = (await call("GET", `/systems/${S}`, ADMIN)).body.sistema!.versaoAtiva;
+    // Sem a versão de onde a alteração partiu, aplicar é recusado.
+    expect(
+      (await call("POST", `/systems/${S}/activate`, ADMIN, { versao: v.id })).body.error!.code,
+    ).toBe("versao_desatualizada");
+    const r = await call("POST", `/systems/${S}/activate`, ADMIN, { versao: v.id, base });
+    expect(r.status).toBe(200);
+    expect(r.body.sistema).toMatchObject({ status: "active", versaoAtiva: v.id });
+    expect((await call("GET", p("/fornecedores"), ADMIN)).status).toBe(200);
+    const app = (await call("GET", p("/app"), ADMIN)).body.config!;
+    expect(app.aparencia.rotulos_campos).toEqual({ "produtos.item": "Bebida" });
+  });
+
+  it("desligar módulo ou trocar o modelo de um sistema ativo é recusado", async () => {
+    const semAgenda = await novaVersao({
+      ...DISTRIBUIDORA,
+      modelo: "comercio",
+      modulos: ["clientes", "produtos", "vendas", "estoque"],
+      tipos_atendimento: [],
+      campos: DISTRIBUIDORA.campos.filter((c) => c.entidade !== "agendamentos"),
+      regras: DISTRIBUIDORA.regras.filter((r) => r.tipo !== "par_atendimento"),
+    });
+    expect(semAgenda.body.versao!.status).toBe("invalid");
+    expect(semAgenda.body.issues!.map((i) => i.code)).toContain("alteracao_incompativel");
+  });
+
+  it("campo com dados não sai nem muda de tipo; lista não perde opção", async () => {
+    const semCampo = await novaVersao({ ...DISTRIBUIDORA, campos: [] });
+    expect(semCampo.body.issues!.map((i) => i.message).join(" ")).toContain(
+      "não pode ser removido",
+    );
+    const outroTipo = await novaVersao({
+      ...DISTRIBUIDORA,
+      campos: DISTRIBUIDORA.campos.map((c) => ({ ...c, tipo: "numero", opcoes: undefined })),
+    });
+    expect(outroTipo.body.versao!.status).toBe("invalid");
+  });
+
+  it("duas alterações a partir da mesma versão: a segunda a aplicar é recusada", async () => {
+    const base = (await call("GET", `/systems/${S}`, ADMIN)).body.sistema!.versaoAtiva;
+    const criar = async (cor: string) => {
+      const v = (
+        await novaVersao({
+          ...DISTRIBUIDORA,
+          aparencia: { ...DISTRIBUIDORA.aparencia, cor_destaque: cor },
+        })
+      ).body.versao!;
+      await call("POST", `/systems/${S}/versions/${v.id}/approve`, ADMIN, { hash: v.hash });
+      return v;
+    };
+    const a = await criar("#111111");
+    const b = await criar("#222222");
+    expect(
+      (await call("POST", `/systems/${S}/activate`, ADMIN, { versao: a.id, base })).status,
+    ).toBe(200);
+    const tarde = await call("POST", `/systems/${S}/activate`, ADMIN, { versao: b.id, base });
+    expect(tarde.status).toBe(409);
+    expect(tarde.body.error!.code).toBe("versao_desatualizada");
+  });
+
+  it("versão nova com base desatualizada é recusada (outra tela gravou antes)", async () => {
+    const r = await call("POST", `/systems/${S}/versions`, ADMIN, {
+      origem: "chat",
+      rascunho: DISTRIBUIDORA,
+      base: "versao-antiga",
+    });
+    expect(r.status).toBe(409);
+    expect(r.body.error!.code).toBe("versao_desatualizada");
+  });
+
+  it("versão nova com base: outra versão gravada entre a conferência e o lote é recusada", async () => {
+    const base = (await env.DB.prepare(
+      "SELECT id FROM model_versions WHERE system_id = ? ORDER BY version DESC LIMIT 1",
+    )
+      .bind(S)
+      .first<{ id: string }>())!.id;
+    const r = await callComCorrida(
+      `/systems/${S}/versions`,
+      { origem: "chat", rascunho: DISTRIBUIDORA, base },
+      () =>
+        env.DB.prepare(
+          `INSERT INTO model_versions (id, system_id, version, schema_version, catalog_version,
+             config_json, hash, origin, status, created_by, created_at)
+           SELECT 'v-intrusa', system_id, version + 1, schema_version, catalog_version, config_json,
+             hash, origin, 'valid', created_by, created_at
+           FROM model_versions WHERE system_id = ? ORDER BY version DESC LIMIT 1`,
+        )
+          .bind(S)
+          .run(),
+    );
+    expect(r.status).toBe(409);
+    expect(r.body.error!.code).toBe("versao_desatualizada");
+    const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM model_versions WHERE system_id = ?")
+      .bind(S)
+      .first<{ n: number }>();
+    expect(n!.n).toBe(2); // a ativa e a intrusa; a recusada não ficou gravada
+  });
+
+  it("conta secundária não altera o sistema", async () => {
+    const r = await novaVersao(DISTRIBUIDORA, SEC);
+    expect(r.status).toBe(403);
+  });
+});

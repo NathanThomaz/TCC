@@ -43,12 +43,21 @@ export function Revisao({
   resultado,
   setResultado,
   irPara,
+  alteracao = false,
+  chavesLocais = [],
+  versaoBase = null,
 }: {
   sistemaId: string;
   draft: ConfigDraft;
   resultado: Resultado | null;
   setResultado: (r: Resultado | null) => void;
   irPara: (n: number) => void;
+  /** Sistema já ativo (ADR-008): "Aplicar alterações" em vez de "Ativar". */
+  alteracao?: boolean;
+  /** Rascunho guardado no navegador (sessionStorage), apagado depois de aplicar. */
+  chavesLocais?: string[];
+  /** Versão ativa de onde a alteração partiu: outra troca no meio é recusada. */
+  versaoBase?: string | null;
 }) {
   const qc = useQueryClient();
   const navigate = useNavigate();
@@ -92,9 +101,21 @@ export function Revisao({
     },
   });
   const ativar = useMutation({
-    mutationFn: (v: Versao) => ativarSistema(sistemaId, v.id),
+    mutationFn: (v: Versao) => ativarSistema(sistemaId, v.id, alteracao ? versaoBase : null),
     onSuccess: () => {
       void qc.invalidateQueries();
+      if (alteracao) {
+        for (const k of chavesLocais) {
+          try {
+            window.sessionStorage.removeItem(k);
+          } catch {
+            // Sem armazenamento local: nada a apagar.
+          }
+        }
+        toast.success("Alterações aplicadas. As telas já usam a versão nova.");
+        navigate({ to: "/sistemas/$id/app", params: { id: sistemaId } });
+        return;
+      }
       toast.success("Sistema ativado.");
       navigate({ to: "/sistemas/$id", params: { id: sistemaId } });
     },
@@ -188,7 +209,7 @@ export function Revisao({
                   </Button>
                 ) : (
                   <Button onClick={() => setDlgAtivar(true)}>
-                    <Power aria-hidden /> Ativar sistema
+                    <Power aria-hidden /> {alteracao ? "Aplicar alterações" : "Ativar sistema"}
                   </Button>
                 )}
                 <p className="self-center text-sm text-muted-foreground">
@@ -243,10 +264,13 @@ export function Revisao({
       <AlertDialog open={dlgAtivar} onOpenChange={setDlgAtivar}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Ativar sistema?</AlertDialogTitle>
+            <AlertDialogTitle>
+              {alteracao ? "Aplicar as alterações?" : "Ativar sistema?"}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              O sistema passa a funcionar com esta versão. Os dados reais (clientes, vendas, agenda)
-              começam vazios. Alterar a configuração depois da ativação ainda não está disponível.
+              {alteracao
+                ? "As telas passam a usar esta versão na hora. Os dados que já existem (clientes, vendas, estoque, agenda) continuam."
+                : "O sistema passa a funcionar com esta versão. Os dados reais (clientes, vendas, agenda) começam vazios. Depois, você pode alterar o sistema quando quiser."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           {ativar.isError && (

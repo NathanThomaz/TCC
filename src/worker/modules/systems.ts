@@ -9,7 +9,7 @@ import type {
 import { CATALOG_VERSION } from "../../shared/contract/catalog";
 import { deCampoLocal, paraCampoLocal } from "../../shared/dominio/agenda";
 import { SCHEMA_VERSION, type ConfigDraft } from "../../shared/contract/schema";
-import { validateDraft } from "../../shared/contract/validate";
+import { compatibilidadeComAtiva, validateDraft } from "../../shared/contract/validate";
 import { authenticate, requireAdmin, requireSystemAccess } from "../auth/session";
 import { readJson } from "../http/body";
 import { beginIdempotent, recordStatement, replayAfterRace } from "../http/idempotency";
@@ -48,9 +48,15 @@ const CreateSystemBody = z.object({ nome: z.string().trim().min(1).max(80) });
 const CreateVersionBody = z.object({
   origem: z.enum(["formulario", "chat"]),
   rascunho: z.unknown(),
+  /** Última versão que a tela viu: se outra foi gravada depois, a nova é recusada. */
+  base: z.string().min(1).max(100).optional(),
 });
 const ApproveBody = z.object({ hash: z.string().regex(/^[0-9a-f]{64}$/) });
-const ActivateBody = z.object({ versao: z.string().min(1).max(100) });
+const ActivateBody = z.object({
+  versao: z.string().min(1).max(100),
+  /** Sistema ativo (ADR-008): versão ativa que a edição partiu; outra troca no meio recusa. */
+  base: z.string().min(1).max(100).optional(),
+});
 
 function publicSystem(row: SystemRow): SystemDto {
   return {
@@ -388,18 +394,30 @@ export const createVersion: Handler = async (ctx) => {
     return versionResponse(ctx, started.resourceId, started.statusCode);
   }
   if (system.status === "archived") throw conflict("Sistema arquivado não recebe novas versões.");
-  if (system.status === "active") {
-    // Personalização após ativação é P2 (ADR-002): bloqueada até existir com as regras da seção 9.
-    throw new AppError(
-      409,
-      "personalizacao_pos_ativacao_indisponivel",
-      "Alterar a configuração de um sistema ativo ainda não está disponível nesta versão.",
-    );
+  if (body.base) {
+    const ultima = await ctx.env.DB.prepare(
+      "SELECT id FROM model_versions WHERE system_id = ? ORDER BY version DESC LIMIT 1",
+    )
+      .bind(systemId)
+      .first<{ id: string }>();
+    if (ultima && ultima.id !== body.base) {
+      throw new AppError(
+        409,
+        "versao_desatualizada",
+        "O sistema mudou em outra tela. Recarregue para conferir a versão atual.",
+      );
+    }
   }
   const result = validateDraft(body.rascunho);
   if (!result.draft) {
     // Estrutura inválida não vira versão: devolve o diagnóstico para correção.
     return json({ versao: null, issues: result.issues }, { status: 422 });
+  }
+  // Sistema ativo (ADR-008): a versão nova só pode somar ao que está em uso.
+  if (system.status === "active") {
+    requireAdmin(user);
+    const ativa = await configAtiva(ctx, systemId);
+    if (ativa) result.issues.push(...compatibilidadeComAtiva(ativa, result.draft));
   }
 
   const id = crypto.randomUUID();
@@ -415,10 +433,20 @@ export const createVersion: Handler = async (ctx) => {
         draft: result.draft,
         issues: result.issues,
         now,
+        base: body.base,
       })),
       recordStatement(ctx, cmd, started, id, 201, now),
     ]);
   } catch (error) {
+    // Com base, a versão só é inserida se a última ainda for ela; se outra entrou no meio, o
+    // diagnóstico sem versão falha e o lote inteiro é desfeito.
+    if (body.base && !isUnique(error)) {
+      throw new AppError(
+        409,
+        "versao_desatualizada",
+        "O sistema mudou em outra tela. Recarregue para conferir a versão atual.",
+      );
+    }
     if (!isUnique(error)) throw error;
     const replay = await replayAfterRace(ctx, cmd, started);
     if (replay?.kind === "replay")
@@ -443,6 +471,8 @@ export async function versaoStatements(
     draft: ConfigDraft;
     issues: IssueDto[];
     now: number;
+    /** Só grava se a última versão ainda for esta (na mesma instrução: sem janela de corrida). */
+    base?: string | undefined;
   },
 ): Promise<D1PreparedStatement[]> {
   const db = ctx.env.DB;
@@ -455,7 +485,9 @@ export async function versaoStatements(
         `INSERT INTO model_versions
            (id, system_id, version, schema_version, catalog_version, config_json, hash, origin, status, created_by, created_at)
          SELECT ?, ?, COALESCE(MAX(version), 0) + 1, ?, ?, ?, ?, ?, ?, ?, ?
-         FROM model_versions WHERE system_id = ?`,
+         FROM model_versions WHERE system_id = ?
+         HAVING ? IS NULL
+           OR (SELECT id FROM model_versions WHERE system_id = ? ORDER BY version DESC LIMIT 1) = ?`,
       )
       .bind(
         v.id,
@@ -469,6 +501,9 @@ export async function versaoStatements(
         v.userId,
         v.now,
         v.systemId,
+        v.base ?? null,
+        v.systemId,
+        v.base ?? null,
       ),
     db
       .prepare(
@@ -570,14 +605,25 @@ export const activateSystem: Handler = async (ctx) => {
   requireAdmin(user);
   const systemId = ctx.params.systemId ?? "";
   const system = await requireSystemAccess(ctx.env.DB, user, systemId);
-  const { versao } = parse(ActivateBody, await readJson(ctx.request));
+  const { versao, base } = parse(ActivateBody, await readJson(ctx.request));
   const row = await loadSystem(ctx, systemId);
 
   if (row.status === "active" && row.active_version_id === versao) {
     return json({ sistema: publicSystem(row) });
   }
+  if (system.status === "active") {
+    // A alteração parte de uma versão ativa: se outra foi aplicada no meio, esta não sobrescreve.
+    if (!base || base !== row.active_version_id) {
+      throw new AppError(
+        409,
+        "versao_desatualizada",
+        "O sistema foi alterado em outra tela. Recarregue e confira antes de aplicar.",
+      );
+    }
+    return aplicarAlteracao(ctx, user.id, row, versao);
+  }
   if (system.status !== "draft") {
-    throw conflict("Só um sistema em rascunho pode ser ativado nesta versão do Nexus.");
+    throw conflict("Só um sistema em rascunho ou ativo pode receber uma versão.");
   }
 
   const now = ctx.clock.now();
@@ -610,3 +656,70 @@ export const activateSystem: Handler = async (ctx) => {
   }
   return json({ sistema: publicSystem(after) });
 };
+
+/** Configuração da versão ativa (null se o sistema ainda não foi ativado). */
+async function configAtiva(ctx: RequestContext, systemId: string): Promise<ConfigDraft | null> {
+  const row = await ctx.env.DB.prepare(
+    `SELECT v.config_json FROM systems s JOIN model_versions v ON v.id = s.active_version_id
+     WHERE s.id = ?`,
+  )
+    .bind(systemId)
+    .first<{ config_json: string }>();
+  return row ? (JSON.parse(row.config_json) as ConfigDraft) : null;
+}
+
+/**
+ * Aplica a alteração de um sistema ativo (ADR-008): troca a versão ativa pela nova aprovada, de
+ * uma vez, só se a ativa ainda for a que a pessoa alterou (outra troca no meio recusa) e se a nova
+ * continuar compatível com ela. As operações passam a usar a nova configuração na hora.
+ */
+async function aplicarAlteracao(
+  ctx: RequestContext,
+  userId: string,
+  row: SystemRow,
+  versao: string,
+): Promise<Response> {
+  const db = ctx.env.DB;
+  const nova = await db
+    .prepare("SELECT config_json, status FROM model_versions WHERE id = ? AND system_id = ?")
+    .bind(versao, row.id)
+    .first<{ config_json: string; status: string }>();
+  if (!nova) throw notFound();
+  const ativa = await configAtiva(ctx, row.id);
+  if (ativa) {
+    const incompativel = compatibilidadeComAtiva(
+      ativa,
+      JSON.parse(nova.config_json) as ConfigDraft,
+    );
+    if (incompativel.length) {
+      throw new AppError(409, "alteracao_incompativel", incompativel[0]!.message);
+    }
+  }
+  const now = ctx.clock.now();
+  let changed = 0;
+  try {
+    const [update] = await db.batch([
+      db
+        .prepare(
+          `UPDATE systems SET active_version_id = ?, updated_at = ?
+           WHERE id = ? AND status = 'active' AND active_version_id IS ?`,
+        )
+        .bind(versao, now, row.id, row.active_version_id),
+      db
+        .prepare(
+          "INSERT INTO audit_events (system_id, actor_id, action, target_type, target_id, created_at) SELECT ?, ?, 'system.updated', 'model_version', ?, ? WHERE changes() = 1",
+        )
+        .bind(row.id, userId, versao, now),
+    ]);
+    changed = update?.meta.changes ?? 0;
+  } catch (error) {
+    triggerConflict(error, {
+      versao_nao_aprovada: "Só uma versão aprovada deste sistema pode ser aplicada.",
+    });
+  }
+  const depois = await loadSystem(ctx, row.id);
+  if (changed === 0 && depois.active_version_id !== versao) {
+    throw conflict("O sistema foi alterado em outra tela. Recarregue e confira.");
+  }
+  return json({ sistema: publicSystem(depois) });
+}

@@ -1,7 +1,7 @@
 // Catálogo fechado do Nexus (seção 5 da especificação). Tudo o que uma configuração pode usar
 // está aqui; o que não está não é criado silenciosamente — vira necessidade fora do catálogo.
 
-export const CATALOG_VERSION = "2026.11.4";
+export const CATALOG_VERSION = "2026.11.5";
 
 export const MODULES = [
   "clientes",
@@ -47,6 +47,24 @@ export const OPTIONAL_MODULES: Record<TemplateId, readonly ModuleId[]> = {
   servicos: ["financeiro"],
   comercio_com_servicos: ["pagamentos", "fornecedores", "financeiro"],
 };
+
+/**
+ * Nomes das telas e colunas que o sistema pode adaptar ao negócio (pedido do dono, 2026-11-14):
+ * só o visual muda; o banco continua com os nomes padrão. Ex.: numa loja de carros, o produto vira
+ * "Veículo" e o preço de varejo, "Preço de venda". A IA sugere; o dono ajusta na revisão.
+ */
+export const ROTULOS_CAMPOS = {
+  "produtos.item": { padrao: "Produto", modulo: "produtos" },
+  "produtos.nome": { padrao: "Nome", modulo: "produtos" },
+  "produtos.varejo": { padrao: "Preço de varejo", modulo: "produtos" },
+  "produtos.atacado": { padrao: "Preço de atacado", modulo: "produtos" },
+  "produtos.caixa": { padrao: "Unidades por caixa", modulo: "produtos" },
+  "clientes.nome": { padrao: "Nome", modulo: "clientes" },
+  "profissionais.nome": { padrao: "Nome", modulo: "profissionais" },
+  "fornecedores.nome": { padrao: "Nome", modulo: "fornecedores" },
+} as const satisfies Record<string, { padrao: string; modulo: ModuleId }>;
+export type RotuloCampo = keyof typeof ROTULOS_CAMPOS;
+export const ROTULOS_CAMPOS_CHAVES = Object.keys(ROTULOS_CAMPOS) as [RotuloCampo, ...RotuloCampo[]];
 
 /** Formas de pagamento que a regra `formas_pagamento` pode aceitar. */
 export const PAYMENT_METHODS = [

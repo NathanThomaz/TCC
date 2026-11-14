@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { AssuntoDto, EstadoPedidoDto, PedidoDto } from "../../shared/api";
+import { topicoGravado } from "../../shared/api";
 import { authenticate, requireAdmin, requireSystemAccess, type AuthUser } from "../auth/session";
 import { readJson } from "../http/body";
 import { conflict, notFound } from "../http/errors";
@@ -119,7 +120,7 @@ export function inserirPedido(
         p.origem,
         p.mensagem,
         p.titulo,
-        p.assunto,
+        p.assunto ? topicoGravado(p.assunto) : null,
         p.pedidoOriginal,
         p.contexto,
         p.regraProposta,

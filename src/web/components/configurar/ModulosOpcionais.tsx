@@ -55,7 +55,9 @@ export function ModulosOpcionais({
   sugerido,
   onSugerir,
   onConfirmar,
+  travados = [],
 }: PassoProps & {
+  travados?: readonly Modulo[];
   sugerido: boolean;
   onSugerir: (ligado: boolean) => void;
   onConfirmar: () => void;
@@ -95,6 +97,8 @@ export function ModulosOpcionais({
               <Switch
                 id={id}
                 checked={ligado}
+                // Módulo já em uso num sistema ativo não é desligado (há dados ligados a ele).
+                disabled={ligado && travados.includes(m)}
                 aria-describedby={`${id}-desc`}
                 onCheckedChange={(v) => {
                   set((d) => alternarOpcional(d, m, v));

@@ -8,18 +8,26 @@ export const ORDEM_ASSUNTOS: AssuntoDto[] = [
   "negocio",
   "produtos_precos",
   "pedidos_estoque",
+  "vendas_pagamentos",
   "clientes",
   "atendimentos",
+  "modulos_extras",
+  "regras",
   "aparencia",
+  "revisao",
 ];
 
 export const ROTULO_ASSUNTO: Record<AssuntoDto, string> = {
   negocio: "Seu negócio",
   produtos_precos: "Produtos e preços",
   pedidos_estoque: "Pedidos e estoque",
+  vendas_pagamentos: "Vendas e pagamentos",
   clientes: "Clientes",
   atendimentos: "Atendimentos",
+  modulos_extras: "Módulos extras",
+  regras: "Regras do negócio",
   aparencia: "Aparência",
+  revisao: "Revisão final",
 };
 
 /** Cadastro ligado a cada assunto: o resumo mostra o que já vem pronto nele. */
@@ -41,11 +49,14 @@ export function assuntosDaEntrevista(e: Pick<CriacaoApiBody, "requisitos" | "ass
   const requisitos = e.requisitos ?? [];
   const usaAtendimentos =
     e.assuntoAtual === "atendimentos" || requisitos.some((r) => r.assunto === "atendimentos");
-  return ORDEM_ASSUNTOS.filter((a) => a !== "atendimentos" || usaAtendimentos).map((id) => {
+  const ordem = ORDEM_ASSUNTOS.filter((a) => a !== "atendimentos" || usaAtendimentos);
+  const atual = e.assuntoAtual ? ordem.indexOf(e.assuntoAtual) : -1;
+  return ordem.map((id, i) => {
+    // Feita: tem informação no resumo ou a conversa já passou dela (ex.: módulos extras recusados).
     const estado: EstadoAssunto =
       id === e.assuntoAtual
         ? "atual"
-        : requisitos.some((r) => r.assunto === id)
+        : requisitos.some((r) => r.assunto === id) || (atual >= 0 && i < atual)
           ? "feito"
           : "pendente";
     return { id, rotulo: ROTULO_ASSUNTO[id], estado };

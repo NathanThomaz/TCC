@@ -236,6 +236,37 @@ describe("conversa e requisitos", () => {
     expect(uso.results[0]!.cost_micro_brl).toBe(custoMicroBrl(1200, 400));
   });
 
+  it("etapas novas: módulo extra fica no resumo pela etapa; duas perguntas viram uma só", async () => {
+    roteiro.push(
+      levantamento({
+        resposta:
+          "Anotei o financeiro. Qual o nome da sua loja e qual cor principal você quer usar?",
+        respostas_rapidas: ["Azul", "Verde"],
+        assunto_atual: "modulos_extras",
+        perguntas: ["Qual o nome da sua loja e qual cor?"],
+        requisitos: [
+          {
+            codigo: null,
+            texto: "Controlar contas a pagar e a receber (Financeiro)",
+            assunto: "modulos_extras",
+            titulo: "Módulo Financeiro",
+          },
+        ],
+      }),
+    );
+    const r = await acao(c("/mensagens"), { revisao: 1, texto: "Quero o financeiro" });
+    expect(r.status).toBe(201);
+    expect(r.body.mensagens!.at(-1)).toMatchObject({
+      texto: "Anotei o financeiro. Qual o nome da sua loja?",
+      respostasRapidas: [],
+    });
+    expect(r.body.assuntoAtual).toBe("modulos_extras");
+    expect(r.body.requisitos![0]).toMatchObject({ assunto: "modulos_extras" });
+    // No banco, topic guarda o assunto original equivalente (CHECK da 0006); a etapa vai em stage.
+    const linha = await env.DB.prepare("SELECT topic, stage FROM requirements LIMIT 1").first();
+    expect(linha).toEqual({ topic: "negocio", stage: "modulos_extras" });
+  });
+
   it("T10: repetir a mesma mensagem (mesma chave) não chama a IA de novo nem duplica", async () => {
     roteiro.push(levantamento({ requisitos: [{ codigo: null, texto: TEXTOS[0] }] }));
     // Mesmo corpo (inclusive a revisão vista) e mesma chave: é a mesma intenção repetida.

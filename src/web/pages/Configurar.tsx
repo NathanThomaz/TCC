@@ -59,13 +59,26 @@ export function Configurar() {
   const [draft, setDraft] = useState<ConfigDraft | null>(null);
   const [sugestoes, setSugestoesEstado] = useState<Sugerida[]>([]);
   const [resultado, setResultado] = useState<Resultado | null>(null);
+  // Versão ativa no início da alteração (ADR-008): fixada uma vez, para outra troca no meio ser
+  // detectada ao aplicar, mesmo que a tela recarregue os dados do sistema.
+  const [versaoBase, setVersaoBase] = useState<string | null>(null);
   const tituloRef = useRef<HTMLHeadingElement>(null);
-  const chave = `nexus:rascunho:${id}`;
-  const chaveSugestoes = `nexus:sugestoes:${id}`;
+  const ativo = q.data?.sistema.status === "active";
+  // Alteração de sistema ativo (ADR-008) guarda o rascunho à parte da criação.
+  const chave = `nexus:${ativo ? "alteracao" : "rascunho"}:${id}`;
+  const chaveSugestoes = `nexus:${ativo ? "alteracao-sugestoes" : "sugestoes"}:${id}`;
+  // Módulos já em uso no sistema ativo: não podem ser desligados (há dados ligados a eles).
+  const travados = ativo ? (q.data?.ultimaConfig?.modulos ?? []) : [];
 
   // Carrega o rascunho guardado (ou a última versão, ou o padrão) uma única vez, durante a
   // renderização (estado derivado com guarda, sem efeito em cascata).
   if (!draft && q.data) {
+    // A base acompanha o rascunho: reabrir um rascunho antigo mantém a versão de onde ele partiu.
+    const chaveBase = `${chave}:base`;
+    const baseSalva = ler<string>(chaveBase);
+    const base = baseSalva ?? q.data.sistema.versaoAtiva;
+    setVersaoBase(base);
+    if (!baseSalva && base) gravar(chaveBase, base);
     const salvo = ler<ConfigDraft>(chave);
     if (salvo) {
       setDraft(salvo);
@@ -104,7 +117,7 @@ export function Configurar() {
     tituloRef.current?.focus();
   }, [passo]);
 
-  if (q.isPending || (q.data && !draft && q.data.sistema.status === "draft"))
+  if (q.isPending || (q.data && !draft && q.data.sistema.status !== "archived"))
     return (
       <div aria-busy="true" aria-label="Carregando">
         <Skeleton className="mb-6 h-10 w-72" />
@@ -112,7 +125,7 @@ export function Configurar() {
       </div>
     );
   if (q.isError) return <ErrorState mensagem={q.error.message} onTentar={() => void q.refetch()} />;
-  if (q.data.sistema.status !== "draft" || !draft)
+  if (q.data.sistema.status === "archived" || !draft)
     return (
       <div
         role="note"
@@ -120,7 +133,7 @@ export function Configurar() {
       >
         <Info className="size-5 shrink-0 text-info" aria-hidden />
         <p>
-          Alterar a configuração de um sistema ativo ainda não está disponível nesta versão.{" "}
+          Este sistema está arquivado e não pode ser configurado.{" "}
           <Link to="/sistemas/$id" params={{ id }} className="font-medium text-primary underline">
             Voltar ao sistema
           </Link>
@@ -149,14 +162,20 @@ export function Configurar() {
         <ArrowLeft className="size-4" aria-hidden /> {q.data.sistema.nome}
       </Link>
       <PageHeader
-        titulo="Configurar sozinho"
-        descricao="Modo avançado: escolha o modelo, ajuste os módulos e revise. O rascunho é guardado entre os passos."
+        titulo={ativo ? "Alterar sistema" : "Configurar sozinho"}
+        descricao={
+          ativo
+            ? "Inclua módulos, mude regras, campos e nomes. Os dados continuam; as telas usam a versão nova assim que você aplicar."
+            : "Modo avançado: escolha o modelo, ajuste os módulos e revise. O rascunho é guardado entre os passos."
+        }
         acoes={
-          <Button asChild variant="outline">
-            <Link to="/sistemas/$id/criar" params={{ id }}>
-              <Bot aria-hidden /> Conversar com o assistente
-            </Link>
-          </Button>
+          ativo ? undefined : (
+            <Button asChild variant="outline">
+              <Link to="/sistemas/$id/criar" params={{ id }}>
+                <Bot aria-hidden /> Conversar com o assistente
+              </Link>
+            </Button>
+          )
         }
       />
       <StepIndicator
@@ -179,7 +198,7 @@ export function Configurar() {
           {PASSOS[passo - 1]}
         </h2>
         <div className="mt-3">
-          {passo === 1 && <PassoModelo draft={draft} set={trocarModelo} />}
+          {passo === 1 && <PassoModelo draft={draft} set={trocarModelo} travado={ativo} />}
           {passo === 2 && (
             <PassoAjustes
               draft={draft}
@@ -187,6 +206,7 @@ export function Configurar() {
               sistemaId={id}
               sugestoes={sugestoes}
               setSugestoes={setSugestoes}
+              travados={travados}
             />
           )}
           {passo === 3 && (
@@ -196,6 +216,9 @@ export function Configurar() {
               resultado={resultado}
               setResultado={setResultado}
               irPara={irPara}
+              alteracao={ativo}
+              chavesLocais={[chave, chaveSugestoes, `${chave}:base`]}
+              versaoBase={versaoBase}
             />
           )}
         </div>

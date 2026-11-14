@@ -7,6 +7,7 @@ import type {
   RequisitoDto,
   VersionDto,
 } from "../../shared/api";
+import { topicoGravado } from "../../shared/api";
 import { LIMITS } from "../../shared/contract/catalog";
 import { configDraftGeminiSchema } from "../../shared/contract/gemini-schema";
 import type { ConfigDraft } from "../../shared/contract/schema";
@@ -152,7 +153,7 @@ async function mensagens(ctx: RequestContext, conversaId: string): Promise<Mensa
 
 async function requisitosVivos(ctx: RequestContext, systemId: string): Promise<RequisitoDto[]> {
   const { results } = await ctx.env.DB.prepare(
-    `SELECT code, text, status, origin, topic, label, suggested FROM requirements
+    `SELECT code, text, status, origin, COALESCE(stage, topic) AS topic, label, suggested FROM requirements
      WHERE system_id = ? AND status <> 'substituido' ORDER BY length(code), code`,
   )
     .bind(systemId)
@@ -381,8 +382,8 @@ function inserirRequisito(
     .prepare(
       `INSERT INTO requirements
          (id, system_id, code, text, status, origin, origin_message_id, confirmed_by, confirmed_at,
-          topic, label, suggested, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          topic, stage, label, suggested, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .bind(
       crypto.randomUUID(),
@@ -394,6 +395,8 @@ function inserirRequisito(
       r.mensagem,
       r.confirmadoPor,
       r.confirmadoPor ? r.now : null,
+      // topic aceita só os seis assuntos originais (0006); a etapa completa vai em stage (0009).
+      r.assunto ? topicoGravado(r.assunto) : null,
       r.assunto,
       r.titulo,
       r.sugestao ? 1 : 0,
@@ -546,9 +549,15 @@ export const enviarMensagem: Handler = async (ctx) => {
         sugestao: r.sugestao,
         now,
       });
+    // Uma pergunta por mensagem, garantida aqui e não só pedida à IA (pedido do dono).
+    const msg =
+      ia.assunto_atual === "revisao"
+        ? { texto: comAvisoDeAlteracao(ia.resposta), cortada: false }
+        : umaPergunta(ia.resposta);
     const dados: DadosMensagem = {
-      perguntas: ia.perguntas,
-      respostasRapidas: ia.respostas_rapidas,
+      perguntas: msg.cortada ? [] : ia.perguntas,
+      // Botões que respondiam à pergunta cortada sairiam fora de contexto.
+      respostasRapidas: msg.cortada ? [] : ia.respostas_rapidas,
       assunto: ia.assunto_atual,
       prontoParaRevisar: ia.pronto_para_revisar,
       sugestoes: [...mescla.novos, ...mescla.reescritos]
@@ -560,7 +569,7 @@ export const enviarMensagem: Handler = async (ctx) => {
       await db.batch([
         guarda(db, c.systemId, body.revisao),
         inserirMensagem(idUsuario, "usuario", body.texto, {}),
-        inserirMensagem(idIa, "assistente", ia.resposta, dados),
+        inserirMensagem(idIa, "assistente", msg.texto, dados),
         ...mescla.reescritos.flatMap((r) => [substituir(db, c.systemId, r.codigo, now), daIa(r)]),
         ...mescla.novos.map(daIa),
         ...pedidos.flatMap((p) => p.instrucoes),
@@ -581,7 +590,7 @@ export const enviarMensagem: Handler = async (ctx) => {
 
 async function requisitoVivo(ctx: RequestContext, c: Contexto, codigo: string) {
   const row = await ctx.env.DB.prepare(
-    "SELECT code, text, status, origin, topic, label, suggested FROM requirements WHERE system_id = ? AND code = ? AND status <> 'substituido'",
+    "SELECT code, text, status, origin, COALESCE(stage, topic) AS topic, label, suggested FROM requirements WHERE system_id = ? AND code = ? AND status <> 'substituido'",
   )
     .bind(c.systemId, codigo)
     .first<RequisitoRow>();
@@ -958,3 +967,36 @@ export const corrigirConfiguracao: Handler = async (ctx) => {
     schema: configDraftGeminiSchema(),
   });
 };
+
+/**
+ * Deixa a mensagem com UMA pergunta: corta depois da primeira interrogação e separa duas perguntas
+ * unidas por "e qual/e como/e quanto…" ("Qual o nome da loja e qual a cor?" → "Qual o nome da
+ * loja?"). "onde e quando", "quanto… e quanto…" e "e que" ficam: costumam ser uma pergunta só.
+ * É uma rede de segurança para o padrão mais comum; a regra principal está no prompt. `cortada` diz se havia uma segunda pergunta (os botões dela não valem mais).
+ */
+export function umaPergunta(texto: string): { texto: string; cortada: boolean } {
+  const t = texto.trim();
+  const fim = t.indexOf("?");
+  if (fim < 0) return { texto: t, cortada: false };
+  let resultado = t.slice(0, fim + 1);
+  let cortada = t.slice(fim + 1).includes("?");
+  // Início da frase da pergunta (depois do último ponto final ou exclamação).
+  const inicio = Math.max(resultado.lastIndexOf(". "), resultado.lastIndexOf("! ")) + 1;
+  const pergunta = resultado.slice(inicio);
+  const emenda = /,?\s+e\s+(qual|quais|como|que cor)\b/i.exec(pergunta);
+  if (emenda && emenda.index > 3) {
+    resultado = `${resultado.slice(0, inicio + emenda.index).trimEnd()}?`;
+    cortada = true;
+  }
+  return { texto: resultado, cortada };
+}
+
+/** Fecho fixo da revisão final: como conferir e que dá para alterar depois (pedido do dono). */
+export const AVISO_REVISAO =
+  "No resumo ao lado você confere tudo antes de criar. Depois de criado, você pode alterar o sistema quando quiser em Sistemas → o seu sistema → “Alterar sistema” (por exemplo, para incluir um módulo que esqueceu).";
+
+/** A revisão final sempre diz que o sistema pode ser alterado depois, sem depender da IA. */
+export function comAvisoDeAlteracao(texto: string): string {
+  const t = texto.trim();
+  return /alterar sistema/i.test(t) ? t : `${t} ${AVISO_REVISAO}`;
+}

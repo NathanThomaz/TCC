@@ -16,6 +16,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link } from "@/lib/rotas";
 import { rotuloModulo, useApp } from "./Aplicacao";
+import { rotuloCampo } from "@/lib/nexus";
 
 // Movimentos de estoque (seção 11): entradas, correções, baixas de venda e estornos, com
 // responsável, data e saldo depois de cada um. Entradas e correções ficam na tela de produtos.
@@ -86,7 +87,7 @@ export function Estoque() {
         <Tabela
           cabecalho={[
             "Data",
-            "Produto",
+            rotuloCampo(app.config, "produtos.item"),
             "Tipo",
             "Quantidade",
             "Saldo depois",
