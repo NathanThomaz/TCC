@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { ContaDto, ContasApiBody } from "../../shared/api";
-import { LoginExistenteError } from "../auth/firebase-admin";
+import { ConviteNaoEnviadoError, LoginExistenteError } from "../auth/firebase-admin";
 import { authenticate, ehDonoDoNexus, requireAdmin, type AuthUser } from "../auth/session";
 import { readJson } from "../http/body";
 import { AppError, conflict, notFound, unavailable, validationFailed } from "../http/errors";
@@ -115,6 +115,14 @@ async function enviarConvite(
     return true;
   } catch (error) {
     if (error instanceof LoginExistenteError) throw loginDaPropriaPessoa();
+    if (error instanceof ConviteNaoEnviadoError) {
+      // O login é desta conta: guarda o uid para a repetição reenviar o link a ele.
+      await ctx.env.DB.prepare(
+        "UPDATE users SET invited_uid = COALESCE(invited_uid, ?), updated_at = max(updated_at, ?) WHERE id = ?",
+      )
+        .bind(error.uid, ctx.clock.now(), conta.id)
+        .run();
+    }
     ctx.log.warn("conta.convite_falhou", { error });
     return false;
   }

@@ -125,6 +125,14 @@ export class LoginExistenteError extends Error {
   }
 }
 
+/** O login foi criado, mas o link não saiu: o uid volta para ser guardado e retomado. */
+export class ConviteNaoEnviadoError extends Error {
+  constructor(public readonly uid: string) {
+    super("convite não enviado");
+    this.name = "ConviteNaoEnviadoError";
+  }
+}
+
 /** O que a gestão de contas precisa do Firebase (seção 7). */
 export interface AccountAdmin {
   /**
@@ -213,7 +221,11 @@ export function createAccountAdmin(options: {
       try {
         return await fn(...args);
       } catch (error) {
-        if (error instanceof AccountLookupError || error instanceof LoginExistenteError)
+        if (
+          error instanceof AccountLookupError ||
+          error instanceof LoginExistenteError ||
+          error instanceof ConviteNaoEnviadoError
+        )
           throw error;
         throw new AccountLookupError(
           `falha na integração com o Firebase: ${error instanceof Error ? error.name : "erro"}`,
@@ -239,7 +251,7 @@ export function createAccountAdmin(options: {
           body: JSON.stringify({ requestType: "PASSWORD_RESET", email }),
         },
       );
-      if (!envio.ok) throw new AccountLookupError(`sendOobCode falhou (${envio.status})`);
+      if (!envio.ok) throw new ConviteNaoEnviadoError(uid);
       return uid;
     }),
     findUid: segura(async (email: string) => {

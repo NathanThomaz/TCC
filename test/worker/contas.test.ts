@@ -9,7 +9,11 @@ import type {
 import type { VerifiedToken } from "../../src/worker/auth/firebase-token";
 import { InvalidTokenError } from "../../src/worker/auth/firebase-token";
 import { createApp } from "../../src/worker/app";
-import { AccountLookupError, LoginExistenteError } from "../../src/worker/auth/firebase-admin";
+import {
+  AccountLookupError,
+  ConviteNaoEnviadoError,
+  LoginExistenteError,
+} from "../../src/worker/auth/firebase-admin";
 import { DISTRIBUIDORA } from "../fixtures/distribuidora";
 import { limparBanco } from "../limpar-banco";
 
@@ -45,6 +49,8 @@ const NOVO = "token-novo-0000000000000";
 /** Firebase simulado: registra convites, desativações e reativações. */
 let chamadas: string[] = [];
 let falharConvite = false;
+/** O login nasce no Firebase, mas o e-mail do link não sai. */
+let semEnvio = false;
 let falharDesativar = false;
 let falharLookup = false;
 let aoConsultar: (() => Promise<unknown>) | undefined;
@@ -73,6 +79,10 @@ const app = createApp({
           return Promise.reject(new LoginExistenteError());
         }
         chamadas.push(`convite:${email}`);
+        if (semEnvio) {
+          loginsExistentes.set(email, `fb-${email}`);
+          return Promise.reject(new ConviteNaoEnviadoError(`fb-${email}`));
+        }
         return falharConvite ? Promise.reject(new Error("rede")) : Promise.resolve(`fb-${email}`);
       },
       disable: (uid) => {
@@ -152,6 +162,7 @@ beforeEach(async () => {
   falharLookup = false;
   aoConsultar = undefined;
   aposConsultarLogin = undefined;
+  semEnvio = false;
   firebaseDesativado = new Set();
   loginsExistentes = new Map();
   await limparBanco();
@@ -488,6 +499,16 @@ describe("contas com senha e administradores (pedido do dono, 2026-11-13)", () =
       expect(senha.body.error!.code).toBe("email_ja_tem_login");
       expect(chamadas).toEqual([]);
     });
+  });
+
+  it("convite cujo link não saiu é retomado pelo mesmo administrador (login guardado)", async () => {
+    semEnvio = true;
+    const r = await call("POST", "/contas", ADMIN2, { email: "novo@example.com" });
+    expect(r.body.conviteEnviado).toBe(false);
+    semEnvio = false;
+    const reenvio = await call("POST", `/contas/${r.body.conta!.id}/convite`, ADMIN2);
+    expect(reenvio.status).toBe(200);
+    expect(reenvio.body.conviteEnviado).toBe(true);
   });
 
   it("login criado entre a conferência e a criação do acesso também é recusado", async () => {

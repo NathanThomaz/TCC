@@ -34,9 +34,15 @@ export async function tokenAtual(): Promise<string | null> {
 
 export async function chamar<T>(
   caminho: string,
-  opcoes: { method?: "GET" | "POST" | "PATCH"; body?: unknown; chave?: string } = {},
+  opcoes: {
+    method?: "GET" | "POST" | "PATCH";
+    body?: unknown;
+    chave?: string;
+    /** Token de um login específico (senão, o do login atual). */
+    token?: string;
+  } = {},
 ): Promise<T> {
-  const token = await tokenAtual();
+  const token = opcoes.token ?? (await tokenAtual());
   const headers: Record<string, string> = {};
   if (token) headers.authorization = `Bearer ${token}`;
   if (opcoes.body !== undefined) headers["content-type"] = "application/json";

@@ -42,10 +42,14 @@ export function paraUsuario(s: SessionResponse): Usuario {
   };
 }
 
-/** A pessoa ajusta o próprio nome. */
-export async function salvarNome(nome: string): Promise<Usuario> {
+/** A pessoa ajusta o próprio nome (com `token`, no login daquele token). */
+export async function salvarNome(nome: string, token?: string): Promise<Usuario> {
   return paraUsuario(
-    await chamar<SessionResponse>("/session", { method: "PATCH", body: { nome } }),
+    await chamar<SessionResponse>("/session", {
+      method: "PATCH",
+      body: { nome },
+      ...(token ? { token } : {}),
+    }),
   );
 }
 
@@ -176,11 +180,12 @@ async function aplicarNomePendente(usuario: Usuario): Promise<Usuario> {
     guardar(chave, null);
     return usuario;
   }
-  // Resposta atrasada de uma sessão anterior: o PATCH iria com o login atual, de outra pessoa.
-  const atual = (await obterAuth())?.currentUser?.email?.toLowerCase();
-  if (atual !== usuario.email.toLowerCase()) return usuario;
+  // Resposta atrasada de uma sessão anterior: o PATCH vai com o token do login conferido (o mesmo
+  // e-mail), nunca com o de quem entrou depois.
+  const login = (await obterAuth())?.currentUser;
+  if (login?.email?.toLowerCase() !== usuario.email.toLowerCase()) return usuario;
   try {
-    const atualizado = await salvarNome(nome);
+    const atualizado = await salvarNome(nome, await login.getIdToken());
     guardar(chave, null);
     return atualizado;
   } catch {
