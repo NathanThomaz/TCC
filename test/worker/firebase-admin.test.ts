@@ -217,7 +217,7 @@ describe("createAccountAdmin", () => {
   it("convite cujo envio cai (erro ou rede) devolve o uid criado para ser guardado", async () => {
     const google = fakeGoogle({ users: [], localId: "uid-novo" });
     const semRede: typeof fetch = (url, init) =>
-      String(url).includes("sendOobCode")
+      (url instanceof Request ? url.url : url.toString()).includes("sendOobCode")
         ? Promise.reject(new TypeError("rede"))
         : google.fetcher(url, init);
     const erro = await admin(semRede)
