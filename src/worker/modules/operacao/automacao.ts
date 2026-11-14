@@ -163,6 +163,7 @@ export function montarProposta(
     ia.forma_pagamento && formas.includes(ia.forma_pagamento) ? ia.forma_pagamento : null;
   return {
     cliente: cliente ? { id: cliente.id, nome: cliente.name } : null,
+    clienteCitado: ia.cliente !== null || ia.cliente_nao_encontrado !== null,
     itens: [...itens.values()],
     formaPagamento: forma,
     naoEncontrados,

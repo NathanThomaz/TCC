@@ -106,6 +106,8 @@ export interface ProdutoDto {
 /** POST /vendas/interpretar — venda ditada ou escrita, entendida pela IA para conferir. */
 export interface VendaInterpretadaDto {
   cliente: { id: string; nome: string } | null;
+  /** A pessoa citou um cliente (mesmo que não encontrado): a tela não mantém o anterior. */
+  clienteCitado: boolean;
   itens: { produto: string; nome: string; caixas: number; unidades: number }[];
   formaPagamento: PaymentMethod | null;
   /** Trechos que a IA não ligou a nenhum produto ou cliente cadastrado. */

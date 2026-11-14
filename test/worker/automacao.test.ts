@@ -192,6 +192,7 @@ describe("venda ditada", () => {
     expect(r.body.venda!.produtos.map((x) => x.id)).toEqual([cerveja.id]);
     expect(r.body.venda).toMatchObject({
       cliente: { id: bar.id, nome: "Bar do Zé" },
+      clienteCitado: true,
       itens: [{ produto: cerveja.id, nome: "Cerveja lata", caixas: 2, unidades: 3 }],
       formaPagamento: null,
       naoEncontrados: ["gelo"],
@@ -239,6 +240,7 @@ describe("montarProposta", () => {
     );
     expect(r).toEqual({
       cliente: null,
+      clienteCitado: true,
       itens: [{ produto: "p2", nome: "Cerveja", caixas: 0, unidades: 1 }],
       formaPagamento: null,
       naoEncontrados: [

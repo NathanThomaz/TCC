@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -327,9 +327,15 @@ function Rascunho({ venda, servicos }: { venda: VendaDto | null; servicos: Atend
     somarItens([{ produto: p.id, caixas: 0, unidades: 1 }]);
     toast.success(`${p.nome}: +1 unidade.`);
   };
+  // A resposta da última compra só vale se o cliente pedido ainda for o escolhido.
+  const clienteAtual = useRef(cliente);
+  useEffect(() => {
+    clienteAtual.current = cliente;
+  }, [cliente]);
   const repetir = useMutation({
-    mutationFn: () => ultimaCompra(app.id, cliente),
-    onSuccess: (ultima) => {
+    mutationFn: (pedido: string) => ultimaCompra(app.id, pedido),
+    onSuccess: (ultima, pedido) => {
+      if (pedido !== clienteAtual.current) return;
       if (!ultima || ultima.itens.length === 0) {
         return toast.info("Este cliente ainda não tem compra concluída para repetir.");
       }
@@ -419,6 +425,9 @@ function Rascunho({ venda, servicos }: { venda: VendaDto | null; servicos: Atend
                 const c = v.cliente;
                 setClientesExtras((atuais) => [...atuais.filter((a) => a.id !== c.id), c]);
                 setCliente(c.id);
+              } else if (v.clienteCitado) {
+                // Citou um cliente que não existe: não deixa a venda ir para o anterior.
+                setCliente("");
               }
               if (v.itens.length) {
                 setLinhas(
@@ -479,7 +488,7 @@ function Rascunho({ venda, servicos }: { venda: VendaDto | null; servicos: Atend
             variant="outline"
             size="sm"
             disabled={repetir.isPending}
-            onClick={() => repetir.mutate()}
+            onClick={() => repetir.mutate(cliente)}
           >
             {repetir.isPending ? (
               <Loader2 className="animate-spin" aria-hidden />
