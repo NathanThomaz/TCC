@@ -250,15 +250,18 @@ export function rotuloCampo(
 
 /**
  * Máscara de dinheiro enquanto digita: pontos nos milhares e vírgula com até 2 casas
- * ("1500" → "1.500"; "1500,5" → "1.500,5"). Um ponto digitado no fim vira a vírgula, e um valor
- * colado com ponto decimal ("1500.50") é entendido como decimal. `apagando`: a pessoa apagou um
- * caractere ("1.500" → "1.50" continua sendo 150, não 1,50).
+ * ("1500" → "1.500"; "1500,5" → "1.500,5"). Com `pontoDecimal` (o ponto foi digitado ou colado
+ * agora), um ponto no fim vira a vírgula e um valor com ponto decimal ("1500.50") é decimal. Sem
+ * ele, os pontos são os milhares que a própria máscara pôs: apagar ou trocar dígitos ("1.500" →
+ * "1.50" ou "1.2") continua um número inteiro (150, 12).
  */
-export function mascararReais(texto: string, apagando = false): string {
+export function mascararReais(texto: string, pontoDecimal = true): string {
   let t = texto.replace(/[^\d,.]/g, "");
-  if (t.endsWith(".")) t = `${t.slice(0, -1)},`;
-  // Sem vírgula, um único ponto seguido de 1 ou 2 dígitos é decimal (colado de outro lugar).
-  if (!apagando && !t.includes(",") && /^\d+\.\d{1,2}$/.test(t)) t = t.replace(".", ",");
+  if (pontoDecimal) {
+    if (t.endsWith(".")) t = `${t.slice(0, -1)},`;
+    // Sem vírgula, um único ponto seguido de 1 ou 2 dígitos é decimal (colado de outro lugar).
+    if (!t.includes(",") && /^\d+\.\d{1,2}$/.test(t)) t = t.replace(".", ",");
+  }
   t = t.replace(/\./g, "");
   const virgula = t.indexOf(",");
   const inteiro = (virgula < 0 ? t : t.slice(0, virgula)).replace(/^0+(?=\d)/, "").slice(0, 9);

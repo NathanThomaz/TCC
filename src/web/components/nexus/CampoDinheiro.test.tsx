@@ -69,6 +69,14 @@ describe("CampoDinheiro", () => {
     expect(campo.selectionStart).toBe(8);
   });
 
+  it("trocar dígitos selecionados de um milhar não vira decimal", () => {
+    render(<Campo inicial="1.500" />);
+    const campo = screen.getByLabelText<HTMLInputElement>("Valor");
+    campo.focus();
+    digitar(campo, "1.2", 3, "insertText"); // "500" selecionado e trocado por "2"
+    expect(campo.value).toBe("12");
+  });
+
   it("zero à esquerda some sem levar o cursor para o fim", () => {
     render(<Campo inicial="123,45" />);
     const campo = screen.getByLabelText<HTMLInputElement>("Valor");

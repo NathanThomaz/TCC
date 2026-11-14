@@ -71,10 +71,14 @@ export function CampoDinheiro({
       value={valor}
       onChange={(e) => {
         const bruto = e.target.value;
-        // Apagar (pelo tipo do evento; sem ele, pelo tamanho): "1.500" → "1.50" continua 150.
-        const tipo = (e.nativeEvent as InputEvent).inputType;
-        const apagando = tipo ? tipo.startsWith("delete") : bruto.length < valor.length;
-        const mascarado = mascararReais(bruto, apagando);
+        // Ponto decimal só quando ele é novo: colado, ou digitado agora (mais pontos que antes).
+        // Os pontos que já estavam são os milhares da máscara: apagar ou trocar dígitos
+        // ("1.500" → "1.50" ou "1.2") continua um número inteiro.
+        const tipo = (e.nativeEvent as InputEvent).inputType ?? "";
+        const pontos = (t: string) => t.split(".").length - 1;
+        const colado = tipo === "insertFromPaste" || tipo === "insertFromDrop";
+        const pontoNovo = !tipo.startsWith("delete") && (colado || pontos(bruto) > pontos(valor));
+        const mascarado = mascararReais(bruto, pontoNovo);
         cursor.current = posicaoSignificativa(
           bruto,
           e.target.selectionStart ?? bruto.length,

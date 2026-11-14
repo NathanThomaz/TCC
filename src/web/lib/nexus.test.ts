@@ -115,8 +115,11 @@ describe("campo de dinheiro (pedido do dono, 2026-11-14)", () => {
   });
 
   it("apagar um dígito não transforma milhar em decimal", () => {
-    expect(mascararReais("1.50", true)).toBe("150");
-    expect(mascararReais("12.34", true)).toBe("1.234");
+    expect(mascararReais("1.50", false)).toBe("150");
+    expect(mascararReais("12.34", false)).toBe("1.234");
+    // Selecionar "500" de "1.500" e digitar "2": o ponto é o milhar que já estava.
+    expect(mascararReais("1.2", false)).toBe("12");
+    expect(mascararReais("1.", false)).toBe("1");
   });
 
   it("o texto mascarado converte certo mesmo sem sair do campo", () => {
