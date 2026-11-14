@@ -37,6 +37,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { centavosParaReais, reaisParaCentavos } from "@/lib/nexus";
+import { MAX_ITENS_COMPRA, sugestaoDeReposicao } from "@/lib/planilha";
 import { Link } from "@/lib/rotas";
 import { useApp } from "./Aplicacao";
 
@@ -208,6 +209,23 @@ function NovaCompraDialog({ onFechar, onCriada }: { onFechar: () => void; onCria
   });
   const [fornecedor, setFornecedor] = useState("");
   const [linhas, setLinhas] = useState<Linha[]>([linhaVazia()]);
+  const reposicao = sugestaoDeReposicao(produtos.data ?? []);
+  // Produtos abaixo do mínimo entram com a quantidade que leva ao dobro dele e o último custo.
+  const sugerirReposicao = () => {
+    setLinhas(
+      reposicao.slice(0, MAX_ITENS_COMPRA).map(({ produto, unidades }) => ({
+        ...linhaVazia(),
+        produto: produto.id,
+        unidades: String(unidades),
+        custo: produto.custoCentavos ? centavosParaReais(produto.custoCentavos) : "",
+      })),
+    );
+    toast.success(
+      reposicao.length > MAX_ITENS_COMPRA
+        ? `Os ${MAX_ITENS_COMPRA} mais urgentes na lista (limite de uma compra). Registre e sugira de novo para os outros ${reposicao.length - MAX_ITENS_COMPRA}.`
+        : `${reposicao.length} ${reposicao.length === 1 ? "produto" : "produtos"} abaixo do mínimo na lista.`,
+    );
+  };
   const [vencimento, setVencimento] = useState(hojeIso());
   const [observacao, setObservacao] = useState("");
   const chave = useChavePorConteudo();
@@ -273,6 +291,18 @@ function NovaCompraDialog({ onFechar, onCriada }: { onFechar: () => void; onCria
               A quantidade entra no estoque assim que a compra é registrada.
             </DialogDescription>
           </DialogHeader>
+          {reposicao.length > 0 && (
+            <div className="flex flex-wrap items-center gap-3 rounded-lg border border-warning/40 bg-warning-soft p-3 text-sm">
+              <span className="flex-1">
+                {reposicao.length === 1
+                  ? "1 produto está abaixo do mínimo."
+                  : `${reposicao.length} produtos estão abaixo do mínimo.`}
+              </span>
+              <Button type="button" size="sm" variant="outline" onClick={sugerirReposicao}>
+                Sugerir reposição
+              </Button>
+            </div>
+          )}
           {ativos.length === 0 && !fornecedores.isPending ? (
             <p className="text-sm">
               Cadastre um fornecedor antes, em{" "}

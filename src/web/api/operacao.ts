@@ -14,6 +14,8 @@ import type {
   StatusCadastro,
   SystemDto,
   VendaDto,
+  ImportacaoDto,
+  VendaInterpretadaDto,
 } from "../../shared/api";
 import type { FIELD_TYPES, FieldEntity, PaymentMethod } from "../../shared/contract/catalog";
 import type { ConfigDraft } from "../../shared/contract/schema";
@@ -116,6 +118,8 @@ export interface DadosProduto {
   estoqueMinimo: number | null;
   /** Só no cadastro: o que já tem em estoque (vira a primeira entrada). */
   estoqueInicial?: number;
+  /** Código de barras (leitor ou câmera na venda); null sem código. */
+  codigoBarras: string | null;
 }
 
 /** Ajuste de coluna num sistema ativo: renomear (só visual) ou incluir. */
@@ -196,6 +200,65 @@ export interface ItemPedido {
   produto: string;
   caixas: number;
   unidades: number;
+}
+
+// ---- Menos digitação (pedido do dono, 2026-11-14) ----
+
+/** Venda ditada ou escrita: a IA liga o texto aos cadastros; nada é criado. */
+export async function interpretarVenda(sistema: string, texto: string) {
+  const r = await chamar<{ venda: VendaInterpretadaDto }>(`${base(sistema)}/vendas/interpretar`, {
+    method: "POST",
+    body: { texto },
+    chave: novaChave(),
+  });
+  return r.venda;
+}
+
+/** Só os produtos destes ids (completa a tela com os que estão fora da lista carregada). */
+export async function listarProdutosPorIds(sistema: string, ids: string[]): Promise<ProdutoDto[]> {
+  const r = await chamar<OperacaoApiBody>(
+    `${base(sistema)}/produtos?ids=${ids.map(encodeURIComponent).join(",")}`,
+  );
+  return exigir(r.produtos, "produtos");
+}
+
+/** Produto ativo com este código de barras; null se não houver. */
+export async function produtoPorCodigo(sistema: string, codigo: string) {
+  try {
+    const r = await chamar<OperacaoApiBody>(
+      `${base(sistema)}/produtos/codigo/${encodeURIComponent(codigo)}`,
+    );
+    return r.produto ?? null;
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) return null;
+    throw error;
+  }
+}
+
+/** Itens da última venda concluída do cliente (só produtos ativos); null se nunca comprou. */
+export async function ultimaCompra(sistema: string, cliente: string) {
+  const r = await chamar<{
+    ultima: {
+      concluidaEm: number;
+      itens: (ItemPedido & { nome: string })[];
+      /** Os produtos dos itens, completos (a lista da tela tem limite). */
+      produtos: ProdutoDto[];
+    } | null;
+  }>(`${base(sistema)}/clientes/${encodeURIComponent(cliente)}/ultima-compra`);
+  return r.ultima;
+}
+
+export async function importarPlanilha(
+  sistema: string,
+  tipo: "produtos" | "clientes",
+  linhas: unknown[],
+): Promise<ImportacaoDto> {
+  const r = await chamar<{ importacao: ImportacaoDto }>(`${base(sistema)}/${tipo}/importar`, {
+    method: "POST",
+    body: { linhas },
+    chave: novaChave(),
+  });
+  return r.importacao;
 }
 
 export async function listarVendas(sistema: string): Promise<VendaDto[]> {

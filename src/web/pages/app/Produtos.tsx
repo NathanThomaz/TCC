@@ -14,6 +14,7 @@ import {
 } from "@/api/operacao";
 import { CamposForm, ErroApi, Tabela, useChavePorConteudo } from "@/components/app/Comum";
 import { ColunaEditavel, NovaColuna } from "@/components/app/Colunas";
+import { ImportarPlanilha } from "@/components/app/ImportarPlanilha";
 import { CampoDinheiro } from "@/components/nexus/CampoDinheiro";
 import { cn } from "@/lib/utils";
 import { EmptyState, ErrorState, PageHeader } from "@/components/nexus/Estados";
@@ -84,6 +85,7 @@ export function Produtos() {
         }
         acoes={
           <>
+            <ImportarPlanilha tipo="produtos" />
             <NovaColuna entidade="produtos" />
             <Button onClick={() => setDialogo({ tipo: "produto", atual: null })}>
               <Plus aria-hidden /> Novo {rotuloCampo(app.config, "produtos.item").toLowerCase()}
@@ -232,6 +234,7 @@ function ProdutoDialog({ atual, onFechar }: { atual: ProdutoDto | null; onFechar
   const temEstoque = app.config.modulos.includes("estoque");
   const [inicial, setInicial] = useState("");
   const [minimo, setMinimo] = useState(atual?.estoqueMinimo ? String(atual.estoqueMinimo) : "");
+  const [codigo, setCodigo] = useState(atual?.codigoBarras ?? "");
   const [erroLocal, setErroLocal] = useState<string | null>(null);
   const item = rotuloCampo(app.config, "produtos.item").toLowerCase();
 
@@ -258,6 +261,7 @@ function ProdutoDialog({ atual, onFechar }: { atual: ProdutoDto | null; onFechar
         unidadesPorCaixa: regraCaixa && caixa.trim() !== "" ? Number(caixa) : null,
         campos,
         estoqueMinimo: temEstoque ? estoqueMinimo : null,
+        codigoBarras: codigo.trim() || null,
         ...(!atual && temEstoque && estoqueInicial !== null ? { estoqueInicial } : {}),
       };
       return atual
@@ -387,6 +391,24 @@ function ProdutoDialog({ atual, onFechar }: { atual: ProdutoDto | null; onFechar
               </div>
             </div>
           )}
+          <div className="space-y-1.5">
+            <Label htmlFor="produto-codigo">Código de barras (opcional)</Label>
+            <Input
+              id="produto-codigo"
+              value={codigo}
+              maxLength={64}
+              inputMode="numeric"
+              autoComplete="off"
+              placeholder="Passe o leitor no produto ou digite"
+              onChange={(e) => setCodigo(e.target.value)}
+              // O leitor USB termina com Enter: não envia o formulário antes da hora.
+              onKeyDown={(e) => e.key === "Enter" && e.preventDefault()}
+              aria-describedby="dica-codigo"
+            />
+            <p id="dica-codigo" className="text-xs text-muted-foreground">
+              Com o código, a venda aceita o leitor ou a câmera do celular.
+            </p>
+          </div>
           <CamposForm
             config={app.config}
             entidade="produtos"

@@ -15,6 +15,7 @@ import {
 } from "@/api/operacao";
 import { CamposForm, ErroApi, Tabela, useChavePorConteudo } from "@/components/app/Comum";
 import { ColunaEditavel, NovaColuna } from "@/components/app/Colunas";
+import { ImportarPlanilha } from "@/components/app/ImportarPlanilha";
 import { EmptyState, ErrorState, PageHeader } from "@/components/nexus/Estados";
 import { Button } from "@/components/ui/button";
 import {
@@ -157,6 +158,7 @@ export function Pessoas({ tipo }: { tipo: TipoPessoa }) {
         descricao="Inativos continuam no histórico, mas não entram em novas operações."
         acoes={
           <>
+            {tipo === "clientes" && <ImportarPlanilha tipo="clientes" />}
             <NovaColuna entidade={ENTIDADE[tipo]} />
             <Button onClick={() => setEditando("novo")}>
               <Plus aria-hidden /> Novo
