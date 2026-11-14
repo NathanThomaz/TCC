@@ -99,6 +99,24 @@ export interface ProdutoDto {
   custoCentavos: number | null;
   /** Aviso de estoque deste produto (unidades); null usa a regra do sistema, se houver. */
   estoqueMinimo: number | null;
+  /** Código de barras (leitor ou câmera na venda); null sem código. */
+  codigoBarras: string | null;
+}
+
+/** POST /vendas/interpretar — venda ditada ou escrita, entendida pela IA para conferir. */
+export interface VendaInterpretadaDto {
+  cliente: { id: string; nome: string } | null;
+  itens: { produto: string; nome: string; caixas: number; unidades: number }[];
+  formaPagamento: PaymentMethod | null;
+  /** Trechos que a IA não ligou a nenhum produto ou cliente cadastrado. */
+  naoEncontrados: string[];
+}
+
+/** POST /produtos/importar e /clientes/importar. */
+export interface ImportacaoDto {
+  criados: number;
+  /** Nomes que já existiam (não foram alterados). */
+  ignorados: string[];
 }
 
 export interface MovimentoDto {

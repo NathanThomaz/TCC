@@ -54,6 +54,12 @@ import {
   salvarItens,
 } from "./modules/operacao/vendas";
 import { editarPerfil, getSession } from "./modules/session";
+import {
+  importarClientes,
+  importarProdutos,
+  interpretarVenda,
+  ultimaCompra,
+} from "./modules/operacao/automacao";
 import { ajustarColuna } from "./modules/colunas";
 import { definirLimite, obterConsumo } from "./modules/consumo";
 import {
@@ -236,6 +242,11 @@ export function createApp(
       { method: "POST", path: `${O}/estoque/correcoes`, handler: corrigirSaldo },
       { method: "GET", path: `${O}/vendas`, handler: listarVendas },
       { method: "POST", path: `${O}/vendas`, handler: criarVenda },
+      // Menos digitação (pedido do dono, 2026-11-14): venda ditada, última compra, planilhas.
+      { method: "POST", path: `${O}/vendas/interpretar`, handler: interpretarVenda },
+      { method: "GET", path: `${O}/clientes/:id/ultima-compra`, handler: ultimaCompra },
+      { method: "POST", path: `${O}/produtos/importar`, handler: importarProdutos },
+      { method: "POST", path: `${O}/clientes/importar`, handler: importarClientes },
       { method: "GET", path: `${O}/vendas/:id`, handler: obterVenda },
       { method: "POST", path: `${O}/vendas/:id/itens`, handler: salvarItens },
       { method: "POST", path: `${O}/vendas/:id/descartar`, handler: descartarVenda },

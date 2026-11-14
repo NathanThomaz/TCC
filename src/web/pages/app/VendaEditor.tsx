@@ -1,7 +1,16 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, ArrowLeft, CalendarPlus, Clock, Loader2, Plus, Trash2 } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowLeft,
+  CalendarPlus,
+  Clock,
+  History,
+  Loader2,
+  Plus,
+  Trash2,
+} from "lucide-react";
 import { toast } from "sonner";
 import type {
   AtendimentoDto,
@@ -21,8 +30,10 @@ import {
   listarProdutos,
   obterVenda,
   salvarItens,
+  ultimaCompra,
   type ItemPedido,
 } from "@/api/operacao";
+import { LeitorCodigo, VendaDitada } from "@/components/app/VendaRapida";
 import {
   CamposForm,
   codigoDoErro,
@@ -260,6 +271,57 @@ function Rascunho({ venda, servicos }: { venda: VendaDto | null; servicos: Atend
 
   const mudarLinha = (i: number, campo: keyof Linha, valor: string) =>
     setLinhas((ls) => ls.map((l, j) => (j === i ? { ...l, [campo]: valor } : l)));
+
+  // ---- Menos digitação (pedido do dono, 2026-11-14) ----
+  const [avisos, setAvisos] = useState<string[]>([]);
+  /** Soma ao item que já existe ou entra no lugar da linha vazia. */
+  const somarItens = (itens: ItemPedido[]) =>
+    setLinhas((ls) => {
+      let proximas = ls.filter((l) => l.produto !== "");
+      for (const it of itens) {
+        const atual = proximas.find((l) => l.produto === it.produto);
+        proximas = atual
+          ? proximas.map((l) =>
+              l === atual
+                ? {
+                    ...l,
+                    caixas: String(Number(l.caixas || 0) + it.caixas),
+                    unidades: String(Number(l.unidades || 0) + it.unidades),
+                  }
+                : l,
+            )
+          : [
+              ...proximas,
+              { produto: it.produto, caixas: String(it.caixas), unidades: String(it.unidades) },
+            ];
+      }
+      return proximas.length ? proximas : [linhaVazia()];
+    });
+  const lerCodigo = (codigo: string) => {
+    const p = (produtos.data ?? []).find((x) => x.status === "active" && x.codigoBarras === codigo);
+    if (!p) return toast.error(`Nenhum produto ativo com o código ${codigo}.`);
+    somarItens([{ produto: p.id, caixas: 0, unidades: 1 }]);
+    toast.success(`${p.nome}: +1 unidade.`);
+  };
+  const repetir = useMutation({
+    mutationFn: () => ultimaCompra(app.id, cliente),
+    onSuccess: (ultima) => {
+      if (!ultima || ultima.itens.length === 0) {
+        return toast.info("Este cliente ainda não tem compra concluída para repetir.");
+      }
+      setLinhas(
+        ultima.itens.map((i) => ({
+          produto: i.produto,
+          caixas: String(i.caixas),
+          unidades: String(i.unidades),
+        })),
+      );
+      toast.success(
+        `Itens da compra de ${formatarDataHora(ultima.concluidaEm)} carregados, com os preços de hoje.`,
+      );
+    },
+    onError: (e) => toast.error(e.message),
+  });
   const ativos = (produtos.data ?? []).filter(
     (p) => p.status === "active" || pedido.some((x) => x.produto === p.id),
   );
@@ -324,6 +386,41 @@ function Rascunho({ venda, servicos }: { venda: VendaDto | null; servicos: Atend
         }}
       >
         {!venda && (
+          <VendaDitada
+            sistema={app.id}
+            onMontada={(v) => {
+              if (v.cliente) setCliente(v.cliente.id);
+              if (v.itens.length) {
+                setLinhas(
+                  v.itens.map((i) => ({
+                    produto: i.produto,
+                    caixas: String(i.caixas),
+                    unidades: String(i.unidades),
+                  })),
+                );
+              }
+              const extras = [...v.naoEncontrados.map((t) => `Não encontrei: ${t}.`)];
+              if (v.formaPagamento) {
+                extras.push(
+                  `Forma de pagamento: ${ROTULO_PAGAMENTO[v.formaPagamento]} (escolha ao concluir).`,
+                );
+              }
+              setAvisos(extras);
+              toast.success("Venda montada. Confira os itens e salve.");
+            }}
+          />
+        )}
+        {avisos.length > 0 && (
+          <ul
+            role="status"
+            className="list-disc space-y-1 rounded-lg border border-warning/40 bg-warning-soft py-3 pl-8 pr-4 text-sm"
+          >
+            {avisos.map((a) => (
+              <li key={a}>{a}</li>
+            ))}
+          </ul>
+        )}
+        {!venda && (
           <div className="max-w-sm space-y-1.5">
             <Label htmlFor="venda-cliente">Cliente</Label>
             <Select value={cliente} onValueChange={setCliente}>
@@ -345,8 +442,28 @@ function Rascunho({ venda, servicos }: { venda: VendaDto | null; servicos: Atend
           </div>
         )}
 
+        {!venda && cliente && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={repetir.isPending}
+            onClick={() => repetir.mutate()}
+          >
+            {repetir.isPending ? (
+              <Loader2 className="animate-spin" aria-hidden />
+            ) : (
+              <History aria-hidden />
+            )}
+            Repetir a última compra deste cliente
+          </Button>
+        )}
+
         <fieldset className="space-y-3">
           <legend className="mb-1 text-sm font-medium">Itens</legend>
+          {(produtos.data ?? []).some((p) => p.codigoBarras) && (
+            <LeitorCodigo onCodigo={lerCodigo} />
+          )}
           {linhas.map((l, i) => {
             const p = produtoDe(l.produto);
             // Item já no rascunho usa o fator dele, mesmo nulo; produto novo, o do cadastro.
