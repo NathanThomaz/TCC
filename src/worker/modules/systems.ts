@@ -259,12 +259,14 @@ export const obterInicio: Handler = async (ctx) => {
     db
       .prepare(
         `WITH m AS (SELECT key AS system_id, value AS minimo FROM json_each(?2)),
-         d AS (SELECT p.system_id, p.physical - (SELECT COALESCE(SUM(r.quantity), 0) FROM reservations r
+         d AS (SELECT p.system_id, p.min_units, p.physical - (SELECT COALESCE(SUM(r.quantity), 0) FROM reservations r
                  WHERE r.product_id = p.id AND r.status = 'active' AND r.expires_at > ?3) AS disp
                FROM products p WHERE p.status = 'active'
                  AND p.system_id IN (SELECT value FROM json_each(?1)))
          SELECT d.system_id AS id,
-           SUM(CASE WHEN m.minimo IS NULL THEN d.disp <= 0 ELSE d.disp < m.minimo END) AS n
+           SUM(CASE WHEN COALESCE(d.min_units, m.minimo) IS NULL THEN d.disp <= 0
+                    ELSE d.disp < COALESCE(d.min_units, m.minimo) END) AS n,
+           SUM(d.min_units IS NOT NULL) AS cm
          FROM d LEFT JOIN m ON m.system_id = d.system_id GROUP BY d.system_id`,
       )
       .bind(idsCom("produtos"), minimos, agora),
@@ -318,7 +320,7 @@ export const obterInicio: Handler = async (ctx) => {
     if (tem(s, "produtos")) {
       r.estoque = {
         criticos: num(e!.get(s.id), "n"),
-        comMinimo: (minimoDe[s.id] ?? null) !== null,
+        comMinimo: (minimoDe[s.id] ?? null) !== null || num(e!.get(s.id), "cm") > 0,
       };
     }
     if (tem(s, "agenda")) r.atendimentosHoje = num(a!.get(s.id), "n");

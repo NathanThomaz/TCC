@@ -415,11 +415,9 @@ export function PassoAjustes({
       </Secao>
 
       <Secao
-        titulo="Nomes das telas e colunas"
+        titulo="Nomes do menu"
         resumo={(() => {
-          const n =
-            Object.keys(draft.aparencia.rotulos_menu ?? {}).length +
-            Object.keys(draft.aparencia.rotulos_campos ?? {}).length;
+          const n = Object.keys(draft.aparencia.rotulos_menu ?? {}).length;
           return n
             ? `${n} ${n === 1 ? "nome adaptado" : "nomes adaptados"} ao negócio`
             : "Nomes padrão";

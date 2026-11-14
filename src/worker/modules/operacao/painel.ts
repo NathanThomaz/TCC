@@ -100,7 +100,7 @@ export async function calcularPainel(
     const minimo = regra?.unidades ?? null;
     const { results } = await db
       .prepare(
-        `SELECT p.id, p.name, p.physical, p.retail_cents,
+        `SELECT p.id, p.name, p.physical, p.retail_cents, p.min_units,
            (SELECT COALESCE(SUM(r.quantity), 0) FROM reservations r
              WHERE r.product_id = p.id AND r.status = 'active' AND r.expires_at > ?1) AS reserved
          FROM products p WHERE p.system_id = ?2 AND p.status = 'active'`,
@@ -111,22 +111,34 @@ export async function calcularPainel(
         name: string;
         physical: number;
         retail_cents: number;
+        min_units: number | null;
         reserved: number;
       }>();
+    // Cada produto avisa pelo próprio mínimo; sem ele, pelo da regra (se houver).
     const produtos = results.map((p) => ({
       id: p.id,
       nome: p.name,
       fisico: p.physical,
       reservado: p.reserved,
       disponivel: p.physical - p.reserved,
+      minimo: p.min_units ?? minimo,
     }));
+    // Mesmo critério do início: abaixo do próprio mínimo ou, sem mínimo, sem estoque.
+    const critico = (p: (typeof produtos)[number]) =>
+      p.minimo !== null ? p.disponivel < p.minimo : p.disponivel <= 0;
+    const temAlgumMinimo = produtos.some((p) => p.minimo !== null);
     painel.estoque = {
       produtosAtivos: produtos.length,
       semEstoque: produtos.filter((p) => p.disponivel <= 0).length,
       minimo,
-      abaixoDoMinimo: minimo === null ? null : produtos.filter((p) => p.disponivel < minimo).length,
+      abaixoDoMinimo: temAlgumMinimo ? produtos.filter(critico).length : null,
       criticos: [...produtos]
-        .sort((a, b) => a.disponivel - b.disponivel || a.nome.localeCompare(b.nome, "pt-BR"))
+        .sort(
+          (a, b) =>
+            Number(critico(b)) - Number(critico(a)) ||
+            a.disponivel - b.disponivel ||
+            a.nome.localeCompare(b.nome, "pt-BR"),
+        )
         .slice(0, CRITICOS),
       unidades: results.reduce((soma, p) => soma + p.physical, 0),
       valorVarejoCentavos: results.reduce((soma, p) => soma + p.physical * p.retail_cents, 0),

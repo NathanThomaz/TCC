@@ -97,6 +97,8 @@ export interface ProdutoDto {
   campos: CamposInformativos;
   /** Último custo de compra (módulo de fornecedores, ADR-006); null sem compra registrada. */
   custoCentavos: number | null;
+  /** Aviso de estoque deste produto (unidades); null usa a regra do sistema, se houver. */
+  estoqueMinimo: number | null;
 }
 
 export interface MovimentoDto {
@@ -339,10 +341,19 @@ export interface PainelDto {
   estoque?: {
     produtosAtivos: number;
     semEstoque: number;
-    /** Estoque mínimo da regra (null sem a regra) e quantos estão abaixo dele. */
+    /** Estoque mínimo da regra (null sem a regra). */
     minimo: number | null;
+    /** Produtos abaixo do próprio mínimo (ou do da regra); null quando nenhum tem mínimo. */
     abaixoDoMinimo: number | null;
-    criticos: { id: string; nome: string; fisico: number; reservado: number; disponivel: number }[];
+    criticos: {
+      id: string;
+      nome: string;
+      fisico: number;
+      reservado: number;
+      disponivel: number;
+      /** Mínimo que vale para o produto (o dele ou o da regra). */
+      minimo: number | null;
+    }[];
     /** Unidades físicas e valor delas a preço de varejo (produtos ativos). */
     unidades: number;
     valorVarejoCentavos: number;
@@ -390,7 +401,7 @@ export interface ResumoSistemaDto {
     mes: { quantidade: number; totalCentavos: number };
   };
   clientesAtivos?: number;
-  /** Produtos sem estoque (sem a regra) ou abaixo do mínimo (com a regra estoque_minimo). */
+  /** Produtos abaixo do mínimo (o do produto ou o da regra) ou, sem mínimo, sem estoque. */
   estoque?: { criticos: number; comMinimo: boolean };
   atendimentosHoje?: number;
   contasVencidas?: { quantidade: number; totalCentavos: number };

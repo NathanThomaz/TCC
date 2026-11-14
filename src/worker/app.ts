@@ -54,6 +54,7 @@ import {
   salvarItens,
 } from "./modules/operacao/vendas";
 import { editarPerfil, getSession } from "./modules/session";
+import { ajustarColuna } from "./modules/colunas";
 import { definirLimite, obterConsumo } from "./modules/consumo";
 import {
   convidarConta,
@@ -171,6 +172,8 @@ export function createApp(
         handler: approveVersion,
       },
       { method: "POST", path: `${S}/:systemId/activate`, handler: activateSystem },
+      // Colunas das telas de um sistema ativo: renomear (só visual) ou incluir.
+      { method: "POST", path: `${S}/:systemId/colunas`, handler: ajustarColuna },
       // Criação por conversa (seção 8).
       { method: "GET", path: `${O}/criacao`, handler: obterCriacao },
       { method: "POST", path: `${O}/criacao/mensagens`, handler: enviarMensagem },

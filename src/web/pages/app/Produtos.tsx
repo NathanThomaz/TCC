@@ -13,6 +13,9 @@ import {
   registrarEntrada,
 } from "@/api/operacao";
 import { CamposForm, ErroApi, Tabela, useChavePorConteudo } from "@/components/app/Comum";
+import { ColunaEditavel, NovaColuna } from "@/components/app/Colunas";
+import { CampoDinheiro } from "@/components/nexus/CampoDinheiro";
+import { cn } from "@/lib/utils";
 import { EmptyState, ErrorState, PageHeader } from "@/components/nexus/Estados";
 import { Button } from "@/components/ui/button";
 import {
@@ -56,13 +59,17 @@ export function Produtos() {
     onError: (e) => toast.error(e.message),
   });
 
-  const r = (c: Parameters<typeof rotuloCampo>[1]) => rotuloCampo(app.config, c);
+  const campos = app.config.campos.filter((c) => c.entidade === "produtos");
+  const col = (c: Parameters<typeof rotuloCampo>[1]) => (
+    <ColunaEditavel chave={c} rotulo={rotuloCampo(app.config, c)} />
+  );
   const cabecalho = [
-    r("produtos.item"),
-    r("produtos.varejo"),
-    ...(temAtacado ? [r("produtos.atacado")] : []),
-    ...(temCaixa ? [r("produtos.caixa")] : []),
-    ...(temEstoque ? ["Físico", "Reservado", "Disponível"] : []),
+    col("produtos.item"),
+    col("produtos.varejo"),
+    ...(temAtacado ? [col("produtos.atacado")] : []),
+    ...(temCaixa ? [col("produtos.caixa")] : []),
+    ...campos.map((c) => <ColunaEditavel chave={`campo:produtos:${c.id}`} rotulo={c.rotulo} />),
+    ...(temEstoque ? ["Físico", "Reservado", "Disponível", "Mínimo"] : []),
     <span className="sr-only">Ações</span>,
   ];
 
@@ -76,9 +83,12 @@ export function Produtos() {
             : undefined
         }
         acoes={
-          <Button onClick={() => setDialogo({ tipo: "produto", atual: null })}>
-            <Plus aria-hidden /> Novo {rotuloCampo(app.config, "produtos.item").toLowerCase()}
-          </Button>
+          <>
+            <NovaColuna entidade="produtos" />
+            <Button onClick={() => setDialogo({ tipo: "produto", atual: null })}>
+              <Plus aria-hidden /> Novo {rotuloCampo(app.config, "produtos.item").toLowerCase()}
+            </Button>
+          </>
         }
       />
       {q.isPending ? (
@@ -102,9 +112,11 @@ export function Produtos() {
                 {p.nome}
                 {p.status === "inactive" && <span className="ml-2 text-xs">(inativo)</span>}
               </td>
-              <td className="px-4 py-2 tabular-nums">{formatarCentavos(p.varejoCentavos)}</td>
+              <td className="whitespace-nowrap px-4 py-2 tabular-nums">
+                {formatarCentavos(p.varejoCentavos)}
+              </td>
               {temAtacado && (
-                <td className="px-4 py-2 tabular-nums">
+                <td className="whitespace-nowrap px-4 py-2 tabular-nums">
                   {p.atacadoCentavos === null ? "—" : formatarCentavos(p.atacadoCentavos)}
                 </td>
               )}
@@ -113,11 +125,28 @@ export function Produtos() {
                   {p.unidadesPorCaixa === null ? "—" : `${p.unidadesPorCaixa} un.`}
                 </td>
               )}
+              {campos.map((c) => (
+                <td key={c.id} className="px-4 py-2">
+                  {p.campos[c.id] === undefined ? "—" : String(p.campos[c.id])}
+                </td>
+              ))}
               {temEstoque && (
                 <>
                   <td className="px-4 py-2 tabular-nums">{p.fisico}</td>
                   <td className="px-4 py-2 tabular-nums">{p.reservado}</td>
-                  <td className="px-4 py-2 font-medium tabular-nums">{p.disponivel}</td>
+                  <td
+                    className={cn(
+                      "px-4 py-2 font-medium tabular-nums",
+                      p.estoqueMinimo !== null &&
+                        p.disponivel < p.estoqueMinimo &&
+                        "text-destructive",
+                    )}
+                  >
+                    {p.disponivel}
+                  </td>
+                  <td className="px-4 py-2 tabular-nums text-muted-foreground">
+                    {p.estoqueMinimo ?? "—"}
+                  </td>
                 </>
               )}
               <td className="px-4 py-2">
@@ -200,20 +229,36 @@ function ProdutoDialog({ atual, onFechar }: { atual: ProdutoDto | null; onFechar
     atual ? String(atual.unidadesPorCaixa ?? "") : regraCaixa ? String(regraCaixa.unidades) : "",
   );
   const [campos, setCampos] = useState<CamposInformativos>(atual?.campos ?? {});
+  const temEstoque = app.config.modulos.includes("estoque");
+  const [inicial, setInicial] = useState("");
+  const [minimo, setMinimo] = useState(atual?.estoqueMinimo ? String(atual.estoqueMinimo) : "");
   const [erroLocal, setErroLocal] = useState<string | null>(null);
+  const item = rotuloCampo(app.config, "produtos.item").toLowerCase();
 
   const m = useMutation({
     mutationFn: () => {
       const v = reaisParaCentavos(varejo);
       const a = temAtacado ? reaisParaCentavos(atacado) : null;
-      if (v === null || v <= 0) throw new Error("Informe o preço de varejo.");
+      if (v === null || v <= 0) {
+        throw new Error(`Informe o ${rotuloCampo(app.config, "produtos.varejo").toLowerCase()}.`);
+      }
       if (temAtacado && (a === null || a <= 0)) throw new Error("Informe o preço de atacado.");
+      const qtd = (t: string) => (t.trim() === "" ? null : Number(t));
+      const estoqueInicial = qtd(inicial);
+      const estoqueMinimo = qtd(minimo);
+      for (const n of [estoqueInicial, estoqueMinimo]) {
+        if (n !== null && (!Number.isInteger(n) || n < 1)) {
+          throw new Error("Quantidades de estoque são números inteiros a partir de 1.");
+        }
+      }
       const dados = {
         nome: nome.trim(),
         varejoCentavos: v,
         atacadoCentavos: a,
         unidadesPorCaixa: regraCaixa && caixa.trim() !== "" ? Number(caixa) : null,
         campos,
+        estoqueMinimo: temEstoque ? estoqueMinimo : null,
+        ...(!atual && temEstoque && estoqueInicial !== null ? { estoqueInicial } : {}),
       };
       return atual
         ? editarProduto(app.id, atual.id, dados)
@@ -243,13 +288,11 @@ function ProdutoDialog({ atual, onFechar }: { atual: ProdutoDto | null; onFechar
           }}
         >
           <DialogHeader>
-            <DialogTitle>
-              {atual
-                ? `Editar ${atual.nome}`
-                : `Novo ${rotuloCampo(app.config, "produtos.item").toLowerCase()}`}
-            </DialogTitle>
+            <DialogTitle>{atual ? `Editar ${atual.nome}` : `Novo ${item}`}</DialogTitle>
             <DialogDescription>
-              Preços por unidade. A caixa usa o preço da unidade × unidades por caixa.
+              {atual ? "Atualize os dados" : "Cadastre o nome, o preço"}
+              {temEstoque && !atual ? " e quanto já tem em estoque" : ""}.
+              {regraCaixa ? " Na caixa, o preço é o da unidade × unidades por caixa." : ""}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-1.5">
@@ -268,12 +311,12 @@ function ProdutoDialog({ atual, onFechar }: { atual: ProdutoDto | null; onFechar
               <Label htmlFor="produto-varejo">
                 {rotuloCampo(app.config, "produtos.varejo")} (R$)
               </Label>
-              <Input
+              <CampoDinheiro
                 id="produto-varejo"
-                inputMode="decimal"
-                value={varejo}
+                placeholder="0,00"
+                valor={varejo}
                 required
-                onChange={(e) => setVarejo(e.target.value)}
+                onValor={setVarejo}
               />
             </div>
             {temAtacado && (
@@ -281,12 +324,12 @@ function ProdutoDialog({ atual, onFechar }: { atual: ProdutoDto | null; onFechar
                 <Label htmlFor="produto-atacado">
                   {rotuloCampo(app.config, "produtos.atacado")} (R$)
                 </Label>
-                <Input
+                <CampoDinheiro
                   id="produto-atacado"
-                  inputMode="decimal"
-                  value={atacado}
+                  placeholder="0,00"
+                  valor={atacado}
                   required
-                  onChange={(e) => setAtacado(e.target.value)}
+                  onValor={setAtacado}
                 />
               </div>
             )}
@@ -304,6 +347,44 @@ function ProdutoDialog({ atual, onFechar }: { atual: ProdutoDto | null; onFechar
                 value={caixa}
                 onChange={(e) => setCaixa(e.target.value)}
               />
+            </div>
+          )}
+          {temEstoque && (
+            <div className="grid grid-cols-2 gap-3">
+              {!atual && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="produto-inicial">Quantidade em estoque</Label>
+                  <Input
+                    id="produto-inicial"
+                    type="number"
+                    min={1}
+                    step={1}
+                    placeholder="0"
+                    value={inicial}
+                    onChange={(e) => setInicial(e.target.value)}
+                    aria-describedby="dica-inicial"
+                  />
+                  <p id="dica-inicial" className="text-xs text-muted-foreground">
+                    O que você já tem hoje (em unidades).
+                  </p>
+                </div>
+              )}
+              <div className="space-y-1.5">
+                <Label htmlFor="produto-minimo">Avisar quando ficar abaixo de</Label>
+                <Input
+                  id="produto-minimo"
+                  type="number"
+                  min={1}
+                  step={1}
+                  placeholder="Sem aviso"
+                  value={minimo}
+                  onChange={(e) => setMinimo(e.target.value)}
+                  aria-describedby="dica-minimo"
+                />
+                <p id="dica-minimo" className="text-xs text-muted-foreground">
+                  Cada {item} tem o seu limite; vazio, avisa só quando acabar.
+                </p>
+              </div>
             </div>
           )}
           <CamposForm

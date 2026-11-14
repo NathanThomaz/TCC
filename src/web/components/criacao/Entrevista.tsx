@@ -361,9 +361,15 @@ export function ResumoSistema({
     ...assuntosDaEntrevista(estado).map((a) => ({
       id: a.id,
       rotulo: a.rotulo,
+      estado: a.estado,
       itens: estado.requisitos.filter((r) => r.assunto === a.id),
     })),
-    { id: "outros", rotulo: "Outros", itens: estado.requisitos.filter((r) => !r.assunto) },
+    {
+      id: "outros",
+      rotulo: "Outros",
+      estado: "feito" as const,
+      itens: estado.requisitos.filter((r) => !r.assunto),
+    },
   ].filter((g) => g.id !== "outros" || g.itens.length > 0);
   const liberado = pend.podeRevisar && !bloqueado && !ocupado;
 
@@ -380,9 +386,16 @@ export function ResumoSistema({
               </p>
             )}
             {!entidade && <div className="mb-2" />}
-            {g.itens.length === 0 ? (
+            {g.itens.length === 0 && g.estado === "feito" ? (
+              // Etapa que já passou sem nada a mais: fica como já vem pronto.
+              <p className="inline-flex items-center gap-1.5 rounded-md bg-success-soft px-2 py-1 text-xs text-success">
+                <CircleCheck className="size-4" aria-hidden /> Concluído
+                {entidade ? ": fica como já vem pronto" : ": nada a mais"}
+              </p>
+            ) : g.itens.length === 0 ? (
               <p className="inline-flex items-center gap-1.5 rounded-md bg-neutral-soft px-2 py-1 text-xs text-muted-foreground">
-                <CircleDashed className="size-4" aria-hidden /> Falta responder
+                <CircleDashed className="size-4" aria-hidden />{" "}
+                {g.estado === "atual" ? "Conversando agora" : "Falta responder"}
               </p>
             ) : (
               <ul className="space-y-4">

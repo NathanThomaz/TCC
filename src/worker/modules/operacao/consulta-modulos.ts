@@ -127,9 +127,9 @@ export async function resumoGeral(ctx: RequestContext, op: Operacao): Promise<Re
   }
   if (p.estoque) {
     const critico =
-      p.estoque.minimo === null
+      p.estoque.abaixoDoMinimo === null
         ? `${plural(p.estoque.semEstoque, "produto sem estoque", "produtos sem estoque")}`
-        : `${plural(p.estoque.abaixoDoMinimo ?? 0, "produto abaixo do mínimo", "produtos abaixo do mínimo")} de ${p.estoque.minimo}`;
+        : `${plural(p.estoque.abaixoDoMinimo, "produto abaixo do mínimo", "produtos abaixo do mínimo")}${p.estoque.minimo === null ? "" : ` (regra: ${p.estoque.minimo})`}`;
     linhas.push(
       `Estoque: ${plural(p.estoque.produtosAtivos, "produto ativo", "produtos ativos")}, ${critico}; valor a preço de varejo ${formatarCentavos(p.estoque.valorVarejoCentavos)}.`,
     );

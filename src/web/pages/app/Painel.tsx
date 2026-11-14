@@ -178,15 +178,15 @@ export function indicadores(p: PainelDto): IndicadorDados[] {
   }
   if (p.estoque) {
     const e = p.estoque;
-    const critico = e.minimo === null ? e.semEstoque : (e.abaixoDoMinimo ?? 0);
+    const critico = e.abaixoDoMinimo ?? e.semEstoque;
     add({
       id: "estoque-critico",
       prioridade: 4,
-      rotulo: e.minimo === null ? "Sem estoque" : "Abaixo do mínimo",
+      rotulo: e.abaixoDoMinimo === null ? "Sem estoque" : "Estoque baixo",
       icone: PackageX,
       alerta: critico > 0,
       valor: String(critico),
-      detalhe: `de ${plural(e.produtosAtivos, "produto ativo", "produtos ativos")}${e.minimo !== null ? ` (mínimo de ${e.minimo})` : ""}`,
+      detalhe: `de ${plural(e.produtosAtivos, "produto ativo", "produtos ativos")}${e.abaixoDoMinimo === null ? "" : e.minimo !== null ? ` (mínimo de ${e.minimo})` : " (mínimo de cada produto)"}`,
     });
     add({
       id: "valor-estoque",
@@ -405,7 +405,7 @@ export function Painel() {
                   <tbody className="divide-y">
                     {p.estoque.criticos.map((c) => {
                       const zerado = c.disponivel <= 0;
-                      const abaixo = p.estoque!.minimo !== null && c.disponivel < p.estoque!.minimo;
+                      const abaixo = c.minimo !== null && c.disponivel < c.minimo;
                       return (
                         <tr key={c.id}>
                           <td className="py-2">{c.nome}</td>

@@ -1,7 +1,7 @@
 // Catálogo fechado do Nexus (seção 5 da especificação). Tudo o que uma configuração pode usar
 // está aqui; o que não está não é criado silenciosamente — vira necessidade fora do catálogo.
 
-export const CATALOG_VERSION = "2026.11.5";
+export const CATALOG_VERSION = "2026.11.6";
 
 export const MODULES = [
   "clientes",

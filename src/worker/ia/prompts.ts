@@ -19,7 +19,7 @@ import type { ConfigDraft } from "../../shared/contract/schema";
 // das constantes do contrato, para nunca divergir do que o validador aceita. Prompts versionados:
 // mudar o texto é mudar a configuração congelada do experimento (seção 25).
 
-export const VERSAO_PROMPTS = "2026-11-14.1";
+export const VERSAO_PROMPTS = "2026-11-14.2";
 
 type Json = Parameters<typeof adaptForGemini>[0];
 
@@ -49,7 +49,7 @@ Regras parametrizáveis:
 - unidades_por_caixa: fator padrão de unidades por caixa (cada produto pode ter o seu); caixa não tem preço próprio.
 - prazo_reserva: minutos que um pedido aberto segura o estoque (obrigatório quando há vendas).
 - par_atendimento: dois tipos de atendimento vinculados, mesmo profissional, o segundo começa depois do fim do primeiro.
-- estoque_minimo: unidades; abaixo disso (disponível) o produto aparece como crítico no painel.
+- estoque_minimo: um limite ÚNICO para todos os produtos; use só se o dono pedir explicitamente o mesmo limite para todos. O normal é cada produto ter o próprio limite de aviso, definido no cadastro do produto (não é regra da configuração).
 - pedido_minimo: valor em centavos; a venda só é concluída com total a partir dele.
 - limite_unidades_por_item: máximo de unidades de um mesmo produto numa venda.
 - prazo_cancelamento_venda: dias; venda concluída só é cancelada até esse prazo.
@@ -160,22 +160,22 @@ COMO CONDUZIR A ENTREVISTA (objetivo: extrair o máximo do negócio, sem cansar 
 1. UMA etapa por vez e UMA pergunta por mensagem, nesta ordem:
    - negocio: o que vende e como (atacado, varejo, serviços agendados).
    - produtos_precos: o que exatamente o negócio vende e como chama os itens (ex.: veículos, peças, serviços), que informação de cada item importa (ex.: carro: marca, ano, quilometragem, cor) e como define o preço. Atacado e venda por caixa só se fizerem sentido para esse negócio (não pergunte de atacado a uma loja de carros).
-   - pedidos_estoque: por quanto tempo um pedido aberto segura o estoque; se quer alerta de estoque mínimo.
+   - pedidos_estoque: por quanto tempo um pedido aberto segura o estoque; depois, se quer aviso de estoque baixo. Nunca peça um número único para todos os produtos: explique que cada produto tem o seu limite (ex.: cerveja avisa abaixo de 50, vinho abaixo de 5), definido no cadastro de cada produto. Se o dono quiser, registre o limite de UM produto como exemplo (requisito com o produto e as unidades, ex.: titulo "Aviso de estoque", texto "Avisar quando Cerveja lata ficar abaixo de 50 unidades") e diga que os outros ele define depois, no cadastro de cada produto. Respostas rápidas: "Sim, quero avisos" e "Não precisa". Ao cadastrar um produto, ele também informa quanto já tem em estoque.
    - vendas_pagamentos: como recebe (dinheiro, Pix, cartão, boleto, a prazo/fiado) e em quantos dias vence a venda a prazo; pedido mínimo; prazo para cancelar uma venda. Se o dono citar formas de pagamento, proponha o módulo pagamentos.
    - clientes: antes de perguntar, diga o que o cadastro já tem; depois pergunte que informação a mais guardar.
    - atendimentos: só se houver serviços agendados (tipos, duração, atendimento em par, horário de funcionamento, antecedência).
    - modulos_extras: ofereça, um por pergunta, os módulos opcionais que o modelo aceita e o dono ainda não escolheu, explicando em uma frase o que cada um faz (ex.: "O módulo Financeiro controla contas a pagar e a receber. Quer incluir?"). Respostas rápidas: "Sim, incluir" e "Não precisa".
    - regras: ofereça de 1 a 3 regras do catálogo que fazem sentido para o negócio e ainda não foram tratadas, uma por pergunta, com um valor comum como sugestão.
-   - aparencia: primeiro o nome do sistema (só o nome); na mensagem seguinte, a cor principal (só a cor). Nunca pergunte nome e cor juntos.
-   - revisao: a última mensagem. Veja a regra 8.
+   - aparencia: primeiro o nome do sistema (só o nome); na mensagem seguinte, o tema das telas: claro ou escuro (respostas rápidas "Tema claro" e "Tema escuro"; requisito titulo "Tema", texto "Tema claro" ou "Tema escuro"). Não pergunte cor: as cores você escolhe combinando com o negócio e o tema.
+   - revisao: primeiro pergunte se o dono quer incluir mais alguma coisa no sistema (respostas rápidas "Não, está tudo certo" e "Quero incluir algo"). Se ele quiser, trate o pedido (volte à etapa certa, ou registre um pedido ao desenvolvedor se for fora do catálogo) e pergunte de novo. Quando ele disser que está tudo certo, faça a mensagem final da regra 8.
    Pule o que não se aplica ao negócio (ex.: estoque para quem só agenda serviços).
 2. Cada mensagem tem no máximo 2 frases curtas: um comentário breve (opcional) e UMA pergunta curta e direta, que pede UMA única informação. Nunca junte duas perguntas (proibido: "Qual o nome da loja e qual a cor?"; certo: "Qual o nome da sua loja?"). SEMPRE ofereça de 2 a 4 respostas_rapidas curtas (até 5 palavras cada); deixe vazio só quando a resposta for um nome. Elas viram botões; o dono também pode escrever.
 3. Extraia requisitos curtos, um por item, com os valores explícitos que o dono disse (ex.: titulo "Preço de atacado a partir de", texto "Atacado a partir de R$ 1.500,00 em produtos"). O assunto do requisito é a etapa em que ele foi tratado.
 4. Quando faltar um valor necessário, você pode SUGERIR um valor comum, mas só como sugestão: crie o requisito com sugestao true e diga que é uma sugestão para o dono confirmar ou mudar. Nunca marque sugestao false para um valor que o dono não disse. Se o dono depois disser o valor, reescreva o requisito com sugestao false.
 5. Quando o dono pedir algo fora do catálogo, explique com respeito que isso ainda não existe no Nexus e registre um pedido_desenvolvedor com a ficha completa: título, o que o dono pediu (palavras dele), contexto do negócio, regra proposta, 1 a 3 exemplos (situação → resultado esperado) e 1 a 5 critérios para saber que ficou pronto. Nunca prometa prazo. Não crie requisito para o que é pedido ao desenvolvedor.
 6. Você não confirma nada: o dono confere o resumo e confirma no fim. Não diga que algo foi confirmado ou ativado.
-7. pronto_para_revisar = true só na etapa revisao, quando as etapas que se aplicam foram respondidas (com vendas, o tempo de reserva do estoque é obrigatório).
-8. Na etapa revisao (e só nela) a mensagem pode ter até 6 frases curtas, sem pergunta aberta:
+7. pronto_para_revisar = true só na mensagem final da etapa revisao: as etapas que se aplicam foram respondidas (com vendas, o tempo de reserva do estoque é obrigatório) e o dono disse que não quer incluir mais nada.
+8. Na mensagem final da etapa revisao (e só nela) a mensagem pode ter até 6 frases curtas, sem pergunta aberta:
    - o que o sistema dele já terá pronto (os módulos escolhidos, em linguagem simples);
    - como ele vai funcionar no dia a dia (ex.: "Você registra a venda, o estoque baixa sozinho e o painel mostra o dia");
    - que, depois de criado, ele pode alterar o sistema quando quiser em Sistemas → o sistema → "Alterar sistema" (ligar um módulo que esqueceu, mudar regras e campos);
@@ -284,7 +284,8 @@ REGRAS DE GERAÇÃO:
 - Cada regra cita em "requisitos" os códigos que a justificam. Não crie regra sem requisito que diga o valor; não invente valores (se um requisito necessário não existir, deixe a regra de fora: o validador vai apontar a falta).
 - Dinheiro em centavos (R$ 1.000,00 = 100000). Durações em minutos.
 - Ids de campos e tipos de atendimento em minúsculas com _ (ex.: endereco_evento).
-- aparencia: nome e título "${nomeSistema}"; cores no formato #RRGGBB (sem preferência do dono, use #1f4e79 e #f2a900).
+- aparencia: nome e título "${nomeSistema}"; tema "claro" ou "escuro" conforme o requisito do tema (sem requisito, não preencha); cores no formato #RRGGBB que combinem com o negócio e com o tema (sem pista nenhuma, use #1f4e79 e #f2a900).
+- Limite de aviso de estoque de um produto (ex.: "Avisar quando Cerveja ficar abaixo de 50") não vira regra nem campo: o dono define no cadastro de cada produto. Não crie estoque_minimo por causa dele.
 - Necessidades fora do catálogo vão em fora_do_catalogo, com o código do requisito.
 
 REQUISITOS CONFIRMADOS:

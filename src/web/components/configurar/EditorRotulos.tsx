@@ -1,26 +1,15 @@
-import { ROTULOS_CAMPOS, type RotuloCampo } from "../../../shared/contract/catalog";
 import type { PassoProps } from "@/components/configurar/Passos";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ROTULO_MODULO } from "@/lib/nexus";
 import type { Modulo } from "@/types/nexus";
 
-// Nomes das telas e colunas no vocabulário do negócio (pedido do dono, 2026-11-14): só o visual
-// muda; o banco continua com os nomes padrão. A IA sugere ao gerar a configuração; aqui o dono
-// confere e muda. Campo vazio volta ao nome padrão.
-
-const DESCRICAO: Partial<Record<RotuloCampo, string>> = {
-  "produtos.item": "Como chamar um item (ex.: Veículo, Peça, Bebida)",
-  "produtos.nome": "Coluna do nome do item (ex.: Modelo)",
-  "produtos.varejo": "Coluna do preço (ex.: Preço de venda)",
-};
+// Nomes do menu no vocabulário do negócio (pedido do dono, 2026-11-14): só o visual muda. As
+// colunas das tabelas se renomeiam direto na tabela, depois de criado o sistema. Campo vazio volta
+// ao nome padrão.
 
 export function EditorRotulos({ draft, set }: PassoProps) {
   const menu = draft.aparencia.rotulos_menu ?? {};
-  const campos = draft.aparencia.rotulos_campos ?? {};
-  const chaves = (Object.keys(ROTULOS_CAMPOS) as RotuloCampo[]).filter((k) =>
-    draft.modulos.includes(ROTULOS_CAMPOS[k].modulo as Modulo),
-  );
   const mudarMenu = (m: Modulo, valor: string) =>
     set((d) => {
       const proximo = { ...(d.aparencia.rotulos_menu ?? {}) };
@@ -28,18 +17,12 @@ export function EditorRotulos({ draft, set }: PassoProps) {
       else delete proximo[m];
       return { ...d, aparencia: { ...d.aparencia, rotulos_menu: proximo } };
     });
-  const mudarCampo = (k: RotuloCampo, valor: string) =>
-    set((d) => {
-      const proximo = { ...(d.aparencia.rotulos_campos ?? {}) };
-      if (valor.trim()) proximo[k] = valor;
-      else delete proximo[k];
-      return { ...d, aparencia: { ...d.aparencia, rotulos_campos: proximo } };
-    });
 
   return (
     <div className="space-y-5">
       <p className="text-sm text-muted-foreground">
-        Use as palavras do seu negócio. Só muda o que aparece na tela; vazio volta ao nome padrão.
+        Use as palavras do seu negócio. Só muda o que aparece no menu; vazio volta ao nome padrão.
+        As colunas das tabelas você renomeia direto na tabela, depois de criar o sistema.
       </p>
       <fieldset className="space-y-2">
         <legend className="mb-1 text-sm font-medium">Nomes do menu</legend>
@@ -63,27 +46,6 @@ export function EditorRotulos({ draft, set }: PassoProps) {
             ))}
         </div>
       </fieldset>
-      {chaves.length > 0 && (
-        <fieldset className="space-y-2">
-          <legend className="mb-1 text-sm font-medium">Nomes de telas e colunas</legend>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {chaves.map((k) => (
-              <div key={k} className="space-y-1">
-                <Label htmlFor={`rotulo-${k}`} className="text-xs text-muted-foreground">
-                  {DESCRICAO[k] ?? ROTULOS_CAMPOS[k].padrao}
-                </Label>
-                <Input
-                  id={`rotulo-${k}`}
-                  value={campos[k] ?? ""}
-                  placeholder={ROTULOS_CAMPOS[k].padrao}
-                  maxLength={40}
-                  onChange={(e) => mudarCampo(k, e.target.value)}
-                />
-              </div>
-            ))}
-          </div>
-        </fieldset>
-      )}
     </div>
   );
 }

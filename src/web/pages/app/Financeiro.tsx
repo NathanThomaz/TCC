@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { CampoDinheiro } from "@/components/nexus/CampoDinheiro";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowDownCircle, ArrowUpCircle, CircleAlert, Landmark, Loader2, Plus } from "lucide-react";
 import { toast } from "sonner";
@@ -379,13 +380,12 @@ function NovaContaDialog({ onFechar, onCriada }: { onFechar: () => void; onCriad
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="conta-valor">Valor (R$)</Label>
-              <Input
+              <CampoDinheiro
                 id="conta-valor"
-                inputMode="decimal"
                 required
                 placeholder="0,00"
-                value={valor}
-                onChange={(e) => setValor(e.target.value)}
+                valor={valor}
+                onValor={setValor}
               />
             </div>
           </div>

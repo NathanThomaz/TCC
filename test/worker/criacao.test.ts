@@ -295,6 +295,31 @@ describe("conversa e requisitos", () => {
     expect(falhou!.reserved_micro_brl).toBeGreaterThan(0);
   });
 
+  it("revisão: 'algo a mais?' é uma pergunta só; o aviso de alteração vai só na mensagem final", async () => {
+    roteiro.push(
+      levantamento({
+        resposta: "Quer incluir mais alguma coisa no sistema? E qual a cor?",
+        assunto_atual: "revisao",
+        respostas_rapidas: ["Não, está tudo certo", "Quero incluir algo"],
+        requisitos: [{ codigo: null, texto: TEXTOS[0] }],
+      }),
+    );
+    const pergunta = await acao(c("/mensagens"), { texto: "Azul" });
+    const texto = pergunta.body.mensagens!.at(-1)!.texto;
+    expect(texto).toBe("Quer incluir mais alguma coisa no sistema?");
+    expect(texto).not.toMatch(/Alterar sistema/);
+    roteiro.push(
+      levantamento({
+        resposta: "Seu sistema está pronto para revisar.",
+        assunto_atual: "revisao",
+        pronto_para_revisar: true,
+        requisitos: [{ codigo: "REQ-01", texto: TEXTOS[0] }],
+      }),
+    );
+    const final = await acao(c("/mensagens"), { texto: "Não, está tudo certo" });
+    expect(final.body.mensagens!.at(-1)!.texto).toMatch(/Alterar sistema/);
+  });
+
   it("resposta fora do formato não altera nada", async () => {
     roteiro.push("isto não é json");
     const r = await acao(c("/mensagens"), { texto: "Olá" });

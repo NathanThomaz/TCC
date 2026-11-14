@@ -79,6 +79,7 @@ async function callComCorrida(
   path: string,
   body: unknown,
   antes: () => Promise<unknown>,
+  chave: string = crypto.randomUUID(),
 ): Promise<{ status: number; body: Body }> {
   let usado = false;
   const db = new Proxy(env.DB, {
@@ -107,7 +108,7 @@ async function callComCorrida(
       headers: {
         authorization: `Bearer ${ADMIN}`,
         "content-type": "application/json",
-        "idempotency-key": crypto.randomUUID(),
+        "idempotency-key": chave,
       },
       body: JSON.stringify(body),
     }),
@@ -1851,5 +1852,146 @@ describe("alterar um sistema ativo (ADR-008)", () => {
   it("conta secundária não altera o sistema", async () => {
     const r = await novaVersao(DISTRIBUIDORA, SEC);
     expect(r.status).toBe(403);
+  });
+});
+
+describe("cadastro de produto com estoque inicial e aviso próprio (pedido do dono, 2026-11-14)", () => {
+  it("estoque inicial vira a primeira entrada, com histórico", async () => {
+    const id = await produto({ estoqueInicial: 30, estoqueMinimo: 10 });
+    const p1 = await estoqueDe(id);
+    expect(p1).toMatchObject({ fisico: 30, disponivel: 30, estoqueMinimo: 10 });
+    const movs = await call("GET", p(`/estoque/movimentos?produto=${id}`), ADMIN);
+    expect(movs.body.movimentos).toEqual([
+      expect.objectContaining({
+        tipo: "entrada",
+        delta: 30,
+        saldoDepois: 30,
+        motivo: "Estoque inicial",
+      }),
+    ]);
+  });
+
+  it("editar sem mandar o aviso mantém o atual; null tira", async () => {
+    const id = await produto({ estoqueMinimo: 8 });
+    const base = {
+      nome: "Cerveja lata",
+      varejoCentavos: 600,
+      atacadoCentavos: 450,
+      unidadesPorCaixa: 12,
+    };
+    await call("PATCH", p(`/produtos/${id}`), ADMIN, base);
+    expect((await estoqueDe(id)).estoqueMinimo).toBe(8);
+    await call("PATCH", p(`/produtos/${id}`), ADMIN, { ...base, estoqueMinimo: null });
+    expect((await estoqueDe(id)).estoqueMinimo).toBeNull();
+  });
+
+  it("painel e início contam cada produto pelo próprio mínimo", async () => {
+    const pouco = await produto({ nome: "Vinho", estoqueInicial: 3, estoqueMinimo: 5 });
+    await produto({ nome: "Água", estoqueInicial: 3 }); // sem aviso próprio: só quando acabar
+    const suco = await produto({ nome: "Suco" }); // sem aviso e sem estoque: crítico também
+    await produto({ nome: "Cerveja", estoqueInicial: 60, estoqueMinimo: 50 });
+    const painel = (await call("GET", p("/painel"), ADMIN)).body as unknown as {
+      painel: PainelDto;
+    };
+    expect(painel.painel.estoque).toMatchObject({ minimo: null, abaixoDoMinimo: 2 });
+    expect(painel.painel.estoque!.criticos.find((c) => c.id === pouco)!.minimo).toBe(5);
+    // Os críticos vêm primeiro na lista.
+    expect(
+      painel.painel
+        .estoque!.criticos.slice(0, 2)
+        .map((c) => c.id)
+        .sort(),
+    ).toEqual([pouco, suco].sort());
+    const inicio = (await call("GET", "/inicio", ADMIN)).body as unknown as { inicio: InicioDto };
+    const deste = inicio.inicio.sistemas.find((x) => x.sistema.id === S)!;
+    expect(deste.resumo!.estoque).toEqual({ criticos: 2, comMinimo: true });
+  });
+});
+
+describe("colunas das tabelas num sistema ativo (pedido do dono, 2026-11-14)", () => {
+  const colunas = (body: unknown, token = ADMIN) => call("POST", p("/colunas"), token, body);
+  const configAtiva = async () => (await call("GET", p("/app"), ADMIN)).body.config!;
+
+  it("renomeia uma coluna padrão só no visual e voltar ao padrão apaga o ajuste", async () => {
+    const r = await colunas({ acao: "renomear", chave: "produtos.nome", rotulo: "Modelo" });
+    expect(r.status).toBe(200);
+    expect((await configAtiva()).aparencia.rotulos_campos).toMatchObject({
+      "produtos.nome": "Modelo",
+    });
+    await colunas({ acao: "renomear", chave: "produtos.nome", rotulo: "Nome" });
+    expect((await configAtiva()).aparencia.rotulos_campos?.["produtos.nome"]).toBeUndefined();
+  });
+
+  it("inclui uma coluna nova (não obrigatória) que o cadastro já aceita", async () => {
+    const antes = (await call("GET", `/systems/${S}`, ADMIN)).body.sistema!.versaoAtiva;
+    const r = await colunas({
+      acao: "incluir",
+      entidade: "produtos",
+      rotulo: "Teor alcoólico",
+      tipo: "lista",
+      opcoes: ["Sem álcool", "Baixo", "Alto"],
+    });
+    expect(r.status).toBe(200);
+    const campo = (await configAtiva()).campos.find((c) => c.rotulo === "Teor alcoólico");
+    expect(campo).toMatchObject({ id: "teor_alcoolico", obrigatorio: false, entidade: "produtos" });
+    expect((await call("GET", `/systems/${S}`, ADMIN)).body.sistema!.versaoAtiva).not.toBe(antes);
+    const id = await produto({ nome: "Vinho", campos: { teor_alcoolico: "Alto" } });
+    expect((await estoqueDe(id)).campos).toEqual({ teor_alcoolico: "Alto" });
+    // E renomeia a coluna incluída.
+    await colunas({ acao: "renomear", chave: "campo:produtos:teor_alcoolico", rotulo: "Teor" });
+    expect((await configAtiva()).campos.find((c) => c.id === "teor_alcoolico")!.rotulo).toBe(
+      "Teor",
+    );
+  });
+
+  it("recusa secundário, lista sem opções, coluna inexistente e chave desconhecida", async () => {
+    expect(
+      (await colunas({ acao: "renomear", chave: "produtos.nome", rotulo: "X" }, SEC)).status,
+    ).toBe(403);
+    const semOpcoes = await colunas({
+      acao: "incluir",
+      entidade: "clientes",
+      rotulo: "Porte",
+      tipo: "lista",
+    });
+    expect(semOpcoes.status).toBe(422);
+    const inexistente = await colunas({
+      acao: "renomear",
+      chave: "campo:clientes:nada",
+      rotulo: "X",
+    });
+    expect(inexistente.status).toBe(422);
+    const desconhecida = await colunas({ acao: "renomear", chave: "vendas.total", rotulo: "X" });
+    expect(desconhecida.status).toBe(422);
+  });
+
+  it("repetição gêmea (mesma chave) aplicada no meio responde como repetição, não conflito", async () => {
+    const chave = crypto.randomUUID();
+    const corpo = { acao: "renomear", chave: "produtos.nome", rotulo: "Modelo" };
+    const r = await callComCorrida(
+      p("/colunas"),
+      corpo,
+      () => call("POST", p("/colunas"), ADMIN, corpo, chave),
+      chave,
+    );
+    expect(r.status).toBe(200);
+    expect((await configAtiva()).aparencia.rotulos_campos).toEqual({ "produtos.nome": "Modelo" });
+  });
+
+  it("outra alteração aplicada no meio: nada é gravado", async () => {
+    const versoes = async () =>
+      (await env.DB.prepare("SELECT COUNT(*) AS n FROM model_versions WHERE system_id = ?")
+        .bind(S)
+        .first<{ n: number }>())!.n;
+    const antes = await versoes();
+    // Outra tela renomeia outra coluna entre a leitura da versão ativa e a gravação desta.
+    const r = await callComCorrida(
+      p("/colunas"),
+      { acao: "renomear", chave: "produtos.nome", rotulo: "Modelo" },
+      () => colunas({ acao: "renomear", chave: "produtos.item", rotulo: "Bebida" }),
+    );
+    expect(r.status).toBe(409);
+    expect(await versoes()).toBe(antes + 1); // só a da outra tela
+    expect((await configAtiva()).aparencia.rotulos_campos).toEqual({ "produtos.item": "Bebida" });
   });
 });

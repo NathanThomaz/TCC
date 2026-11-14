@@ -212,11 +212,18 @@ export function novoId(prefixo: string) {
 export const formatarData = (ms: number) =>
   new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(ms);
 
-/** "1.500,50" ou "1500.5" → 150050 centavos. Retorna null se inválido. */
+/**
+ * "1.500,50", "1.500" (milhares, como a máscara mostra) ou "1500.5" → centavos. Retorna null se
+ * inválido.
+ */
 export function reaisParaCentavos(texto: string): number | null {
   const t = texto.trim().replace(/^R\$\s*/, "");
   if (!t) return null;
-  const normal = t.includes(",") ? t.replace(/\./g, "").replace(",", ".") : t;
+  const normal = t.includes(",")
+    ? t.replace(/\./g, "").replace(",", ".")
+    : /^\d{1,3}(\.\d{3})+$/.test(t)
+      ? t.replace(/\./g, "")
+      : t;
   if (!/^\d+(\.\d{1,2})?$/.test(normal)) return null;
   return Math.round(Number(normal) * 100);
 }
@@ -225,7 +232,52 @@ export function centavosParaReais(c: number): string {
   return (c / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-/** Nome de uma tela ou coluna no vocabulário do negócio (ou o padrão). Só visual. */
-export function rotuloCampo(config: Pick<ConfigDraft, "aparencia">, chave: RotuloCampo): string {
-  return config.aparencia.rotulos_campos?.[chave] ?? ROTULOS_CAMPOS[chave].padrao;
+/**
+ * Nome de uma tela ou coluna no vocabulário do negócio (ou o padrão). Só visual. Sem atacado, o
+ * preço é só "Preço de venda" (não faz sentido falar em varejo).
+ */
+export function rotuloCampo(
+  config: Pick<ConfigDraft, "aparencia"> & Partial<Pick<ConfigDraft, "regras">>,
+  chave: RotuloCampo,
+): string {
+  const proprio = config.aparencia.rotulos_campos?.[chave];
+  if (proprio) return proprio;
+  if (chave === "produtos.varejo" && !config.regras?.some((r) => r.tipo === "limite_atacado")) {
+    return "Preço de venda";
+  }
+  return ROTULOS_CAMPOS[chave].padrao;
+}
+
+/**
+ * Máscara de dinheiro enquanto digita: pontos nos milhares e vírgula com até 2 casas
+ * ("1500" → "1.500"; "1500,5" → "1.500,5"). Com `pontoDecimal` (o ponto foi digitado ou colado
+ * agora), um ponto no fim vira a vírgula e um valor com ponto decimal ("1500.50") é decimal. Sem
+ * ele, os pontos são os milhares que a própria máscara pôs: apagar ou trocar dígitos ("1.500" →
+ * "1.50" ou "1.2") continua um número inteiro (150, 12).
+ */
+export function mascararReais(texto: string, pontoDecimal = true): string {
+  let t = texto.replace(/[^\d,.]/g, "");
+  if (pontoDecimal) {
+    if (t.endsWith(".")) t = `${t.slice(0, -1)},`;
+    // Sem vírgula, um único ponto seguido de 1 ou 2 dígitos é decimal (colado de outro lugar).
+    if (!t.includes(",") && /^\d+\.\d{1,2}$/.test(t)) t = t.replace(".", ",");
+  }
+  t = t.replace(/\./g, "");
+  const virgula = t.indexOf(",");
+  const inteiro = (virgula < 0 ? t : t.slice(0, virgula)).replace(/^0+(?=\d)/, "").slice(0, 9);
+  const comPontos = inteiro.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  if (virgula < 0) return comPontos;
+  const centavos = t
+    .slice(virgula + 1)
+    .replace(/,/g, "")
+    .slice(0, 2);
+  return `${comPontos || "0"},${centavos}`;
+}
+
+/** Ao sair do campo, completa as duas casas ("1.500" → "1.500,00"; "3,5" → "3,50"). */
+export function completarReais(texto: string): string {
+  const t = mascararReais(texto);
+  if (!t) return "";
+  const [inteiro = "0", centavos = ""] = t.split(",");
+  return `${inteiro || "0"},${centavos.padEnd(2, "0")}`;
 }

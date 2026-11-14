@@ -1,4 +1,5 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+import { CampoDinheiro } from "@/components/nexus/CampoDinheiro";
 import {
   AlertTriangle,
   Briefcase,
@@ -664,16 +665,19 @@ export function LimiteAtacado({
   valor: number;
   onChange: (c: number) => void;
 }) {
+  const [texto, setTexto] = useState(valor > 0 ? centavosParaReais(valor) : "");
   return (
     <>
       <Label htmlFor={id}>Valor mínimo para atacado (R$)</Label>
-      <Input
+      <CampoDinheiro
         id={id}
-        className="mt-1 tabular-nums"
-        inputMode="decimal"
+        className="mt-1"
         placeholder="1.500,00"
-        defaultValue={valor > 0 ? centavosParaReais(valor) : ""}
-        onChange={(e) => onChange(reaisParaCentavos(e.target.value) ?? 0)}
+        valor={texto}
+        onValor={(t) => {
+          setTexto(t);
+          onChange(reaisParaCentavos(t) ?? 0);
+        }}
       />
       {!(valor > 0) && <Erro>Informe um valor maior que zero, ex.: 1.500,00.</Erro>}
     </>

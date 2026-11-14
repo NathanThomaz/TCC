@@ -539,8 +539,9 @@ function ComoFunciona({ config }: { config: ConfigDraft }) {
 }
 
 /**
- * Nomes das telas e colunas que a IA sugeriu para o negócio: o dono confere e muda antes de
- * ativar. Salvar gera uma versão nova da conversa só com os nomes ajustados (o banco não muda).
+ * Nomes do menu que a IA sugeriu para o negócio: o dono confere e muda antes de ativar. Salvar gera
+ * uma versão nova da conversa só com os nomes ajustados (o banco não muda). As colunas se
+ * renomeiam direto nas tabelas, depois de criado.
  */
 function NomesDoNegocio({
   sistemaId,
@@ -566,7 +567,6 @@ function NomesDoNegocio({
           aparencia: {
             ...config.aparencia,
             rotulos_menu: rascunho.aparencia.rotulos_menu ?? {},
-            rotulos_campos: rascunho.aparencia.rotulos_campos ?? {},
           },
         },
         novaChave(),
@@ -581,7 +581,7 @@ function NomesDoNegocio({
   return (
     <section aria-labelledby="nomes-negocio" className="mb-8">
       <h2 id="nomes-negocio" className="mb-1 text-lg font-semibold">
-        Nomes das telas e colunas
+        Nomes do menu
       </h2>
       <p className="mb-4 text-sm text-muted-foreground">
         O assistente adaptou os nomes ao seu negócio. Mude o que quiser antes de ativar.

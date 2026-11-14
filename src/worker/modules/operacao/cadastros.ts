@@ -291,6 +291,7 @@ interface ProdutoRow {
   reserved: number;
   extra_json: string;
   last_cost_cents: number | null;
+  min_units: number | null;
 }
 
 const centavos = z.number().int().min(1).max(100_000_000);
@@ -300,6 +301,10 @@ const ProdutoBody = z.object({
   atacadoCentavos: centavos.nullable().optional(),
   unidadesPorCaixa: z.number().int().min(2).max(1000).nullable().optional(),
   campos: z.unknown().optional(),
+  /** Aviso de estoque deste produto; ausente na edição mantém o atual. */
+  estoqueMinimo: z.number().int().min(1).max(1_000_000).nullable().optional(),
+  /** Só no cadastro: o que já tem em estoque vira a primeira entrada (EST-01 continua valendo). */
+  estoqueInicial: z.number().int().min(1).max(1_000_000).optional(),
 });
 type ProdutoBody = z.infer<typeof ProdutoBody>;
 
@@ -316,13 +321,14 @@ export function publicProduto(row: ProdutoRow): ProdutoDto {
     disponivel: row.physical - row.reserved,
     campos: lerCampos(row.extra_json),
     custoCentavos: row.last_cost_cents,
+    estoqueMinimo: row.min_units,
   };
 }
 
 /** Produtos com o reservado ativo no instante `now` (EST-05: soma das reservas não vencidas). */
 export const SELECT_PRODUTO = `
   SELECT p.id, p.name, p.status, p.retail_cents, p.wholesale_cents, p.units_per_box, p.physical,
-         p.extra_json, p.last_cost_cents,
+         p.extra_json, p.last_cost_cents, p.min_units,
          (SELECT COALESCE(SUM(r.quantity), 0) FROM reservations r
           WHERE r.product_id = p.id AND r.status = 'active' AND r.expires_at > ?1) AS reserved
   FROM products p`;
@@ -388,6 +394,10 @@ export const criarProduto: Handler = async (ctx) => {
   }
   const { atacado, caixa } = precosDoProduto(op.config, body);
   const extra = camposValidos(op.config, "produtos", body.campos);
+  const inicial = body.estoqueInicial ?? null;
+  if (inicial !== null && !op.config.modulos.includes("estoque")) {
+    throw validationFailed("Este sistema não controla estoque.");
+  }
   const id = crypto.randomUUID();
   const now = ctx.clock.now();
   const db = ctx.env.DB;
@@ -396,8 +406,8 @@ export const criarProduto: Handler = async (ctx) => {
       // EST-01: o físico começa em zero (default da coluna); só entradas o aumentam.
       db
         .prepare(
-          `INSERT INTO products (id, system_id, name, retail_cents, wholesale_cents, units_per_box, extra_json, created_by, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO products (id, system_id, name, retail_cents, wholesale_cents, units_per_box, extra_json, min_units, created_by, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .bind(
           id,
@@ -407,10 +417,27 @@ export const criarProduto: Handler = async (ctx) => {
           atacado,
           caixa,
           extra,
+          body.estoqueMinimo ?? null,
           op.user.id,
           now,
           now,
         ),
+      // Estoque inicial informado no cadastro: entra como a primeira entrada, com histórico.
+      ...(inicial === null
+        ? []
+        : [
+            db
+              .prepare("UPDATE products SET physical = physical + ? WHERE id = ?")
+              .bind(inicial, id),
+            db
+              .prepare(
+                `INSERT INTO stock_movements
+                   (id, system_id, product_id, kind, delta, informed_units, balance_after, reason, actor_id, created_at)
+                 SELECT ?, system_id, id, 'entrada', ?, ?, physical, 'Estoque inicial', ?, ? FROM products
+                 WHERE id = ?`,
+              )
+              .bind(crypto.randomUUID(), inicial, inicial, op.user.id, now, id),
+          ]),
       db
         .prepare(
           "INSERT INTO audit_events (system_id, actor_id, action, target_type, target_id, created_at) VALUES (?, ?, 'produto.created', 'produto', ?, ?)",
@@ -444,9 +471,21 @@ export const editarProduto: Handler = async (ctx) => {
     db
       .prepare(
         `UPDATE products SET name = ?, retail_cents = ?, wholesale_cents = ?, units_per_box = ?, extra_json = ?,
+           min_units = CASE WHEN ? THEN ? ELSE min_units END,
            updated_at = max(updated_at, ?) WHERE id = ? AND system_id = ?`,
       )
-      .bind(body.nome, body.varejoCentavos, atacado, caixa, extra, now, id, op.systemId),
+      .bind(
+        body.nome,
+        body.varejoCentavos,
+        atacado,
+        caixa,
+        extra,
+        body.estoqueMinimo === undefined ? 0 : 1,
+        body.estoqueMinimo ?? null,
+        now,
+        id,
+        op.systemId,
+      ),
     db
       .prepare(
         "INSERT INTO audit_events (system_id, actor_id, action, target_type, target_id, created_at) VALUES (?, ?, 'produto.updated', 'produto', ?, ?)",
