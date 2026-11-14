@@ -280,7 +280,7 @@ export const statusFornecedor = statusPessoa(FORNECEDORES);
 
 // ---- Produtos ----
 
-interface ProdutoRow {
+export interface ProdutoRow {
   id: string;
   name: string;
   status: (typeof STATUS)[number];

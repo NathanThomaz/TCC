@@ -230,7 +230,12 @@ export async function produtoPorCodigo(sistema: string, codigo: string) {
 /** Itens da última venda concluída do cliente (só produtos ativos); null se nunca comprou. */
 export async function ultimaCompra(sistema: string, cliente: string) {
   const r = await chamar<{
-    ultima: { concluidaEm: number; itens: (ItemPedido & { nome: string })[] } | null;
+    ultima: {
+      concluidaEm: number;
+      itens: (ItemPedido & { nome: string })[];
+      /** Os produtos dos itens, completos (a lista da tela tem limite). */
+      produtos: ProdutoDto[];
+    } | null;
   }>(`${base(sistema)}/clientes/${encodeURIComponent(cliente)}/ultima-compra`);
   return r.ultima;
 }

@@ -15,7 +15,15 @@ import {
 import { requireAdmin } from "../../auth/session";
 import { idempotencyKey } from "../../http/idempotency";
 import { isUnique, parse } from "../comum";
-import { codigoBarras, codigoEmUso, codigoRepetido, precosDoProduto } from "./cadastros";
+import {
+  codigoBarras,
+  codigoEmUso,
+  codigoRepetido,
+  precosDoProduto,
+  publicProduto,
+  SELECT_PRODUTO,
+  type ProdutoRow,
+} from "./cadastros";
 import { abrirOperacao, camposValidos, type Operacao } from "./contexto";
 
 // Menos digitação nas vendas (pedido do dono, 2026-11-14): venda ditada ou escrita (a IA só liga
@@ -98,8 +106,25 @@ export const interpretarVenda: Handler = async (ctx) => {
       "Não entendi a venda agora. Tente escrever de outro jeito.",
     );
   }
-  return json({ venda: montarProposta(ia, listaP, listaC, formas) });
+  const proposta = montarProposta(ia, listaP, listaC, formas);
+  proposta.produtos = await produtosCompletos(
+    ctx,
+    op.systemId,
+    proposta.itens.map((i) => i.produto),
+  );
+  return json({ venda: proposta });
 };
+
+/** Produtos completos pelos ids (com estoque do instante), para a tela juntar à lista dela. */
+async function produtosCompletos(ctx: RequestContext, systemId: string, ids: string[]) {
+  if (ids.length === 0) return [];
+  const { results } = await ctx.env.DB.prepare(
+    `${SELECT_PRODUTO} WHERE p.system_id = ?2 AND p.id IN (SELECT value FROM json_each(?3))`,
+  )
+    .bind(ctx.clock.now(), systemId, JSON.stringify(ids))
+    .all<ProdutoRow>();
+  return results.map(publicProduto);
+}
 
 /** Confere os números que a IA escolheu contra os cadastros e junta itens repetidos. */
 export function montarProposta(
@@ -141,6 +166,7 @@ export function montarProposta(
     itens: [...itens.values()],
     formaPagamento: forma,
     naoEncontrados,
+    produtos: [],
   };
 }
 
@@ -172,7 +198,12 @@ export const ultimaCompra: Handler = async (ctx) => {
     )
     .bind(venda.id)
     .all<{ produto: string; nome: string; caixas: number; unidades: number }>();
-  return json({ ultima: { concluidaEm: venda.completed_at, itens: results } });
+  const produtos = await produtosCompletos(
+    ctx,
+    op.systemId,
+    results.map((r) => r.produto),
+  );
+  return json({ ultima: { concluidaEm: venda.completed_at, itens: results, produtos } });
 };
 
 // ---- Importar de planilha ----

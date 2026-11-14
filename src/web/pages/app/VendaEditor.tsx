@@ -299,6 +299,13 @@ function Rascunho({ venda, servicos }: { venda: VendaDto | null; servicos: Atend
       return proximas.length ? proximas : [linhaVazia()];
     });
   const qc = useQueryClient();
+  /** Junta produtos à lista desta tela (a lista carregada tem limite de 500). */
+  const juntarProdutos = (novos: ProdutoDto[]) =>
+    qc.setQueryData<ProdutoDto[]>(["app", app.id, "produtos"], (lista) => {
+      const atual = lista ?? [];
+      const faltam = novos.filter((n) => !atual.some((x) => x.id === n.id));
+      return faltam.length ? [...atual, ...faltam] : atual;
+    });
   const lerCodigo = async (codigo: string) => {
     let p = (produtos.data ?? []).find((x) => x.status === "active" && x.codigoBarras === codigo);
     if (!p) {
@@ -309,10 +316,7 @@ function Rascunho({ venda, servicos }: { venda: VendaDto | null; servicos: Atend
         return toast.error(e instanceof Error ? e.message : "Não foi possível procurar o código.");
       }
       if (!p) return toast.error(`Nenhum produto ativo com o código ${codigo}.`);
-      const achado = p;
-      qc.setQueryData<ProdutoDto[]>(["app", app.id, "produtos"], (lista) =>
-        lista?.some((x) => x.id === achado.id) ? lista : [...(lista ?? []), achado],
-      );
+      juntarProdutos([p]);
     }
     somarItens([{ produto: p.id, caixas: 0, unidades: 1 }]);
     toast.success(`${p.nome}: +1 unidade.`);
@@ -323,6 +327,7 @@ function Rascunho({ venda, servicos }: { venda: VendaDto | null; servicos: Atend
       if (!ultima || ultima.itens.length === 0) {
         return toast.info("Este cliente ainda não tem compra concluída para repetir.");
       }
+      juntarProdutos(ultima.produtos);
       setLinhas(
         ultima.itens.map((i) => ({
           produto: i.produto,
@@ -403,6 +408,7 @@ function Rascunho({ venda, servicos }: { venda: VendaDto | null; servicos: Atend
           <VendaDitada
             sistema={app.id}
             onMontada={(v) => {
+              juntarProdutos(v.produtos);
               if (v.cliente) setCliente(v.cliente.id);
               if (v.itens.length) {
                 setLinhas(
@@ -475,9 +481,7 @@ function Rascunho({ venda, servicos }: { venda: VendaDto | null; servicos: Atend
 
         <fieldset className="space-y-3">
           <legend className="mb-1 text-sm font-medium">Itens</legend>
-          {(produtos.data ?? []).some((p) => p.codigoBarras) && (
-            <LeitorCodigo onCodigo={(c) => void lerCodigo(c)} />
-          )}
+          <LeitorCodigo onCodigo={(c) => void lerCodigo(c)} />
           {linhas.map((l, i) => {
             const p = produtoDe(l.produto);
             // Item já no rascunho usa o fator dele, mesmo nulo; produto novo, o do cadastro.

@@ -68,6 +68,7 @@ type Body = SystemsApiBody & {
   ultima?: {
     concluidaEm: number;
     itens: { produto: string; caixas: number; unidades: number }[];
+    produtos: { id: string }[];
   } | null;
   error?: { code: string; message: string };
   [k: string]: unknown;
@@ -188,7 +189,8 @@ describe("venda ditada", () => {
       SEC,
     );
     expect(r.status).toBe(200);
-    expect(r.body.venda).toEqual({
+    expect(r.body.venda!.produtos.map((x) => x.id)).toEqual([cerveja.id]);
+    expect(r.body.venda).toMatchObject({
       cliente: { id: bar.id, nome: "Bar do Zé" },
       itens: [{ produto: cerveja.id, nome: "Cerveja lata", caixas: 2, unidades: 3 }],
       formaPagamento: null,
@@ -245,6 +247,7 @@ describe("montarProposta", () => {
         "vinho",
         "1 cx de água (este produto não tem caixa)",
       ],
+      produtos: [],
     });
   });
 });
@@ -267,6 +270,7 @@ describe("última compra do cliente", () => {
     await call("POST", p(`/vendas/${v.id}/concluir`), { revisao: v.revisao });
     await call("POST", p(`/produtos/${agua.id}/status`), { status: "inactive" });
     const r = await call("GET", p(`/clientes/${bar.id}/ultima-compra`));
+    expect(r.body.ultima!.produtos.map((x: { id: string }) => x.id)).toEqual([cerveja.id]);
     expect(r.body.ultima!.itens).toEqual([
       { produto: cerveja.id, nome: "Cerveja", caixas: 0, unidades: 6 },
     ]);

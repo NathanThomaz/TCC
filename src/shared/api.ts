@@ -110,6 +110,8 @@ export interface VendaInterpretadaDto {
   formaPagamento: PaymentMethod | null;
   /** Trechos que a IA não ligou a nenhum produto ou cliente cadastrado. */
   naoEncontrados: string[];
+  /** Os produtos dos itens, completos (a lista da tela tem limite). */
+  produtos: ProdutoDto[];
 }
 
 /** POST /produtos/importar e /clientes/importar. */
