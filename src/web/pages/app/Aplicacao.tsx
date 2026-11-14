@@ -1,6 +1,7 @@
-import { createContext, useContext } from "react";
+import { createContext, useContext, useEffect } from "react";
 import { Outlet, useParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
+import { useTema } from "@/lib/tema";
 import { ArrowLeft } from "lucide-react";
 import type { ModuleId } from "../../../shared/contract/catalog";
 import { obterApp, type App } from "@/api/operacao";
@@ -45,6 +46,13 @@ export function rotuloModulo(app: App, modulo: ModuleId): string {
 export function Aplicacao() {
   const { id = "" } = useParams();
   const q = useQuery({ queryKey: ["app", id], queryFn: () => obterApp(id) });
+  // Tema escolhido na criação do sistema; ao sair dele, volta a preferência da pessoa.
+  const { forcar } = useTema();
+  const temaDoSistema = q.data?.config.aparencia.tema ?? null;
+  useEffect(() => {
+    forcar(temaDoSistema);
+    return () => forcar(null);
+  }, [temaDoSistema, forcar]);
 
   if (q.isPending) {
     return (

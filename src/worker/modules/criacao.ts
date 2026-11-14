@@ -551,8 +551,10 @@ export const enviarMensagem: Handler = async (ctx) => {
         now,
       });
     // Uma pergunta por mensagem, garantida aqui e não só pedida à IA (pedido do dono).
+    // Na revisão, a pergunta "quer incluir algo a mais?" segue a regra de uma pergunta; só a
+    // mensagem final (pronta para revisar) explica o sistema e leva o aviso de alteração.
     const msg =
-      ia.assunto_atual === "revisao"
+      ia.assunto_atual === "revisao" && ia.pronto_para_revisar
         ? { texto: comAvisoDeAlteracao(ia.resposta), cortada: false }
         : umaPergunta(ia.resposta);
     const dados: DadosMensagem = {

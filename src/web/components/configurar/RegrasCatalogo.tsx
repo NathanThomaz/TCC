@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { CircleCheck, Lightbulb, ListPlus, Trash2 } from "lucide-react";
+import { CampoDinheiro } from "@/components/nexus/CampoDinheiro";
 import { RULE_MODULES } from "../../../shared/contract/catalog";
 import type { PassoProps } from "@/components/configurar/Passos";
 import { Button } from "@/components/ui/button";
@@ -314,14 +316,10 @@ function EditorRegra({ regra: r, onChange }: { regra: Regra; onChange: (r: Regra
       return (
         <div className="max-w-xs">
           <Label htmlFor={id}>Valor mínimo (R$)</Label>
-          <Input
+          <CampoValorRegra
             id={id}
-            inputMode="decimal"
-            className="mt-1 tabular-nums"
-            defaultValue={centavosParaReais(r.valor_centavos)}
-            onChange={(e) =>
-              onChange({ ...r, valor_centavos: reaisParaCentavos(e.target.value) ?? 0 })
-            }
+            centavos={r.valor_centavos}
+            onCentavos={(c) => onChange({ ...r, valor_centavos: c })}
           />
         </div>
       );
@@ -426,4 +424,28 @@ function EditorRegra({ regra: r, onChange }: { regra: Regra; onChange: (r: Regra
     default:
       return null;
   }
+}
+
+/** Valor em reais da regra, com a máscara de dinheiro; guarda o texto enquanto a pessoa digita. */
+function CampoValorRegra({
+  id,
+  centavos,
+  onCentavos,
+}: {
+  id: string;
+  centavos: number;
+  onCentavos: (c: number) => void;
+}) {
+  const [texto, setTexto] = useState(centavosParaReais(centavos));
+  return (
+    <CampoDinheiro
+      id={id}
+      className="mt-1"
+      valor={texto}
+      onValor={(t) => {
+        setTexto(t);
+        onCentavos(reaisParaCentavos(t) ?? 0);
+      }}
+    />
+  );
 }

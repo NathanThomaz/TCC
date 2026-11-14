@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { CampoDinheiro } from "@/components/nexus/CampoDinheiro";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Plus, ShoppingBag, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -354,12 +355,11 @@ function NovaCompraDialog({ onFechar, onCriada }: { onFechar: () => void; onCria
                     <Label htmlFor={`item-custo-${i}`} className="text-xs">
                       Custo unit. (R$)
                     </Label>
-                    <Input
+                    <CampoDinheiro
                       id={`item-custo-${i}`}
-                      inputMode="decimal"
                       placeholder={p?.custoCentavos ? centavosParaReais(p.custoCentavos) : "0,00"}
-                      value={l.custo}
-                      onChange={(e) => mudar(l.chave, "custo", e.target.value)}
+                      valor={l.custo}
+                      onValor={(v) => mudar(l.chave, "custo", v)}
                     />
                   </div>
                   <Button

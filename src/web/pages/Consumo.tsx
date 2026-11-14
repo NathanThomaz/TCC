@@ -1,4 +1,5 @@
 import { Fragment, useState } from "react";
+import { CampoDinheiro } from "@/components/nexus/CampoDinheiro";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, Gauge, Loader2, ShieldCheck, Sparkles, Users } from "lucide-react";
 import { toast } from "sonner";
@@ -16,7 +17,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/lib/auth";
@@ -273,11 +273,10 @@ function EditarLimite({
           </DialogHeader>
           <div className="my-4 space-y-2">
             <Label htmlFor="limite-conta">Limite por mês (R$)</Label>
-            <Input
+            <CampoDinheiro
               id="limite-conta"
-              inputMode="decimal"
-              value={texto}
-              onChange={(e) => setTexto(e.target.value)}
+              valor={texto}
+              onValor={setTexto}
               aria-describedby={erro ? "erro-limite" : undefined}
             />
             {erro && (

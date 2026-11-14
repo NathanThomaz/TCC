@@ -141,6 +141,8 @@ export const AppearanceSchema = z.strictObject({
   cor_destaque: hexColor,
   titulo: z.string().trim().min(1).max(80),
   texto_boas_vindas: z.string().trim().max(300).optional(),
+  /** Tema das telas do sistema (pedido do dono, 2026-11-14); sem ele, segue o do Nexus. */
+  tema: z.enum(["claro", "escuro"]).optional(),
   rotulos_menu: z.partialRecord(z.enum(MODULES), z.string().trim().min(1).max(40)).optional(),
   /** Nomes de telas e colunas adaptados ao negócio (só visual; o banco não muda). */
   rotulos_campos: z

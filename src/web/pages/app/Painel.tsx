@@ -178,15 +178,15 @@ export function indicadores(p: PainelDto): IndicadorDados[] {
   }
   if (p.estoque) {
     const e = p.estoque;
-    const critico = e.minimo === null ? e.semEstoque : (e.abaixoDoMinimo ?? 0);
+    const critico = e.abaixoDoMinimo ?? e.semEstoque;
     add({
       id: "estoque-critico",
       prioridade: 4,
-      rotulo: e.minimo === null ? "Sem estoque" : "Abaixo do mínimo",
+      rotulo: e.abaixoDoMinimo === null ? "Sem estoque" : "Abaixo do mínimo",
       icone: PackageX,
       alerta: critico > 0,
       valor: String(critico),
-      detalhe: `de ${plural(e.produtosAtivos, "produto ativo", "produtos ativos")}${e.minimo !== null ? ` (mínimo de ${e.minimo})` : ""}`,
+      detalhe: `de ${plural(e.produtosAtivos, "produto ativo", "produtos ativos")}${e.abaixoDoMinimo === null ? "" : e.minimo !== null ? ` (mínimo de ${e.minimo})` : " (mínimo de cada produto)"}`,
     });
     add({
       id: "valor-estoque",

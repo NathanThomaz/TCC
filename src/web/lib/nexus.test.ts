@@ -3,8 +3,11 @@ import { validateDraft } from "../../shared/contract/validate";
 import type { ConfigDraft } from "@/types/nexus";
 import {
   comRequisitosGerados,
+  completarReais,
+  mascararReais,
   MODULOS_POR_MODELO,
   rascunhoPadrao,
+  reaisParaCentavos,
   reconciliarModelo,
 } from "./nexus";
 
@@ -80,5 +83,37 @@ describe("modo avançado", () => {
     expect(servicos.regras).toEqual([]);
     expect(servicos.campos).toEqual([]);
     expect(bloqueantes(servicos)).toEqual([]);
+  });
+});
+
+describe("campo de dinheiro (pedido do dono, 2026-11-14)", () => {
+  it.each([
+    ["300", "300"],
+    ["1500", "1.500"],
+    ["1234567", "1.234.567"],
+    ["1.5000", "15.000"],
+    ["1500,5", "1.500,5"],
+    ["1500,567", "1.500,56"],
+    ["12.", "12,"],
+    [",5", "0,5"],
+    ["0012", "12"],
+    ["R$ 2.000,00", "2.000,00"],
+    ["abc", ""],
+  ])("enquanto digita: %s → %s", (digitado, esperado) => {
+    expect(mascararReais(digitado)).toBe(esperado);
+  });
+
+  it.each([
+    ["300", "300,00"],
+    ["1.500", "1.500,00"],
+    ["3,5", "3,50"],
+    ["", ""],
+  ])("ao sair do campo: %s → %s", (digitado, esperado) => {
+    expect(completarReais(digitado)).toBe(esperado);
+  });
+
+  it("o valor formatado volta em centavos", () => {
+    expect(reaisParaCentavos(completarReais("1500"))).toBe(150000);
+    expect(reaisParaCentavos(completarReais("1234567,8"))).toBe(123456780);
   });
 });

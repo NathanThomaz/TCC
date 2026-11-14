@@ -14,6 +14,7 @@ import {
   type TipoPessoa,
 } from "@/api/operacao";
 import { CamposForm, ErroApi, Tabela, useChavePorConteudo } from "@/components/app/Comum";
+import { ColunaEditavel, NovaColuna } from "@/components/app/Colunas";
 import { EmptyState, ErrorState, PageHeader } from "@/components/nexus/Estados";
 import { Button } from "@/components/ui/button";
 import {
@@ -136,9 +137,14 @@ export function Pessoas({ tipo }: { tipo: TipoPessoa }) {
 
   const ativos = (q.data ?? []).filter((p) => p.status === "active").length;
   const cabecalho = [
-    rotuloCampo(app.config, `${tipo}.nome` as const),
+    <ColunaEditavel
+      chave={`${tipo}.nome`}
+      rotulo={rotuloCampo(app.config, `${tipo}.nome` as const)}
+    />,
     "Situação",
-    ...campos.map((c) => c.rotulo),
+    ...campos.map((c) => (
+      <ColunaEditavel chave={`campo:${ENTIDADE[tipo]}:${c.id}`} rotulo={c.rotulo} />
+    )),
     ...(temVendas ? ["Compras", "Total comprado", "Última compra"] : []),
     ...(temAgenda ? ["Atendimentos", "Próximo atendimento"] : []),
     <span className="sr-only">Ações</span>,
@@ -150,9 +156,12 @@ export function Pessoas({ tipo }: { tipo: TipoPessoa }) {
         titulo={titulo}
         descricao="Inativos continuam no histórico, mas não entram em novas operações."
         acoes={
-          <Button onClick={() => setEditando("novo")}>
-            <Plus aria-hidden /> Novo
-          </Button>
+          <>
+            <NovaColuna entidade={ENTIDADE[tipo]} />
+            <Button onClick={() => setEditando("novo")}>
+              <Plus aria-hidden /> Novo
+            </Button>
+          </>
         }
       />
       {q.isPending ? (

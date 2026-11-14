@@ -225,7 +225,45 @@ export function centavosParaReais(c: number): string {
   return (c / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-/** Nome de uma tela ou coluna no vocabulário do negócio (ou o padrão). Só visual. */
-export function rotuloCampo(config: Pick<ConfigDraft, "aparencia">, chave: RotuloCampo): string {
-  return config.aparencia.rotulos_campos?.[chave] ?? ROTULOS_CAMPOS[chave].padrao;
+/**
+ * Nome de uma tela ou coluna no vocabulário do negócio (ou o padrão). Só visual. Sem atacado, o
+ * preço é só "Preço de venda" (não faz sentido falar em varejo).
+ */
+export function rotuloCampo(
+  config: Pick<ConfigDraft, "aparencia"> & Partial<Pick<ConfigDraft, "regras">>,
+  chave: RotuloCampo,
+): string {
+  const proprio = config.aparencia.rotulos_campos?.[chave];
+  if (proprio) return proprio;
+  if (chave === "produtos.varejo" && !config.regras?.some((r) => r.tipo === "limite_atacado")) {
+    return "Preço de venda";
+  }
+  return ROTULOS_CAMPOS[chave].padrao;
+}
+
+/**
+ * Máscara de dinheiro enquanto digita: pontos nos milhares e vírgula com até 2 casas
+ * ("1500" → "1.500"; "1500,5" → "1.500,5"). Um ponto digitado no fim vira a vírgula.
+ */
+export function mascararReais(texto: string): string {
+  let t = texto.replace(/[^\d,.]/g, "");
+  if (t.endsWith(".")) t = `${t.slice(0, -1)},`;
+  t = t.replace(/\./g, "");
+  const virgula = t.indexOf(",");
+  const inteiro = (virgula < 0 ? t : t.slice(0, virgula)).replace(/^0+(?=\d)/, "").slice(0, 9);
+  const comPontos = inteiro.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  if (virgula < 0) return comPontos;
+  const centavos = t
+    .slice(virgula + 1)
+    .replace(/,/g, "")
+    .slice(0, 2);
+  return `${comPontos || "0"},${centavos}`;
+}
+
+/** Ao sair do campo, completa as duas casas ("1.500" → "1.500,00"; "3,5" → "3,50"). */
+export function completarReais(texto: string): string {
+  const t = mascararReais(texto);
+  if (!t) return "";
+  const [inteiro = "0", centavos = ""] = t.split(",");
+  return `${inteiro || "0"},${centavos.padEnd(2, "0")}`;
 }

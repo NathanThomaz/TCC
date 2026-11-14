@@ -15,7 +15,7 @@ import type {
   SystemDto,
   VendaDto,
 } from "../../shared/api";
-import type { PaymentMethod } from "../../shared/contract/catalog";
+import type { FIELD_TYPES, FieldEntity, PaymentMethod } from "../../shared/contract/catalog";
 import type { ConfigDraft } from "../../shared/contract/schema";
 import { ApiError, chamar, novaChave } from "./cliente";
 
@@ -112,6 +112,25 @@ export interface DadosProduto {
   atacadoCentavos: number | null;
   unidadesPorCaixa: number | null;
   campos: CamposInformativos;
+  /** Aviso de estoque deste produto (unidades); null sem aviso próprio. */
+  estoqueMinimo: number | null;
+  /** Só no cadastro: o que já tem em estoque (vira a primeira entrada). */
+  estoqueInicial?: number;
+}
+
+/** Ajuste de coluna num sistema ativo: renomear (só visual) ou incluir. */
+export type AjusteColuna =
+  | { acao: "renomear"; chave: string; rotulo: string }
+  | {
+      acao: "incluir";
+      entidade: FieldEntity;
+      rotulo: string;
+      tipo: (typeof FIELD_TYPES)[number];
+      opcoes?: string[];
+    };
+
+export async function ajustarColuna(sistema: string, ajuste: AjusteColuna): Promise<void> {
+  await chamar(`${base(sistema)}/colunas`, { method: "POST", body: ajuste, chave: novaChave() });
 }
 
 export async function listarProdutos(sistema: string): Promise<ProdutoDto[]> {

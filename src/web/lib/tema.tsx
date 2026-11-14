@@ -1,9 +1,15 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 
 type Tema = "claro" | "escuro";
-const Ctx = createContext<{ tema: Tema; alternar: () => void }>({
+const Ctx = createContext<{
+  tema: Tema;
+  alternar: () => void;
+  /** Tema imposto por uma tela (ex.: o sistema do cliente); null volta à preferência. */
+  forcar: (t: Tema | null) => void;
+}>({
   tema: "claro",
   alternar: () => {},
+  forcar: () => {},
 });
 
 export function TemaProvider({ children }: { children: ReactNode }) {
@@ -17,18 +23,29 @@ export function TemaProvider({ children }: { children: ReactNode }) {
     return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "escuro" : "claro";
   });
 
-  useEffect(() => {
-    document.documentElement.classList.toggle("dark", tema === "escuro");
-  }, [tema]);
+  const [forcado, setForcado] = useState<Tema | null>(null);
+  const efetivo = forcado ?? tema;
 
-  const alternar = () =>
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", efetivo === "escuro");
+  }, [efetivo]);
+
+  const alternar = () => {
+    // Dentro de um sistema com tema próprio, a troca vale só enquanto a pessoa está nele.
+    if (forcado) return setForcado(forcado === "claro" ? "escuro" : "claro");
     setTema((t) => {
       const n = t === "claro" ? "escuro" : "claro";
-      window.localStorage.setItem("nexus:tema", n);
+      try {
+        window.localStorage.setItem("nexus:tema", n);
+      } catch {
+        // armazenamento bloqueado: vale só nesta visita
+      }
       return n;
     });
+  };
+  const forcar = useCallback((t: Tema | null) => setForcado(t), []);
 
-  return <Ctx.Provider value={{ tema, alternar }}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={{ tema: efetivo, alternar, forcar }}>{children}</Ctx.Provider>;
 }
 
 export const useTema = () => useContext(Ctx);
