@@ -95,7 +95,7 @@ function listarPessoas(p: Pessoa): Handler {
       db
         .prepare(
           `SELECT id, name, status, extra_json, created_at FROM ${p.table}
-           WHERE system_id = ?1 AND (?2 IS NULL OR status = ?2) ORDER BY name COLLATE NOCASE LIMIT 500`,
+           WHERE system_id = ?1 AND (?2 IS NULL OR status = ?2) ORDER BY name COLLATE NOCASE LIMIT ${LIMITE_LISTA}`,
         )
         .bind(op.systemId, status)
         .all<PessoaRow & { created_at: number }>(),
@@ -295,6 +295,9 @@ export interface ProdutoRow {
   barcode: string | null;
 }
 
+/** Cadastros por lista (as telas carregam a lista inteira; um pequeno negócio cabe folgado). */
+export const LIMITE_LISTA = 2000;
+
 const centavos = z.number().int().min(1).max(100_000_000);
 export const codigoBarras = z
   .string()
@@ -360,7 +363,7 @@ export async function listarProdutosDoSistema(
 ) {
   const { results } = await ctx.env.DB.prepare(
     `${SELECT_PRODUTO} WHERE p.system_id = ?2 AND (?3 IS NULL OR p.status = ?3)
-     ORDER BY p.name COLLATE NOCASE LIMIT 500`,
+     ORDER BY p.name COLLATE NOCASE LIMIT ${LIMITE_LISTA}`,
   )
     .bind(ctx.clock.now(), systemId, status)
     .all<ProdutoRow>();

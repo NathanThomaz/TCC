@@ -192,7 +192,10 @@ export const ultimaCompra: Handler = async (ctx) => {
   // Só os produtos que ainda estão ativos; os preços são os de hoje (a venda nova recalcula).
   const { results } = await db
     .prepare(
-      `SELECT i.product_id AS produto, p.name AS nome, i.boxes AS caixas, i.loose_units AS unidades
+      `SELECT i.product_id AS produto, p.name AS nome,
+         -- O produto deixou de vender em caixa: a quantidade volta em unidades (fator da venda).
+         CASE WHEN p.units_per_box IS NULL THEN 0 ELSE i.boxes END AS caixas,
+         CASE WHEN p.units_per_box IS NULL THEN i.units ELSE i.loose_units END AS unidades
        FROM sale_items i JOIN products p ON p.id = i.product_id
        WHERE i.sale_id = ? AND p.status = 'active' ORDER BY i.position`,
     )

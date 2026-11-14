@@ -278,6 +278,30 @@ describe("última compra do cliente", () => {
   });
 });
 
+describe("última compra com caixa que o produto não tem mais", () => {
+  it("volta em unidades pelo fator gravado na venda", async () => {
+    const cerveja = await produto("Cerveja", { unidadesPorCaixa: 12, estoqueInicial: 100 });
+    const bar = await cliente("Bar");
+    const v = (
+      await call("POST", p("/vendas"), {
+        cliente: bar.id,
+        itens: [{ produto: cerveja.id, caixas: 1, unidades: 2 }],
+      })
+    ).body.venda as unknown as { id: string; revisao: number };
+    await call("POST", p(`/vendas/${v.id}/concluir`), { revisao: v.revisao });
+    await call("PATCH", p(`/produtos/${cerveja.id}`), {
+      nome: "Cerveja",
+      varejoCentavos: 500,
+      atacadoCentavos: 400,
+      unidadesPorCaixa: null,
+    });
+    const r = await call("GET", p(`/clientes/${bar.id}/ultima-compra`));
+    expect(r.body.ultima!.itens).toEqual([
+      { produto: cerveja.id, nome: "Cerveja", caixas: 0, unidades: 14 },
+    ]);
+  });
+});
+
 describe("código de barras", () => {
   it("cadastro gêmeo (mesma chave) no meio responde como repetição, não como código em uso", async () => {
     const chave = crypto.randomUUID();

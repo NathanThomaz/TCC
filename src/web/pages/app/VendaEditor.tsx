@@ -171,6 +171,20 @@ function Rascunho({ venda, servicos }: { venda: VendaDto | null; servicos: Atend
     queryFn: () => listarProdutos(app.id),
   });
   const [cliente, setCliente] = useState(venda?.cliente ?? "");
+  // Produtos e cliente trazidos pela venda ditada, pelo leitor ou pela última compra que não estão
+  // na lista carregada: ficam guardados na tela (sobrevivem à recarga da lista).
+  const [produtosExtras, setProdutosExtras] = useState<ProdutoDto[]>([]);
+  const [clientesExtras, setClientesExtras] = useState<{ id: string; nome: string }[]>([]);
+  const catalogo = (() => {
+    const lista = produtos.data ?? [];
+    const extras = produtosExtras.filter((e) => !lista.some((p) => p.id === e.id));
+    return extras.length ? [...lista, ...extras] : lista;
+  })();
+  const juntarProdutos = (novos: ProdutoDto[]) =>
+    setProdutosExtras((atuais) => [
+      ...atuais.filter((a) => !novos.some((n) => n.id === a.id)),
+      ...novos,
+    ]);
   // Módulo de pagamentos (ADR-006): a forma é escolhida na conclusão, entre as aceitas.
   const formasAceitas =
     (app.config.modulos.includes("pagamentos") &&
@@ -199,7 +213,7 @@ function Rascunho({ venda, servicos }: { venda: VendaDto | null; servicos: Atend
 
   // Recalculada a cada render (o React Compiler memoiza).
   const previa = (() => {
-    const porId = new Map((produtos.data ?? []).map((p) => [p.id, p]));
+    const porId = new Map(catalogo.map((p) => [p.id, p]));
     const salvos = new Map((base?.itens ?? []).map((i) => [i.produto, i]));
     const itens = [];
     for (const item of pedido) {
@@ -298,16 +312,8 @@ function Rascunho({ venda, servicos }: { venda: VendaDto | null; servicos: Atend
       }
       return proximas.length ? proximas : [linhaVazia()];
     });
-  const qc = useQueryClient();
-  /** Junta produtos à lista desta tela (a lista carregada tem limite de 500). */
-  const juntarProdutos = (novos: ProdutoDto[]) =>
-    qc.setQueryData<ProdutoDto[]>(["app", app.id, "produtos"], (lista) => {
-      const atual = lista ?? [];
-      const faltam = novos.filter((n) => !atual.some((x) => x.id === n.id));
-      return faltam.length ? [...atual, ...faltam] : atual;
-    });
   const lerCodigo = async (codigo: string) => {
-    let p = (produtos.data ?? []).find((x) => x.status === "active" && x.codigoBarras === codigo);
+    let p = catalogo.find((x) => x.status === "active" && x.codigoBarras === codigo);
     if (!p) {
       // A lista carregada tem limite: procura no servidor e junta à lista desta tela.
       try {
@@ -341,10 +347,10 @@ function Rascunho({ venda, servicos }: { venda: VendaDto | null; servicos: Atend
     },
     onError: (e) => toast.error(e.message),
   });
-  const ativos = (produtos.data ?? []).filter(
+  const ativos = catalogo.filter(
     (p) => p.status === "active" || pedido.some((x) => x.produto === p.id),
   );
-  const produtoDe = (id: string): ProdutoDto | undefined => produtos.data?.find((p) => p.id === id);
+  const produtoDe = (id: string): ProdutoDto | undefined => catalogo.find((p) => p.id === id);
   // O disponível da API já desconta a reserva desta venda; para ela, essa reserva volta a contar.
   const disponivelParaEsta = (p: ProdutoDto) =>
     p.disponivel +
@@ -409,7 +415,11 @@ function Rascunho({ venda, servicos }: { venda: VendaDto | null; servicos: Atend
             sistema={app.id}
             onMontada={(v) => {
               juntarProdutos(v.produtos);
-              if (v.cliente) setCliente(v.cliente.id);
+              if (v.cliente) {
+                const c = v.cliente;
+                setClientesExtras((atuais) => [...atuais.filter((a) => a.id !== c.id), c]);
+                setCliente(c.id);
+              }
               if (v.itens.length) {
                 setLinhas(
                   v.itens.map((i) => ({
@@ -450,13 +460,14 @@ function Rascunho({ venda, servicos }: { venda: VendaDto | null; servicos: Atend
                 />
               </SelectTrigger>
               <SelectContent>
-                {(clientes.data ?? [])
-                  .filter((c) => c.status === "active")
-                  .map((c) => (
-                    <SelectItem key={c.id} value={c.id}>
-                      {c.nome}
-                    </SelectItem>
-                  ))}
+                {[
+                  ...(clientes.data ?? []).filter((c) => c.status === "active"),
+                  ...clientesExtras.filter((e) => !clientes.data?.some((c) => c.id === e.id)),
+                ].map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.nome}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
