@@ -13,9 +13,10 @@ export function lerTabela(texto: string): string[][] {
     .split("\n")
     .filter((l) => l.trim() !== "");
   if (linhas.length === 0) return [];
-  const primeira = linhas[0]!;
-  const sep = primeira.includes("\t")
-    ? "\t"
+  // Separador contado fora das aspas: "Vinho, suave";45,90 é ponto e vírgula, não vírgula.
+  const primeira = linhas[0]!.replace(/"[^"]*"/g, "");
+  const sep = primeira.includes("	")
+    ? "	"
     : (primeira.match(/;/g)?.length ?? 0) >= (primeira.match(/,/g)?.length ?? 0)
       ? ";"
       : ",";

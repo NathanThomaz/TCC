@@ -14,6 +14,8 @@ describe("ler planilha", () => {
       ["nome", "preco"],
       ["Vinho; tinto", "45,90"],
     ]);
+    // Vírgula dentro das aspas não decide o separador.
+    expect(lerTabela('"Vinho, suave";45,90')).toEqual([["Vinho, suave", "45,90"]]);
     expect(lerTabela("nome,preco\nÁgua,3.5")).toEqual([
       ["nome", "preco"],
       ["Água", "3.5"],
