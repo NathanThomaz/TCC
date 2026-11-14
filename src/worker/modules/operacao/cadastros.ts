@@ -3,7 +3,7 @@ import type { ClienteDto, ProdutoDto, ProfissionalDto, ResumoPessoaDto } from ".
 import type { FieldEntity, ModuleId } from "../../../shared/contract/catalog";
 import type { ConfigDraft } from "../../../shared/contract/schema";
 import { readJson } from "../../http/body";
-import { notFound, validationFailed } from "../../http/errors";
+import { AppError, notFound, validationFailed } from "../../http/errors";
 import { beginIdempotent, recordStatement, replayAfterRace } from "../../http/idempotency";
 import { json } from "../../http/responses";
 import type { Handler, RequestContext } from "../../http/router";
@@ -292,9 +292,14 @@ interface ProdutoRow {
   extra_json: string;
   last_cost_cents: number | null;
   min_units: number | null;
+  barcode: string | null;
 }
 
 const centavos = z.number().int().min(1).max(100_000_000);
+export const codigoBarras = z
+  .string()
+  .trim()
+  .regex(/^[0-9A-Za-z.-]{1,64}$/, "Código de barras: só letras, números, ponto e hífen.");
 const ProdutoBody = z.object({
   nome,
   varejoCentavos: centavos,
@@ -305,6 +310,8 @@ const ProdutoBody = z.object({
   estoqueMinimo: z.number().int().min(1).max(1_000_000).nullable().optional(),
   /** Só no cadastro: o que já tem em estoque vira a primeira entrada (EST-01 continua valendo). */
   estoqueInicial: z.number().int().min(1).max(1_000_000).optional(),
+  /** Código de barras; ausente na edição mantém o atual. */
+  codigoBarras: codigoBarras.nullable().optional(),
 });
 type ProdutoBody = z.infer<typeof ProdutoBody>;
 
@@ -322,13 +329,14 @@ export function publicProduto(row: ProdutoRow): ProdutoDto {
     campos: lerCampos(row.extra_json),
     custoCentavos: row.last_cost_cents,
     estoqueMinimo: row.min_units,
+    codigoBarras: row.barcode,
   };
 }
 
 /** Produtos com o reservado ativo no instante `now` (EST-05: soma das reservas não vencidas). */
 export const SELECT_PRODUTO = `
   SELECT p.id, p.name, p.status, p.retail_cents, p.wholesale_cents, p.units_per_box, p.physical,
-         p.extra_json, p.last_cost_cents, p.min_units,
+         p.extra_json, p.last_cost_cents, p.min_units, p.barcode,
          (SELECT COALESCE(SUM(r.quantity), 0) FROM reservations r
           WHERE r.product_id = p.id AND r.status = 'active' AND r.expires_at > ?1) AS reserved
   FROM products p`;
@@ -360,7 +368,10 @@ export async function listarProdutosDoSistema(
 }
 
 /** PRE-01/PRE-05: preço de atacado e fator da caixa seguem as regras da configuração ativa. */
-function precosDoProduto(config: ConfigDraft, body: ProdutoBody) {
+export function precosDoProduto(
+  config: ConfigDraft,
+  body: Pick<ProdutoBody, "atacadoCentavos" | "unidadesPorCaixa">,
+) {
   const temAtacado = config.regras.some((r) => r.tipo === "limite_atacado");
   const temCaixa = config.regras.some((r) => r.tipo === "unidades_por_caixa");
   const atacado = body.atacadoCentavos ?? null;
@@ -406,8 +417,8 @@ export const criarProduto: Handler = async (ctx) => {
       // EST-01: o físico começa em zero (default da coluna); só entradas o aumentam.
       db
         .prepare(
-          `INSERT INTO products (id, system_id, name, retail_cents, wholesale_cents, units_per_box, extra_json, min_units, created_by, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO products (id, system_id, name, retail_cents, wholesale_cents, units_per_box, extra_json, min_units, barcode, created_by, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .bind(
           id,
@@ -418,6 +429,7 @@ export const criarProduto: Handler = async (ctx) => {
           caixa,
           extra,
           body.estoqueMinimo ?? null,
+          body.codigoBarras || null,
           op.user.id,
           now,
           now,
@@ -446,6 +458,7 @@ export const criarProduto: Handler = async (ctx) => {
       recordStatement(ctx, cmd, started, id, 201, now),
     ]);
   } catch (error) {
+    if (codigoRepetido(error)) throw codigoEmUso();
     const replay = isUnique(error) ? await replayAfterRace(ctx, cmd, started) : null;
     if (replay?.kind !== "replay") throw error;
     const row = await carregarProduto(ctx, op.systemId, replay.resourceId);
@@ -467,31 +480,38 @@ export const editarProduto: Handler = async (ctx) => {
   const extra = camposValidos(op.config, "produtos", body.campos);
   const now = ctx.clock.now();
   const db = ctx.env.DB;
-  await db.batch([
-    db
-      .prepare(
-        `UPDATE products SET name = ?, retail_cents = ?, wholesale_cents = ?, units_per_box = ?, extra_json = ?,
+  await db
+    .batch([
+      db
+        .prepare(
+          `UPDATE products SET name = ?, retail_cents = ?, wholesale_cents = ?, units_per_box = ?, extra_json = ?,
            min_units = CASE WHEN ? THEN ? ELSE min_units END,
+           barcode = CASE WHEN ? THEN ? ELSE barcode END,
            updated_at = max(updated_at, ?) WHERE id = ? AND system_id = ?`,
-      )
-      .bind(
-        body.nome,
-        body.varejoCentavos,
-        atacado,
-        caixa,
-        extra,
-        body.estoqueMinimo === undefined ? 0 : 1,
-        body.estoqueMinimo ?? null,
-        now,
-        id,
-        op.systemId,
-      ),
-    db
-      .prepare(
-        "INSERT INTO audit_events (system_id, actor_id, action, target_type, target_id, created_at) VALUES (?, ?, 'produto.updated', 'produto', ?, ?)",
-      )
-      .bind(op.systemId, op.user.id, id, now),
-  ]);
+        )
+        .bind(
+          body.nome,
+          body.varejoCentavos,
+          atacado,
+          caixa,
+          extra,
+          body.estoqueMinimo === undefined ? 0 : 1,
+          body.estoqueMinimo ?? null,
+          body.codigoBarras === undefined ? 0 : 1,
+          body.codigoBarras || null,
+          now,
+          id,
+          op.systemId,
+        ),
+      db
+        .prepare(
+          "INSERT INTO audit_events (system_id, actor_id, action, target_type, target_id, created_at) VALUES (?, ?, 'produto.updated', 'produto', ?, ?)",
+        )
+        .bind(op.systemId, op.user.id, id, now),
+    ])
+    .catch((error: unknown) => {
+      throw codigoRepetido(error) ? codigoEmUso() : error;
+    });
   return json({ produto: publicProduto(await carregarProduto(ctx, op.systemId, id)) });
 };
 
@@ -507,3 +527,11 @@ export const statusProduto: Handler = async (ctx) => {
   }
   return json({ produto: publicProduto(await carregarProduto(ctx, op.systemId, id)) });
 };
+
+/** O código de barras já é de outro produto deste sistema (índice products_barcode). */
+export function codigoRepetido(error: unknown): boolean {
+  return error instanceof Error && /UNIQUE/i.test(error.message) && /barcode/i.test(error.message);
+}
+
+export const codigoEmUso = () =>
+  new AppError(409, "codigo_em_uso", "Este código de barras já é de outro produto.");
