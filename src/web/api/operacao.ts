@@ -214,6 +214,14 @@ export async function interpretarVenda(sistema: string, texto: string) {
   return r.venda;
 }
 
+/** Só os produtos destes ids (completa a tela com os que estão fora da lista carregada). */
+export async function listarProdutosPorIds(sistema: string, ids: string[]): Promise<ProdutoDto[]> {
+  const r = await chamar<OperacaoApiBody>(
+    `${base(sistema)}/produtos?ids=${ids.map(encodeURIComponent).join(",")}`,
+  );
+  return exigir(r.produtos, "produtos");
+}
+
 /** Produto ativo com este código de barras; null se não houver. */
 export async function produtoPorCodigo(sistema: string, codigo: string) {
   try {

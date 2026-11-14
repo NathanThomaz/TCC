@@ -30,6 +30,7 @@ import {
   listarProdutos,
   obterVenda,
   salvarItens,
+  listarProdutosPorIds,
   produtoPorCodigo,
   ultimaCompra,
   type ItemPedido,
@@ -175,9 +176,26 @@ function Rascunho({ venda, servicos }: { venda: VendaDto | null; servicos: Atend
   // na lista carregada: ficam guardados na tela (sobrevivem à recarga da lista).
   const [produtosExtras, setProdutosExtras] = useState<ProdutoDto[]>([]);
   const [clientesExtras, setClientesExtras] = useState<{ id: string; nome: string }[]>([]);
+  // Itens da venda salva que não estão na lista carregada: busca só esses no servidor.
+  const faltantes = produtos.data
+    ? (venda?.itens ?? [])
+        .map((i) => i.produto)
+        .filter(
+          (id) =>
+            !produtos.data.some((p) => p.id === id) && !produtosExtras.some((p) => p.id === id),
+        )
+    : [];
+  const completar = useQuery({
+    queryKey: ["app", app.id, "produtos", "ids", faltantes],
+    queryFn: () => listarProdutosPorIds(app.id, faltantes),
+    enabled: faltantes.length > 0,
+  });
   const catalogo = (() => {
     const lista = produtos.data ?? [];
-    const extras = produtosExtras.filter((e) => !lista.some((p) => p.id === e.id));
+    const extras = [...produtosExtras, ...(completar.data ?? [])].filter(
+      (e, i, todos) =>
+        !lista.some((p) => p.id === e.id) && todos.findIndex((x) => x.id === e.id) === i,
+    );
     return extras.length ? [...lista, ...extras] : lista;
   })();
   const juntarProdutos = (novos: ProdutoDto[]) =>

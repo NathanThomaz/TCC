@@ -393,6 +393,18 @@ export function precosDoProduto(
 
 export const listarProdutos: Handler = async (ctx) => {
   const op = await abrirOperacao(ctx, "produtos");
+  // ?ids=a,b,c: só estes (a tela completa uma venda com produtos fora da lista carregada).
+  const ids = ctx.url.searchParams.get("ids");
+  if (ids !== null) {
+    const lista = ids.split(",").filter(Boolean);
+    if (lista.length === 0 || lista.length > 50) throw validationFailed("Informe de 1 a 50 ids.");
+    const { results } = await ctx.env.DB.prepare(
+      `${SELECT_PRODUTO} WHERE p.system_id = ?2 AND p.id IN (SELECT value FROM json_each(?3))`,
+    )
+      .bind(ctx.clock.now(), op.systemId, JSON.stringify(lista))
+      .all<ProdutoRow>();
+    return json({ produtos: results.map(publicProduto) });
+  }
   const status = filtroDaQuery(ctx.url, "status", STATUS);
   return json({ produtos: await listarProdutosDoSistema(ctx, op.systemId, status) });
 };

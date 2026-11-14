@@ -361,6 +361,9 @@ describe("código de barras", () => {
     expect(achado.body.produto!.id).toBe(a.id);
     await call("POST", p(`/produtos/${a.id}/status`), { status: "inactive" });
     expect((await call("GET", p("/produtos/codigo/7891234567890"))).status).toBe(404);
+    // Lista só pelos ids (a tela completa a venda com os que estão fora da lista).
+    const porIds = await call("GET", p(`/produtos?ids=${a.id},${b.id},nada`));
+    expect(porIds.body.produtos!.map((x) => x.id).sort()).toEqual([a.id, b.id].sort());
   });
 });
 
