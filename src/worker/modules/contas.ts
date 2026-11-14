@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { ContaDto, ContasApiBody } from "../../shared/api";
+import { LoginExistenteError } from "../auth/firebase-admin";
 import { authenticate, ehDonoDoNexus, requireAdmin, type AuthUser } from "../auth/session";
 import { readJson } from "../http/body";
 import { AppError, conflict, notFound, unavailable, validationFailed } from "../http/errors";
@@ -98,12 +99,14 @@ async function uma(ctx: RequestContext, admin: AuthUser, id: string): Promise<Co
  */
 async function enviarConvite(
   ctx: RequestContext,
-  conta: { id: string; email: string },
+  conta: { id: string; email: string; invited_uid: string | null },
+  reaproveitar: boolean,
 ): Promise<boolean> {
   const contas = ctx.auth?.contas;
   if (!contas) return false;
   try {
-    const uid = await contas.invite(conta.email);
+    // Fora o dono, só aceita o login que esta conta já tinha (conferido no próprio Firebase).
+    const uid = await contas.invite(conta.email, reaproveitar ? undefined : conta.invited_uid);
     await ctx.env.DB.prepare(
       "UPDATE users SET invited_uid = COALESCE(invited_uid, ?), invite_sent_at = ?, updated_at = max(updated_at, ?) WHERE id = ?",
     )
@@ -111,6 +114,7 @@ async function enviarConvite(
       .run();
     return true;
   } catch (error) {
+    if (error instanceof LoginExistenteError) throw loginDaPropriaPessoa();
     ctx.log.warn("conta.convite_falhou", { error });
     return false;
   }
@@ -127,6 +131,7 @@ async function criarAcesso(
   ctx: RequestContext,
   conta: { id: string; email: string; display_name: string | null },
   senha: string,
+  reaproveitar: boolean,
 ): Promise<boolean> {
   const contas = ctx.auth?.contas;
   if (!contas) return false;
@@ -158,6 +163,12 @@ async function criarAcesso(
     if (existente && (await uidDeOutraConta(ctx, existente, conta.id))) {
       await liberar();
       throw loginDeOutraConta();
+    }
+    // Conferido de novo aqui, colado na troca de senha: a pessoa pode ter se cadastrado depois
+    // da primeira conferência. Sem login, a criação falha se ele surgir no meio (EMAIL_EXISTS).
+    if (existente && !reaproveitar) {
+      await liberar();
+      throw loginDaPropriaPessoa();
     }
     const uid = await contas.createWithPassword(
       conta.email,
@@ -210,14 +221,15 @@ async function exigirLoginLivre(
     ctx.log.warn("conta.consulta_login_falhou", { error });
     throw unavailable("Não foi possível conferir o login agora. Tente de novo.");
   }
-  if (existente && existente !== uidDaConta) {
-    throw new AppError(
-      409,
-      "email_ja_tem_login",
-      "Este e-mail já tem um login criado pela própria pessoa. Peça para ela entrar no Nexus com ele, ou use outro e-mail.",
-    );
-  }
+  if (existente && existente !== uidDaConta) throw loginDaPropriaPessoa();
 }
+
+const loginDaPropriaPessoa = () =>
+  new AppError(
+    409,
+    "email_ja_tem_login",
+    "Este e-mail já tem um login criado pela própria pessoa. Peça para ela entrar no Nexus com ele, ou use outro e-mail.",
+  );
 
 const loginDeOutraConta = () =>
   new AppError(
@@ -243,10 +255,11 @@ async function respostaDoConvite(
   if (!pronto && conta.status === "pending") {
     await exigirLoginLivre(ctx, admin, conta.email, conta.invited_uid);
   }
+  const dono = await ehDonoDoNexus(ctx.env.DB, admin);
   const feito =
     pronto ||
     (conta.status === "pending" &&
-      (senha ? await criarAcesso(ctx, conta, senha) : await enviarConvite(ctx, conta)));
+      (senha ? await criarAcesso(ctx, conta, senha, dono) : await enviarConvite(ctx, conta, dono)));
   const body: ContasApiBody = {
     conta: await uma(ctx, admin, id),
     ...(senha ? { acessoCriado: feito } : { conviteEnviado: feito }),
@@ -393,7 +406,8 @@ export const definirSenha: Handler = async (ctx) => {
   if (!uid) await exigirLoginLivre(ctx, admin, conta.email, null);
   try {
     if (uid) await contas.setPassword(uid, nova);
-    else if (!(await criarAcesso(ctx, conta, nova))) throw new Error("acesso não criado");
+    else if (!(await criarAcesso(ctx, conta, nova, await ehDonoDoNexus(ctx.env.DB, admin))))
+      throw new Error("acesso não criado");
   } catch (error) {
     if (error instanceof AppError) throw error;
     ctx.log.warn("conta.senha_falhou", { error });
@@ -415,7 +429,7 @@ export const reenviarConvite: Handler = async (ctx) => {
   if (conta.status !== "pending") throw conflict("Esta conta já fez o primeiro acesso.");
   if (!ctx.auth?.contas) throw conviteIndisponivel();
   await exigirLoginLivre(ctx, admin, conta.email, conta.invited_uid);
-  if (!(await enviarConvite(ctx, conta))) {
+  if (!(await enviarConvite(ctx, conta, await ehDonoDoNexus(ctx.env.DB, admin)))) {
     throw unavailable("Não foi possível enviar o convite agora. Tente de novo.");
   }
   return json({ conta: await uma(ctx, admin, conta.id), conviteEnviado: true });

@@ -117,13 +117,22 @@ export function createAccountLookup(options: {
   };
 }
 
+/** O e-mail já tem um login no Firebase que o chamador não pode reaproveitar (ADR-009). */
+export class LoginExistenteError extends Error {
+  constructor() {
+    super("login já existe no Firebase");
+    this.name = "LoginExistenteError";
+  }
+}
+
 /** O que a gestão de contas precisa do Firebase (seção 7). */
 export interface AccountAdmin {
   /**
    * Garante a conta sem senha e pede ao Firebase o link de definir senha (que confirma o e-mail).
-   * Devolve o uid da conta no Firebase.
+   * Devolve o uid da conta no Firebase. Com `permitido` (null ou um uid), um login que já existe
+   * só é aceito se for esse uid; outro lança LoginExistenteError sem mandar o link.
    */
-  invite(email: string): Promise<string>;
+  invite(email: string, permitido?: string | null): Promise<string>;
   /** uid da conta do Firebase com este e-mail, se existir. */
   findUid(email: string): Promise<string | null>;
   /**
@@ -204,7 +213,8 @@ export function createAccountAdmin(options: {
       try {
         return await fn(...args);
       } catch (error) {
-        if (error instanceof AccountLookupError) throw error;
+        if (error instanceof AccountLookupError || error instanceof LoginExistenteError)
+          throw error;
         throw new AccountLookupError(
           `falha na integração com o Firebase: ${error instanceof Error ? error.name : "erro"}`,
         );
@@ -212,11 +222,14 @@ export function createAccountAdmin(options: {
     };
 
   return {
-    invite: segura(async (email: string) => {
+    invite: segura(async (email: string, permitido?: string | null) => {
       const existente = await admin("accounts:lookup", { email: [email] });
-      const uid =
-        existente.users?.[0]?.localId ??
-        (await admin("accounts", { email, emailVerified: false })).localId;
+      const encontrado = existente.users?.[0]?.localId;
+      if (encontrado && permitido !== undefined && encontrado !== permitido) {
+        throw new LoginExistenteError();
+      }
+      // Criado agora: se a pessoa se cadastrou no meio, o Firebase recusa (EMAIL_EXISTS).
+      const uid = encontrado ?? (await admin("accounts", { email, emailVerified: false })).localId;
       if (!uid) throw new AccountLookupError("conta criada sem uid");
       const envio = await options.fetch(
         `https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${encodeURIComponent(options.webApiKey)}`,

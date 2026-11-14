@@ -3,6 +3,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import {
   AccountLookupError,
   createAccountAdmin,
+  LoginExistenteError,
   createAccountLookup,
   parseServiceAccount,
   type ServiceAccount,
@@ -210,6 +211,19 @@ describe("createAccountAdmin", () => {
     const google = fakeGoogle({ users: [{ localId: "uid-1" }] });
     await admin(google.fetcher).invite("novo@example.com");
     expect(google.calls.some((c) => c.url.endsWith("/accounts"))).toBe(false);
+  });
+
+  it("convite com login permitido: outro login já existente é recusado sem mandar o link", async () => {
+    const google = fakeGoogle({ users: [{ localId: "uid-1" }] });
+    await expect(admin(google.fetcher).invite("x@example.com", null)).rejects.toBeInstanceOf(
+      LoginExistenteError,
+    );
+    await expect(admin(google.fetcher).invite("x@example.com", "uid-2")).rejects.toBeInstanceOf(
+      LoginExistenteError,
+    );
+    expect(google.calls.some((c) => c.url.includes("sendOobCode"))).toBe(false);
+    // O login que a própria conta já tinha continua aceito.
+    await expect(admin(google.fetcher).invite("x@example.com", "uid-1")).resolves.toBe("uid-1");
   });
 
   it("desativar invalida as sessões (validSince = agora) e falha vira AccountLookupError", async () => {

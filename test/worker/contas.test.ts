@@ -9,7 +9,7 @@ import type {
 import type { VerifiedToken } from "../../src/worker/auth/firebase-token";
 import { InvalidTokenError } from "../../src/worker/auth/firebase-token";
 import { createApp } from "../../src/worker/app";
-import { AccountLookupError } from "../../src/worker/auth/firebase-admin";
+import { AccountLookupError, LoginExistenteError } from "../../src/worker/auth/firebase-admin";
 import { DISTRIBUIDORA } from "../fixtures/distribuidora";
 import { limparBanco } from "../limpar-banco";
 
@@ -48,6 +48,8 @@ let falharConvite = false;
 let falharDesativar = false;
 let falharLookup = false;
 let aoConsultar: (() => Promise<unknown>) | undefined;
+/** Roda depois de cada consulta de login: simula a pessoa se cadastrando no meio. */
+let aposConsultarLogin: (() => void) | undefined;
 let firebaseDesativado = new Set<string>();
 /** Logins que já existem no Firebase (e-mail → uid). */
 let loginsExistentes = new Map<string, string>();
@@ -65,7 +67,11 @@ const app = createApp({
       return { validSince: null, disabled: firebaseDesativado.has(uid) };
     },
     contas: {
-      invite: (email) => {
+      invite: (email, permitido) => {
+        const existente = loginsExistentes.get(email);
+        if (existente && permitido !== undefined && existente !== permitido) {
+          return Promise.reject(new LoginExistenteError());
+        }
         chamadas.push(`convite:${email}`);
         return falharConvite ? Promise.reject(new Error("rede")) : Promise.resolve(`fb-${email}`);
       },
@@ -80,7 +86,11 @@ const app = createApp({
         firebaseDesativado.delete(uid);
         return Promise.resolve();
       },
-      findUid: (email) => Promise.resolve(loginsExistentes.get(email) ?? null),
+      findUid: (email) => {
+        const uid = loginsExistentes.get(email) ?? null;
+        aposConsultarLogin?.();
+        return Promise.resolve(uid);
+      },
       createWithPassword: (email, senha, nome, existente) => {
         // A senha não entra no registro, só o tamanho (o teste confere que chegou).
         chamadas.push(
@@ -141,6 +151,7 @@ beforeEach(async () => {
   falharDesativar = false;
   falharLookup = false;
   aoConsultar = undefined;
+  aposConsultarLogin = undefined;
   firebaseDesativado = new Set();
   loginsExistentes = new Map();
   await limparBanco();
@@ -477,6 +488,25 @@ describe("contas com senha e administradores (pedido do dono, 2026-11-13)", () =
       expect(senha.body.error!.code).toBe("email_ja_tem_login");
       expect(chamadas).toEqual([]);
     });
+  });
+
+  it("login criado entre a conferência e a criação do acesso também é recusado", async () => {
+    // A pessoa se cadastra entre as conferências de antes e a da troca de senha.
+    let consultas = 0;
+    aposConsultarLogin = () => {
+      if (++consultas === 2) loginsExistentes.set("vitima@example.com", "fb-vitima");
+    };
+    const r = await call("POST", "/contas", ADMIN2, { email: "vitima@example.com", senha: SENHA });
+    expect(r.body.error!.code).toBe("email_ja_tem_login");
+    expect(chamadas).toEqual([]);
+    // O mesmo no link: o Firebase confere o login dentro do próprio convite.
+    consultas = 0;
+    aposConsultarLogin = () => {
+      if (++consultas === 2) loginsExistentes.set("outra@example.com", "fb-outra");
+    };
+    const link = await call("POST", "/contas", ADMIN2, { email: "outra@example.com" });
+    expect(link.body.error!.code).toBe("email_ja_tem_login");
+    expect(chamadas).toEqual([]);
   });
 
   it("repetição atrasada não cria o acesso de novo nem volta a senha inicial", async () => {
