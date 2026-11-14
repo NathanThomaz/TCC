@@ -2,6 +2,7 @@ import { decodeJwt, exportPKCS8, generateKeyPair } from "jose";
 import { beforeAll, describe, expect, it } from "vitest";
 import {
   AccountLookupError,
+  ConviteNaoEnviadoError,
   createAccountAdmin,
   LoginExistenteError,
   createAccountLookup,
@@ -211,6 +212,19 @@ describe("createAccountAdmin", () => {
     const google = fakeGoogle({ users: [{ localId: "uid-1" }] });
     await admin(google.fetcher).invite("novo@example.com");
     expect(google.calls.some((c) => c.url.endsWith("/accounts"))).toBe(false);
+  });
+
+  it("convite cujo envio cai (erro ou rede) devolve o uid criado para ser guardado", async () => {
+    const google = fakeGoogle({ users: [], localId: "uid-novo" });
+    const semRede: typeof fetch = (url, init) =>
+      String(url).includes("sendOobCode")
+        ? Promise.reject(new TypeError("rede"))
+        : google.fetcher(url, init);
+    const erro = await admin(semRede)
+      .invite("novo@example.com", null)
+      .catch((e: unknown) => e);
+    expect(erro).toBeInstanceOf(ConviteNaoEnviadoError);
+    expect((erro as ConviteNaoEnviadoError).uid).toBe("uid-novo");
   });
 
   it("convite com login permitido: outro login já existente é recusado sem mandar o link", async () => {
