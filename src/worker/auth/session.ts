@@ -157,7 +157,24 @@ export async function authenticate(
       .prepare("SELECT * FROM users WHERE email = ? COLLATE NOCASE")
       .bind(identity.email)
       .first<UserRow>();
-    if (!invited) throw accountUnknown();
+    if (!invited) {
+      // Cadastro aberto (ADR-009): e-mail confirmado no Firebase e sem conta no Nexus vira um
+      // administrador independente, com sistemas próprios. Fechado, continua recusado.
+      if (ctx.env.CADASTRO_ABERTO !== "true") throw accountUnknown();
+      const agora = ctx.clock.now();
+      await db
+        .prepare(
+          `INSERT OR IGNORE INTO users
+             (id, firebase_uid, email, role, status, self_signup, created_at, updated_at)
+           VALUES (?, ?, ?, 'admin', 'active', 1, ?, ?)`,
+        )
+        .bind(crypto.randomUUID(), identity.uid, identity.email, agora, agora)
+        .run();
+      // Duas primeiras requisições ao mesmo tempo: a segunda lê a conta criada pela primeira.
+      user = await byUid();
+      if (!user) throw accountUnknown();
+      return toAuthUser(await checkRevocation(ctx, user, identity, provider.lookup));
+    }
     if (invited.firebase_uid === identity.uid) {
       // Outra requisição do mesmo uid vinculou entre as duas leituras.
       user = invited;
@@ -240,14 +257,15 @@ export async function requireSystemAccess(
 }
 
 /**
- * Dono do Nexus: o primeiro administrador provisionado (não criado por outro). Só ele cria
+ * Dono do Nexus: o primeiro administrador provisionado (não criado por outro nem pelo cadastro
+ * aberto da ADR-009). Só ele cria
  * administradores independentes (pedido do dono, 2026-11-13).
  */
 export async function ehDonoDoNexus(db: D1Database, user: AuthUser): Promise<boolean> {
   if (user.role !== "admin") return false;
   const dono = await db
     .prepare(
-      "SELECT id FROM users WHERE role = 'admin' AND created_by IS NULL ORDER BY created_at, rowid LIMIT 1",
+      "SELECT id FROM users WHERE role = 'admin' AND created_by IS NULL AND self_signup = 0 ORDER BY created_at, rowid LIMIT 1",
     )
     .first<{ id: string }>();
   return dono?.id === user.id;

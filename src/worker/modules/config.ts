@@ -18,6 +18,10 @@ export const getPublicConfig: Handler = ({ env }) => {
           appId: FIREBASE_APP_ID,
         }
       : null;
-  const body: PublicConfig = { environment: env.APP_ENV, firebase };
+  const body: PublicConfig = {
+    environment: env.APP_ENV,
+    firebase,
+    cadastroAberto: env.CADASTRO_ABERTO === "true" && firebase !== null,
+  };
   return json(body);
 };

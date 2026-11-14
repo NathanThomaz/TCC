@@ -392,7 +392,14 @@ export function Inicio() {
                 </section>
               )}
 
-              {d.ia && <UsoIa gasto={d.ia.gastoCentavos} teto={d.ia.tetoCentavos} />}
+              {d.ia && (
+                <UsoIa
+                  gasto={d.ia.gastoCentavos}
+                  teto={d.ia.tetoCentavos}
+                  escopo={d.ia.escopo}
+                  dono={usuario?.dono === true}
+                />
+              )}
             </aside>
           </div>
         </div>
@@ -481,12 +488,23 @@ function CartaoSistema({ item }: { item: ItemSistema }) {
   );
 }
 
-function UsoIa({ gasto, teto }: { gasto: number; teto: number }) {
-  const pct = teto > 0 ? Math.min(100, Math.round((gasto / teto) * 100)) : 0;
+function UsoIa({
+  gasto,
+  teto,
+  escopo,
+  dono,
+}: {
+  gasto: number;
+  teto: number;
+  escopo: "nexus" | "conta";
+  dono: boolean;
+}) {
+  const pct = teto > 0 ? Math.min(100, Math.round((gasto / teto) * 100)) : 100;
   return (
     <section aria-labelledby="titulo-ia" className="rounded-xl border bg-card p-4 shadow-card">
       <h2 id="titulo-ia" className="mb-2 flex items-center gap-2 text-lg font-semibold">
-        <Sparkles className="size-5 text-primary" aria-hidden /> Uso da IA no mês
+        <Sparkles className="size-5 text-primary" aria-hidden />{" "}
+        {escopo === "conta" ? "Uso da IA da sua conta" : "Uso da IA no mês"}
       </h2>
       <p className="text-sm">
         <span className="font-semibold tabular-nums">{formatarCentavos(gasto)}</span>{" "}
@@ -506,8 +524,18 @@ function UsoIa({ gasto, teto }: { gasto: number; teto: number }) {
         />
       </div>
       <p className="mt-2 text-xs text-muted-foreground">
-        Teto mensal do Nexus. Ao chegar nele, a conversa pausa e as telas continuam funcionando.
+        {escopo === "conta"
+          ? "Limite mensal da sua conta. Ao chegar nele, a conversa com a IA pausa, o progresso fica salvo e as telas continuam funcionando."
+          : "Teto mensal do Nexus. Ao chegar nele, a conversa pausa e as telas continuam funcionando."}
       </p>
+      {dono && (
+        <Link
+          to="/consumo"
+          className="mt-2 inline-block rounded text-sm font-medium text-primary underline-offset-4 hover:underline"
+        >
+          Ver consumo por conta
+        </Link>
+      )}
     </section>
   );
 }

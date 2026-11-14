@@ -17,4 +17,8 @@ export interface Env {
   GEMINI_API_KEY?: string;
   /** Teto mensal da IA em centavos de real (padrão 2000 = R$ 20, seção 21). */
   IA_TETO_MENSAL_CENTAVOS?: string;
+  /** Limite mensal padrão de IA por conta, em centavos (padrão 300 = R$ 3); o dono não tem. */
+  IA_LIMITE_CONTA_CENTAVOS?: string;
+  /** "true": qualquer pessoa cria conta pela tela de entrada (com e-mail confirmado). */
+  CADASTRO_ABERTO?: string;
 }

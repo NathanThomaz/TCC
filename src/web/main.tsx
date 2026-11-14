@@ -18,6 +18,7 @@ import { Produtos } from "@/pages/app/Produtos";
 import { VendaEditor } from "@/pages/app/VendaEditor";
 import { Vendas } from "@/pages/app/Vendas";
 import { Configuracoes } from "@/pages/Configuracoes";
+import { Consumo } from "@/pages/Consumo";
 import { Configurar } from "@/pages/Configurar";
 import { Criar } from "@/pages/Criar";
 import { CriarRevisao } from "@/pages/CriarRevisao";
@@ -79,6 +80,7 @@ createRoot(root).render(
                 </Route>
                 <Route path="/perfil" element={<Perfil />} />
                 <Route path="/configuracoes" element={<Configuracoes />} />
+                <Route path="/consumo" element={<Consumo />} />
               </Route>
               <Route path="*" element={<NaoEncontrada />} />
             </Routes>

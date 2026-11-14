@@ -7,6 +7,7 @@ import {
   REVOCATION_CHECK_MS,
   REVOCATION_GRACE_MS,
   authenticate,
+  ehDonoDoNexus,
   requireSystemAccess,
   type AuthProvider,
 } from "../../src/worker/auth/session";
@@ -104,10 +105,10 @@ describe("verifyFirebaseIdToken", () => {
 
 // Sessão: o provedor é substituído por funções que devolvem a identidade e o estado desejados.
 const BEARER = "Bearer " + "x".repeat(40);
-function ctx(now = NOW) {
+function ctx(now = NOW, cadastro: "true" | "false" = "false") {
   return {
     request: new Request("https://app.test/api/v1/x", { headers: { authorization: BEARER } }),
-    env,
+    env: { ...env, CADASTRO_ABERTO: cadastro },
     clock: fixedClock(now),
     log: createLogger(),
   };
@@ -187,6 +188,55 @@ describe("authenticate e requireSystemAccess", () => {
     expect(await code(authenticate(ctx(), as({ uid: "uid-x", email: "x@example.com" })))).toBe(
       "conta_nao_cadastrada",
     );
+  });
+
+  it("cadastro aberto: e-mail confirmado sem conta vira administrador independente (ADR-009)", async () => {
+    const novo = as({ uid: "uid-novo", email: "novo@example.com" });
+    const user = await authenticate(ctx(NOW, "true"), novo);
+    expect(user).toMatchObject({ role: "admin", adminId: user.id });
+    const row = await env.DB.prepare(
+      "SELECT role, status, owner_id, created_by, self_signup FROM users WHERE firebase_uid = 'uid-novo'",
+    ).first();
+    expect(row).toEqual({
+      role: "admin",
+      status: "active",
+      owner_id: null,
+      created_by: null,
+      self_signup: 1,
+    });
+    // Segundo acesso: a mesma conta, sem duplicar.
+    await expect(authenticate(ctx(NOW, "true"), novo)).resolves.toMatchObject({ id: user.id });
+    const total = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM users WHERE email = 'novo@example.com'",
+    ).first<{ n: number }>();
+    expect(total!.n).toBe(1);
+    // Não vê sistemas de outros administradores.
+    expect(await code(requireSystemAccess(env.DB, user, "s1"))).toBe("not_found");
+    // Nem vira dono do Nexus, mesmo criada antes de todos.
+    await env.DB.prepare("UPDATE users SET created_at = 1 WHERE id = ?").bind(user.id).run();
+    expect(await ehDonoDoNexus(env.DB, user)).toBe(false);
+    expect(await ehDonoDoNexus(env.DB, await authenticate(ctx(), as()))).toBe(true);
+  });
+
+  it("cadastro aberto não cria conta com e-mail não confirmado (ADR-009)", async () => {
+    const naoConfirmado = as({ uid: "uid-novo", email: "novo@example.com", emailVerified: false });
+    expect(await code(authenticate(ctx(NOW, "true"), naoConfirmado))).toBe("email_nao_confirmado");
+    const row = await env.DB.prepare(
+      "SELECT id FROM users WHERE email = 'novo@example.com'",
+    ).first();
+    expect(row).toBeNull();
+  });
+
+  it("cadastro aberto não toma convite pendente nem conta desativada", async () => {
+    // Convite pendente segue o vínculo de sempre (vira secundária, não administrador novo).
+    const sec = await authenticate(
+      ctx(NOW, "true"),
+      as({ uid: "uid-sec", email: "sec@example.com" }),
+    );
+    expect(sec).toMatchObject({ id: "sec", role: "secondary" });
+    expect(
+      await code(authenticate(ctx(NOW, "true"), as({ uid: "uid-off", email: "off@example.com" }))),
+    ).toBe("conta_desativada");
   });
 
   it("vincula o primeiro acesso do convite pelo e-mail, sem diferenciar maiúsculas", async () => {

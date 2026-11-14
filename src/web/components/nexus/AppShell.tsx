@@ -3,6 +3,7 @@ import { Link, useNavigate } from "@/lib/rotas";
 import {
   Boxes,
   ChevronDown,
+  Gauge,
   Home,
   LayoutGrid,
   LogOut,
@@ -33,12 +34,17 @@ const NAV = [
   { to: "/configuracoes", rotulo: "Configurações", Icone: Settings },
 ] as const;
 
+/** Só o dono do Nexus (ADR-009). */
+const NAV_DONO = [{ to: "/consumo", rotulo: "Consumo da IA", Icone: Gauge }] as const;
+
 export const ROTULO_PAPEL = { administrador: "Administrador", secundario: "Secundário" } as const;
 
 function Navegacao({ onNavegar }: { onNavegar?: () => void }) {
+  const { usuario } = useAuth();
+  const itens = usuario?.dono ? [...NAV, ...NAV_DONO] : NAV;
   return (
     <nav aria-label="Principal" className="flex flex-col gap-1">
-      {NAV.map(({ to, rotulo, Icone }) => (
+      {itens.map(({ to, rotulo, Icone }) => (
         <Link
           key={to}
           to={to}
