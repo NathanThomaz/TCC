@@ -179,6 +179,9 @@ export const ajustarColuna: Handler = async (ctx) => {
       error instanceof Error &&
       /NOT NULL constraint failed: audit_events\.action/.test(error.message)
     ) {
+      // A mesma operação (mesma chave) pode ter sido aplicada pela requisição gêmea.
+      const replay = await replayAfterRace(ctx, cmd, started);
+      if (replay?.kind === "replay") return resposta(ctx, systemId, replay.statusCode);
       throw desatualizado();
     }
     if (!isUnique(error)) throw error;

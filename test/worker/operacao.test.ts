@@ -79,6 +79,7 @@ async function callComCorrida(
   path: string,
   body: unknown,
   antes: () => Promise<unknown>,
+  chave: string = crypto.randomUUID(),
 ): Promise<{ status: number; body: Body }> {
   let usado = false;
   const db = new Proxy(env.DB, {
@@ -107,7 +108,7 @@ async function callComCorrida(
       headers: {
         authorization: `Bearer ${ADMIN}`,
         "content-type": "application/json",
-        "idempotency-key": crypto.randomUUID(),
+        "idempotency-key": chave,
       },
       body: JSON.stringify(body),
     }),
@@ -1887,15 +1888,23 @@ describe("cadastro de produto com estoque inicial e aviso próprio (pedido do do
   it("painel e início contam cada produto pelo próprio mínimo", async () => {
     const pouco = await produto({ nome: "Vinho", estoqueInicial: 3, estoqueMinimo: 5 });
     await produto({ nome: "Água", estoqueInicial: 3 }); // sem aviso próprio: só quando acabar
+    const suco = await produto({ nome: "Suco" }); // sem aviso e sem estoque: crítico também
     await produto({ nome: "Cerveja", estoqueInicial: 60, estoqueMinimo: 50 });
     const painel = (await call("GET", p("/painel"), ADMIN)).body as unknown as {
       painel: PainelDto;
     };
-    expect(painel.painel.estoque).toMatchObject({ minimo: null, abaixoDoMinimo: 1 });
+    expect(painel.painel.estoque).toMatchObject({ minimo: null, abaixoDoMinimo: 2 });
     expect(painel.painel.estoque!.criticos.find((c) => c.id === pouco)!.minimo).toBe(5);
+    // Os críticos vêm primeiro na lista.
+    expect(
+      painel.painel
+        .estoque!.criticos.slice(0, 2)
+        .map((c) => c.id)
+        .sort(),
+    ).toEqual([pouco, suco].sort());
     const inicio = (await call("GET", "/inicio", ADMIN)).body as unknown as { inicio: InicioDto };
     const deste = inicio.inicio.sistemas.find((x) => x.sistema.id === S)!;
-    expect(deste.resumo!.estoque).toEqual({ criticos: 1, comMinimo: true });
+    expect(deste.resumo!.estoque).toEqual({ criticos: 2, comMinimo: true });
   });
 });
 
@@ -1954,6 +1963,19 @@ describe("colunas das tabelas num sistema ativo (pedido do dono, 2026-11-14)", (
     expect(inexistente.status).toBe(422);
     const desconhecida = await colunas({ acao: "renomear", chave: "vendas.total", rotulo: "X" });
     expect(desconhecida.status).toBe(422);
+  });
+
+  it("repetição gêmea (mesma chave) aplicada no meio responde como repetição, não conflito", async () => {
+    const chave = crypto.randomUUID();
+    const corpo = { acao: "renomear", chave: "produtos.nome", rotulo: "Modelo" };
+    const r = await callComCorrida(
+      p("/colunas"),
+      corpo,
+      () => call("POST", p("/colunas"), ADMIN, corpo, chave),
+      chave,
+    );
+    expect(r.status).toBe(200);
+    expect((await configAtiva()).aparencia.rotulos_campos).toEqual({ "produtos.nome": "Modelo" });
   });
 
   it("outra alteração aplicada no meio: nada é gravado", async () => {

@@ -123,16 +123,22 @@ export async function calcularPainel(
       disponivel: p.physical - p.reserved,
       minimo: p.min_units ?? minimo,
     }));
-    const comMinimo = produtos.filter((p) => p.minimo !== null);
+    // Mesmo critério do início: abaixo do próprio mínimo ou, sem mínimo, sem estoque.
+    const critico = (p: (typeof produtos)[number]) =>
+      p.minimo !== null ? p.disponivel < p.minimo : p.disponivel <= 0;
+    const temAlgumMinimo = produtos.some((p) => p.minimo !== null);
     painel.estoque = {
       produtosAtivos: produtos.length,
       semEstoque: produtos.filter((p) => p.disponivel <= 0).length,
       minimo,
-      abaixoDoMinimo: comMinimo.length
-        ? comMinimo.filter((p) => p.disponivel < (p.minimo ?? 0)).length
-        : null,
+      abaixoDoMinimo: temAlgumMinimo ? produtos.filter(critico).length : null,
       criticos: [...produtos]
-        .sort((a, b) => a.disponivel - b.disponivel || a.nome.localeCompare(b.nome, "pt-BR"))
+        .sort(
+          (a, b) =>
+            Number(critico(b)) - Number(critico(a)) ||
+            a.disponivel - b.disponivel ||
+            a.nome.localeCompare(b.nome, "pt-BR"),
+        )
         .slice(0, CRITICOS),
       unidades: results.reduce((soma, p) => soma + p.physical, 0),
       valorVarejoCentavos: results.reduce((soma, p) => soma + p.physical * p.retail_cents, 0),

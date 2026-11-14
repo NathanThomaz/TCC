@@ -99,6 +99,8 @@ describe("campo de dinheiro (pedido do dono, 2026-11-14)", () => {
     ["0012", "12"],
     ["R$ 2.000,00", "2.000,00"],
     ["abc", ""],
+    ["1500.50", "1.500,50"], // colado com ponto decimal
+    ["1500.5", "1.500,5"],
   ])("enquanto digita: %s → %s", (digitado, esperado) => {
     expect(mascararReais(digitado)).toBe(esperado);
   });
@@ -110,6 +112,17 @@ describe("campo de dinheiro (pedido do dono, 2026-11-14)", () => {
     ["", ""],
   ])("ao sair do campo: %s → %s", (digitado, esperado) => {
     expect(completarReais(digitado)).toBe(esperado);
+  });
+
+  it("apagar um dígito não transforma milhar em decimal", () => {
+    expect(mascararReais("1.50", true)).toBe("150");
+    expect(mascararReais("12.34", true)).toBe("1.234");
+  });
+
+  it("o texto mascarado converte certo mesmo sem sair do campo", () => {
+    expect(reaisParaCentavos("1.500")).toBe(150000);
+    expect(reaisParaCentavos("1.234.567")).toBe(123456700);
+    expect(reaisParaCentavos("1.500,5")).toBe(150050);
   });
 
   it("o valor formatado volta em centavos", () => {

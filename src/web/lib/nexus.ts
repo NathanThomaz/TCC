@@ -212,11 +212,18 @@ export function novoId(prefixo: string) {
 export const formatarData = (ms: number) =>
   new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(ms);
 
-/** "1.500,50" ou "1500.5" → 150050 centavos. Retorna null se inválido. */
+/**
+ * "1.500,50", "1.500" (milhares, como a máscara mostra) ou "1500.5" → centavos. Retorna null se
+ * inválido.
+ */
 export function reaisParaCentavos(texto: string): number | null {
   const t = texto.trim().replace(/^R\$\s*/, "");
   if (!t) return null;
-  const normal = t.includes(",") ? t.replace(/\./g, "").replace(",", ".") : t;
+  const normal = t.includes(",")
+    ? t.replace(/\./g, "").replace(",", ".")
+    : /^\d{1,3}(\.\d{3})+$/.test(t)
+      ? t.replace(/\./g, "")
+      : t;
   if (!/^\d+(\.\d{1,2})?$/.test(normal)) return null;
   return Math.round(Number(normal) * 100);
 }
@@ -243,11 +250,15 @@ export function rotuloCampo(
 
 /**
  * Máscara de dinheiro enquanto digita: pontos nos milhares e vírgula com até 2 casas
- * ("1500" → "1.500"; "1500,5" → "1.500,5"). Um ponto digitado no fim vira a vírgula.
+ * ("1500" → "1.500"; "1500,5" → "1.500,5"). Um ponto digitado no fim vira a vírgula, e um valor
+ * colado com ponto decimal ("1500.50") é entendido como decimal. `apagando`: a pessoa apagou um
+ * caractere ("1.500" → "1.50" continua sendo 150, não 1,50).
  */
-export function mascararReais(texto: string): string {
+export function mascararReais(texto: string, apagando = false): string {
   let t = texto.replace(/[^\d,.]/g, "");
   if (t.endsWith(".")) t = `${t.slice(0, -1)},`;
+  // Sem vírgula, um único ponto seguido de 1 ou 2 dígitos é decimal (colado de outro lugar).
+  if (!apagando && !t.includes(",") && /^\d+\.\d{1,2}$/.test(t)) t = t.replace(".", ",");
   t = t.replace(/\./g, "");
   const virgula = t.indexOf(",");
   const inteiro = (virgula < 0 ? t : t.slice(0, virgula)).replace(/^0+(?=\d)/, "").slice(0, 9);
