@@ -1,15 +1,27 @@
-import { useLayoutEffect, useRef, type ComponentProps } from "react";
+import { useLayoutEffect, useRef, useState, type ComponentProps } from "react";
 import { Input } from "@/components/ui/input";
 import { completarReais, mascararReais } from "@/lib/nexus";
 import { cn } from "@/lib/utils";
 
-/** Quantos dígitos e vírgulas há antes da posição: o que a máscara não muda de lugar. */
-function significativos(texto: string, ate: number): number {
-  return texto.slice(0, ate).replace(/[^\d,]/g, "").length;
+/**
+ * Quantos dígitos e vírgulas do valor mascarado ficam antes do cursor. Conta também o ponto que a
+ * máscara transforma em vírgula (digitado no fim ou colado como decimal) e desconta os zeros à
+ * esquerda que ela remove.
+ */
+export function posicaoSignificativa(bruto: string, cursor: number, mascarado: string): number {
+  const antes = bruto.slice(0, cursor);
+  let n = antes.replace(/[^\d,]/g, "").length;
+  const pontoVirouVirgula = !bruto.includes(",") && mascarado.includes(",");
+  if (pontoVirouVirgula) {
+    const ponto = bruto.lastIndexOf(".");
+    if (ponto >= 0 && ponto < cursor) n++;
+  }
+  const zeros = /^0+(?=\d)/.exec(bruto.replace(/[^\d,]/g, ""))?.[0].length ?? 0;
+  return n - Math.min(zeros, n);
 }
 
 /** Posição logo depois do n-ésimo dígito ou vírgula do texto mascarado. */
-function posicaoDepois(texto: string, n: number): number {
+export function posicaoDepois(texto: string, n: number): number {
   if (n <= 0) return 0;
   let vistos = 0;
   for (let i = 0; i < texto.length; i++) {
@@ -36,6 +48,9 @@ export function CampoDinheiro({
 }) {
   const ref = useRef<HTMLInputElement>(null);
   const cursor = useRef<number | null>(null);
+  // Muda a cada digitação: reposiciona o cursor mesmo quando o valor mascarado não muda
+  // (ex.: zero à esquerda), já que o React devolve o texto anterior ao campo.
+  const [digitacao, setDigitacao] = useState(0);
 
   useLayoutEffect(() => {
     const el = ref.current;
@@ -44,7 +59,7 @@ export function CampoDinheiro({
       el.setSelectionRange(pos, pos);
     }
     cursor.current = null;
-  }, [valor]);
+  }, [valor, digitacao]);
 
   return (
     <Input
@@ -56,8 +71,17 @@ export function CampoDinheiro({
       value={valor}
       onChange={(e) => {
         const bruto = e.target.value;
-        cursor.current = significativos(bruto, e.target.selectionStart ?? bruto.length);
-        onValor(mascararReais(bruto, bruto.length < valor.length));
+        // Apagar (pelo tipo do evento; sem ele, pelo tamanho): "1.500" → "1.50" continua 150.
+        const tipo = (e.nativeEvent as InputEvent).inputType;
+        const apagando = tipo ? tipo.startsWith("delete") : bruto.length < valor.length;
+        const mascarado = mascararReais(bruto, apagando);
+        cursor.current = posicaoSignificativa(
+          bruto,
+          e.target.selectionStart ?? bruto.length,
+          mascarado,
+        );
+        setDigitacao((n) => n + 1);
+        onValor(mascarado);
       }}
       onBlur={(e) => {
         onValor(completarReais(valor));

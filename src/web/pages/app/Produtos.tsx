@@ -112,9 +112,11 @@ export function Produtos() {
                 {p.nome}
                 {p.status === "inactive" && <span className="ml-2 text-xs">(inativo)</span>}
               </td>
-              <td className="px-4 py-2 tabular-nums">{formatarCentavos(p.varejoCentavos)}</td>
+              <td className="whitespace-nowrap px-4 py-2 tabular-nums">
+                {formatarCentavos(p.varejoCentavos)}
+              </td>
               {temAtacado && (
-                <td className="px-4 py-2 tabular-nums">
+                <td className="whitespace-nowrap px-4 py-2 tabular-nums">
                   {p.atacadoCentavos === null ? "—" : formatarCentavos(p.atacadoCentavos)}
                 </td>
               )}

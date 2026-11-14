@@ -59,7 +59,7 @@ export function ColunaEditavel({ chave, rotulo }: { chave: string; rotulo: strin
   if (app.papel !== "admin") return <>{rotulo}</>;
   if (!editando) {
     return (
-      <span className="group inline-flex items-center gap-1">
+      <span className="group inline-flex items-center gap-1 whitespace-nowrap">
         {rotulo}
         <button
           type="button"
