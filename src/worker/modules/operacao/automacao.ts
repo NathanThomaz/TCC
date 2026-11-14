@@ -12,9 +12,11 @@ import {
   VendaDitadaSchema,
   type VendaDitada,
 } from "../../ia/prompts";
+import { requireAdmin } from "../../auth/session";
+import { idempotencyKey } from "../../http/idempotency";
 import { isUnique, parse } from "../comum";
 import { codigoBarras, codigoEmUso, codigoRepetido, precosDoProduto } from "./cadastros";
-import { abrirOperacao, type Operacao } from "./contexto";
+import { abrirOperacao, camposValidos, type Operacao } from "./contexto";
 
 // Menos digitação nas vendas (pedido do dono, 2026-11-14): venda ditada ou escrita (a IA só liga
 // o texto aos cadastros; a pessoa confere e salva pelo caminho normal), repetir a última compra
@@ -175,8 +177,8 @@ export const ultimaCompra: Handler = async (ctx) => {
 
 // ---- Importar de planilha ----
 
-/** Linhas por envio: o lote do D1 grava tudo ou nada. */
-export const MAX_IMPORTACAO = 200;
+/** Linhas por importação: o lote do D1 grava tudo ou nada (um lote conta como uma consulta). */
+export const MAX_IMPORTACAO = 500;
 
 const centavos = z.number().int().min(1).max(100_000_000);
 const LinhaProduto = z.object({
@@ -196,9 +198,15 @@ const ImportarClientesBody = z.object({
     .max(MAX_IMPORTACAO),
 });
 
-const chaveNome = (nome: string) => nome.trim().toLocaleLowerCase("pt-BR");
+/** Nome comparável (minúsculas, sem acento). */
+export const chaveNome = (nome: string) =>
+  nome
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
 
-/** Nomes que já existem na tabela (comparação sem diferenciar maiúsculas). */
+/** Nomes que já existem na tabela. */
 async function nomesExistentes(
   ctx: RequestContext,
   tabela: "products" | "customers",
@@ -210,25 +218,89 @@ async function nomesExistentes(
   return new Set(results.map((r) => chaveNome(r.name)));
 }
 
+/**
+ * Só insere se não houver cadastro com o mesmo nome, conferido na própria instrução (outra
+ * importação ao mesmo tempo). O SQLite só tira a diferença de maiúsculas sem acento; a conferência
+ * sem acento é a de antes (nomesExistentes), que pega todos os casos fora de uma corrida.
+ */
+const SEM_NOME_IGUAL = (tabela: "products" | "customers") =>
+  `WHERE NOT EXISTS (SELECT 1 FROM ${tabela} WHERE system_id = ? AND lower(name) = lower(?))`;
+
+/** Separa as linhas novas das que repetem um nome (já cadastrado ou repetido na planilha). */
+function separarRepetidos<T extends { nome: string }>(linhas: T[], existentes: Set<string>) {
+  const vistos = new Set<string>();
+  const ignorados: string[] = [];
+  const novas = linhas.filter((l) => {
+    const k = chaveNome(l.nome);
+    if (existentes.has(k) || vistos.has(k)) {
+      ignorados.push(l.nome);
+      return false;
+    }
+    vistos.add(k);
+    return true;
+  });
+  return { novas, ignorados };
+}
+
+/** Campos obrigatórios da configuração não vêm na planilha: a importação recusa antes. */
+function exigirSemObrigatorios(op: Operacao, entidade: "produtos" | "clientes") {
+  try {
+    camposValidos(op.config, entidade, {});
+  } catch {
+    const nomes = op.config.campos
+      .filter((c) => c.entidade === entidade && c.obrigatorio)
+      .map((c) => c.rotulo);
+    throw validationFailed(
+      `Este cadastro tem campos obrigatórios (${nomes.join(", ")}) que a planilha não preenche. Cadastre pela tela ou torne esses campos opcionais.`,
+    );
+  }
+}
+
+/** Repetição: a resposta gravada na auditoria da importação com a mesma chave. */
 async function respostaImportacao(
   ctx: RequestContext,
   systemId: string,
-  comando: string,
+  acao: string,
   status: number,
 ) {
   const row = await ctx.env.DB.prepare(
     `SELECT details_json FROM audit_events WHERE system_id = ? AND action = ?
-     ORDER BY id DESC LIMIT 1`,
+       AND json_extract(details_json, '$.chave') = ? ORDER BY id DESC LIMIT 1`,
   )
-    .bind(systemId, comando)
+    .bind(systemId, acao, idempotencyKey(ctx.request))
     .first<{ details_json: string }>();
-  const d = row ? (JSON.parse(row.details_json) as { criados?: number }) : {};
-  const body: ImportacaoDto = { criados: d.criados ?? 0, ignorados: [] };
+  const d = row ? (JSON.parse(row.details_json) as { criados?: number; ignorados?: string[] }) : {};
+  const body: ImportacaoDto = { criados: d.criados ?? 0, ignorados: d.ignorados ?? [] };
   return json({ importacao: body }, { status });
+}
+
+/** Auditoria com o resultado e a chave (a repetição devolve a mesma resposta). */
+function auditoriaImportacao(
+  ctx: RequestContext,
+  op: Operacao,
+  acao: string,
+  alvo: string,
+  resultado: ImportacaoDto,
+  now: number,
+) {
+  return ctx.env.DB.prepare(
+    `INSERT INTO audit_events (system_id, actor_id, action, target_type, details_json, created_at)
+     VALUES (?, ?, ?, ?, json_object('chave', ?, 'criados', ?, 'ignorados', json(?)), ?)`,
+  ).bind(
+    op.systemId,
+    op.user.id,
+    acao,
+    alvo,
+    idempotencyKey(ctx.request),
+    resultado.criados,
+    JSON.stringify(resultado.ignorados),
+    now,
+  );
 }
 
 export const importarProdutos: Handler = async (ctx) => {
   const op = await abrirOperacao(ctx, "produtos");
+  requireAdmin(op.user);
   const { linhas } = parse(ImportarProdutosBody, await readJson(ctx.request));
   const cmd = {
     scope: op.systemId,
@@ -240,6 +312,7 @@ export const importarProdutos: Handler = async (ctx) => {
   if (started.kind === "replay") {
     return respostaImportacao(ctx, op.systemId, "produto.importados", started.statusCode);
   }
+  exigirSemObrigatorios(op, "produtos");
   const temEstoque = op.config.modulos.includes("estoque");
   // Cada linha passa pelas mesmas regras do cadastro; um erro recusa tudo, com a linha.
   const erros: string[] = [];
@@ -258,18 +331,10 @@ export const importarProdutos: Handler = async (ctx) => {
     erros.push("Há códigos de barras repetidos na planilha.");
   if (erros.length) throw validationFailed(erros.slice(0, 10).join(" "), { erros });
 
-  const existentes = await nomesExistentes(ctx, "products", op.systemId);
-  const vistos = new Set<string>();
-  const ignorados: string[] = [];
-  const novas = linhas.filter((l) => {
-    const k = chaveNome(l.nome);
-    if (existentes.has(k) || vistos.has(k)) {
-      ignorados.push(l.nome);
-      return false;
-    }
-    vistos.add(k);
-    return true;
-  });
+  const { novas, ignorados } = separarRepetidos(
+    linhas,
+    await nomesExistentes(ctx, "products", op.systemId),
+  );
   const now = ctx.clock.now();
   const db = ctx.env.DB;
   const instrucoes: D1PreparedStatement[] = [];
@@ -279,7 +344,7 @@ export const importarProdutos: Handler = async (ctx) => {
       db
         .prepare(
           `INSERT INTO products (id, system_id, name, retail_cents, wholesale_cents, units_per_box, min_units, barcode, created_by, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? ${SEM_NOME_IGUAL("products")}`,
         )
         .bind(
           id,
@@ -293,9 +358,12 @@ export const importarProdutos: Handler = async (ctx) => {
           op.user.id,
           now,
           now,
+          op.systemId,
+          l.nome,
         ),
     );
-    // Estoque da planilha entra como a primeira entrada, com histórico (EST-01).
+    // Estoque da planilha entra como a primeira entrada, com histórico (EST-01). Se outra
+    // importação criou o mesmo nome no meio, o produto não existe e nada disto tem efeito.
     if (l.estoque) {
       instrucoes.push(
         db.prepare("UPDATE products SET physical = physical + ? WHERE id = ?").bind(l.estoque, id),
@@ -310,31 +378,27 @@ export const importarProdutos: Handler = async (ctx) => {
       );
     }
   }
+  const resultado: ImportacaoDto = { criados: novas.length, ignorados };
   try {
     await db.batch([
       ...instrucoes,
-      db
-        .prepare(
-          `INSERT INTO audit_events (system_id, actor_id, action, target_type, details_json, created_at)
-           VALUES (?, ?, 'produto.importados', 'produto', json_object('criados', ?, 'ignorados', ?), ?)`,
-        )
-        .bind(op.systemId, op.user.id, novas.length, ignorados.length, now),
+      auditoriaImportacao(ctx, op, "produto.importados", "produto", resultado, now),
       recordStatement(ctx, cmd, started, op.systemId, 201, now),
     ]);
   } catch (error) {
-    if (codigoRepetido(error)) throw codigoEmUso();
     const replay = isUnique(error) ? await replayAfterRace(ctx, cmd, started) : null;
     if (replay?.kind === "replay") {
       return respostaImportacao(ctx, op.systemId, "produto.importados", replay.statusCode);
     }
+    if (codigoRepetido(error)) throw codigoEmUso();
     throw error;
   }
-  const body: ImportacaoDto = { criados: novas.length, ignorados };
-  return json({ importacao: body }, { status: 201 });
+  return json({ importacao: resultado }, { status: 201 });
 };
 
 export const importarClientes: Handler = async (ctx) => {
   const op = await abrirOperacao(ctx, "clientes");
+  requireAdmin(op.user);
   const { linhas } = parse(ImportarClientesBody, await readJson(ctx.request));
   const cmd = {
     scope: op.systemId,
@@ -346,35 +410,34 @@ export const importarClientes: Handler = async (ctx) => {
   if (started.kind === "replay") {
     return respostaImportacao(ctx, op.systemId, "cliente.importados", started.statusCode);
   }
-  const existentes = await nomesExistentes(ctx, "customers", op.systemId);
-  const vistos = new Set<string>();
-  const ignorados: string[] = [];
-  const novas = linhas.filter((l) => {
-    const k = chaveNome(l.nome);
-    if (existentes.has(k) || vistos.has(k)) {
-      ignorados.push(l.nome);
-      return false;
-    }
-    vistos.add(k);
-    return true;
-  });
+  exigirSemObrigatorios(op, "clientes");
+  const { novas, ignorados } = separarRepetidos(
+    linhas,
+    await nomesExistentes(ctx, "customers", op.systemId),
+  );
   const now = ctx.clock.now();
   const db = ctx.env.DB;
+  const resultado: ImportacaoDto = { criados: novas.length, ignorados };
   try {
     await db.batch([
       ...novas.map((l) =>
         db
           .prepare(
-            "INSERT INTO customers (id, system_id, name, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+            `INSERT INTO customers (id, system_id, name, created_by, created_at, updated_at)
+             SELECT ?, ?, ?, ?, ?, ? ${SEM_NOME_IGUAL("customers")}`,
           )
-          .bind(crypto.randomUUID(), op.systemId, l.nome, op.user.id, now, now),
+          .bind(
+            crypto.randomUUID(),
+            op.systemId,
+            l.nome,
+            op.user.id,
+            now,
+            now,
+            op.systemId,
+            chaveNome(l.nome),
+          ),
       ),
-      db
-        .prepare(
-          `INSERT INTO audit_events (system_id, actor_id, action, target_type, details_json, created_at)
-           VALUES (?, ?, 'cliente.importados', 'cliente', json_object('criados', ?, 'ignorados', ?), ?)`,
-        )
-        .bind(op.systemId, op.user.id, novas.length, ignorados.length, now),
+      auditoriaImportacao(ctx, op, "cliente.importados", "cliente", resultado, now),
       recordStatement(ctx, cmd, started, op.systemId, 201, now),
     ]);
   } catch (error) {
@@ -384,6 +447,5 @@ export const importarClientes: Handler = async (ctx) => {
     }
     throw error;
   }
-  const body: ImportacaoDto = { criados: novas.length, ignorados };
-  return json({ importacao: body }, { status: 201 });
+  return json({ importacao: resultado }, { status: 201 });
 };

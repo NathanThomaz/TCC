@@ -236,7 +236,8 @@ function CameraCodigo({ onLido, onFechar }: { onLido: (c: string) => void; onFec
       .getUserMedia({ video: { facingMode: "environment" } })
       .then(async (f) => {
         fluxo = f;
-        if (parado || !video.current) return;
+        // O diálogo fechou antes de a câmera abrir: solta a câmera na hora.
+        if (parado || !video.current) return f.getTracks().forEach((t) => t.stop());
         video.current.srcObject = f;
         await video.current.play();
         void procurar();

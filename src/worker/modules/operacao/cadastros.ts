@@ -458,9 +458,8 @@ export const criarProduto: Handler = async (ctx) => {
       recordStatement(ctx, cmd, started, id, 201, now),
     ]);
   } catch (error) {
-    if (codigoRepetido(error)) throw codigoEmUso();
     const replay = isUnique(error) ? await replayAfterRace(ctx, cmd, started) : null;
-    if (replay?.kind !== "replay") throw error;
+    if (replay?.kind !== "replay") throw codigoRepetido(error) ? codigoEmUso() : error;
     const row = await carregarProduto(ctx, op.systemId, replay.resourceId);
     return json({ produto: publicProduto(row) }, { status: replay.statusCode });
   }

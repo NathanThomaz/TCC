@@ -22,8 +22,8 @@ import { useApp } from "@/pages/app/Aplicacao";
 // Importar de planilha (pedido do dono, 2026-11-14): colar do Excel ou enviar CSV, conferir a
 // prévia e criar tudo de uma vez. Nomes que já existem ficam como estão.
 
-/** Linhas por envio (o servidor grava cada envio de uma vez). */
-const POR_ENVIO = 200;
+/** Linhas por importação: o servidor grava tudo de uma vez (ou nada). */
+const MAXIMO = 500;
 
 export function ImportarPlanilha({ tipo }: { tipo: "produtos" | "clientes" }) {
   const app = useApp();
@@ -71,14 +71,8 @@ function ImportarDialog({
 
   const m = useMutation({
     mutationFn: async () => {
-      let criados = 0;
-      let ignorados = 0;
-      for (let i = 0; i < leitura.linhas.length; i += POR_ENVIO) {
-        const r = await importarPlanilha(app.id, tipo, leitura.linhas.slice(i, i + POR_ENVIO));
-        criados += r.criados;
-        ignorados += r.ignorados.length;
-      }
-      return { criados, ignorados };
+      const r = await importarPlanilha(app.id, tipo, leitura.linhas);
+      return { criados: r.criados, ignorados: r.ignorados.length };
     },
     onSuccess: ({ criados, ignorados }) => {
       void qc.invalidateQueries({ queryKey: ["app", app.id, tipo] });
@@ -131,6 +125,11 @@ function ImportarDialog({
           </label>
         </div>
 
+        {leitura.linhas.length > MAXIMO && (
+          <p role="alert" className="text-sm text-destructive">
+            São {leitura.linhas.length} linhas: importe até {MAXIMO} por vez (divida a planilha).
+          </p>
+        )}
         {leitura.erros.length > 0 && (
           <ul role="alert" className="list-disc space-y-1 pl-5 text-sm text-destructive">
             {leitura.erros.slice(0, 8).map((e) => (
@@ -180,7 +179,12 @@ function ImportarDialog({
           </Button>
           <Button
             type="button"
-            disabled={leitura.linhas.length === 0 || leitura.erros.length > 0 || m.isPending}
+            disabled={
+              leitura.linhas.length === 0 ||
+              leitura.linhas.length > MAXIMO ||
+              leitura.erros.length > 0 ||
+              m.isPending
+            }
             onClick={() => m.mutate()}
           >
             {m.isPending && <Loader2 className="animate-spin" aria-hidden />}

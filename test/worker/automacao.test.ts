@@ -73,20 +73,52 @@ type Body = SystemsApiBody & {
   [k: string]: unknown;
 };
 
-async function call(method: string, path: string, body?: unknown, token = ADMIN) {
+async function call(
+  method: string,
+  path: string,
+  body?: unknown,
+  token = ADMIN,
+  chave: string = crypto.randomUUID(),
+  ambiente: typeof env = env,
+) {
   const response = await app(
     new Request(`https://app.test/api/v1${path}`, {
       method,
       headers: {
         authorization: `Bearer ${token}`,
         ...(body === undefined ? {} : { "content-type": "application/json" }),
-        ...(method === "POST" ? { "idempotency-key": crypto.randomUUID() } : {}),
+        ...(method === "POST" ? { "idempotency-key": chave } : {}),
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     }),
-    env,
+    ambiente,
   );
   return { status: response.status, body: await response.json<Body>() };
+}
+
+/** Ambiente em que `antes` roda logo antes do primeiro lote (batch): simula outra requisição. */
+function comCorrida(antes: () => Promise<unknown>): typeof env {
+  let usado = false;
+  const db = new Proxy(env.DB, {
+    get(alvo, prop) {
+      if (prop === "batch") {
+        return async (lote: D1PreparedStatement[]) => {
+          if (!usado) {
+            usado = true;
+            await antes();
+          }
+          return alvo.batch(lote);
+        };
+      }
+      const valor: unknown = Reflect.get(alvo, prop);
+      return typeof valor === "function"
+        ? (valor as (...x: unknown[]) => unknown).bind(alvo)
+        : valor;
+    },
+  });
+  return new Proxy(env, {
+    get: (alvo, prop): unknown => (prop === "DB" ? db : Reflect.get(alvo, prop)),
+  });
 }
 
 let S = "";
@@ -243,6 +275,26 @@ describe("última compra do cliente", () => {
 });
 
 describe("código de barras", () => {
+  it("cadastro gêmeo (mesma chave) no meio responde como repetição, não como código em uso", async () => {
+    const chave = crypto.randomUUID();
+    const corpo = {
+      nome: "Cerveja",
+      varejoCentavos: 500,
+      atacadoCentavos: 400,
+      codigoBarras: "123",
+    };
+    const r = await call(
+      "POST",
+      p("/produtos"),
+      corpo,
+      ADMIN,
+      chave,
+      comCorrida(() => call("POST", p("/produtos"), corpo, ADMIN, chave)),
+    );
+    expect(r.status).toBe(201);
+    expect((await call("GET", p("/produtos"))).body.produtos).toHaveLength(1);
+  });
+
   it("grava, mantém na edição sem o campo e recusa repetido no sistema", async () => {
     const a = await produto("Cerveja", { codigoBarras: "7891234567890" });
     expect(a.codigoBarras).toBe("7891234567890");
@@ -319,6 +371,68 @@ describe("importar planilha", () => {
     expect(r.status).toBe(422);
     expect(r.body.error!.message).toMatch(/Linha 2 \(Sem atacado\)/);
     expect((await call("GET", p("/produtos"))).body.produtos).toEqual([]);
+  });
+
+  it("só o administrador importa", async () => {
+    const linhas = [{ nome: "Mercado" }];
+    expect((await call("POST", p("/clientes/importar"), { linhas }, SEC)).status).toBe(403);
+    const produtos = [{ nome: "X", varejoCentavos: 100, atacadoCentavos: 90 }];
+    expect((await call("POST", p("/produtos/importar"), { linhas: produtos }, SEC)).status).toBe(
+      403,
+    );
+  });
+
+  it("repetição com a mesma chave devolve a mesma resposta, com os ignorados", async () => {
+    await cliente("Bar do Zé");
+    const chave = crypto.randomUUID();
+    const corpo = { linhas: [{ nome: "Bar do Zé" }, { nome: "Mercado" }] };
+    const primeira = await call("POST", p("/clientes/importar"), corpo, ADMIN, chave);
+    await call("POST", p("/clientes/importar"), {
+      linhas: [{ nome: "A" }, { nome: "B" }, { nome: "C" }],
+    });
+    const repetida = await call("POST", p("/clientes/importar"), corpo, ADMIN, chave);
+    expect(repetida.body.importacao).toEqual(primeira.body.importacao);
+    expect(repetida.body.importacao).toEqual({ criados: 1, ignorados: ["Bar do Zé"] });
+  });
+
+  it("outra importação do mesmo nome no meio não duplica o cadastro nem o estoque", async () => {
+    const linha = { nome: "Cerveja lata", varejoCentavos: 300, atacadoCentavos: 250, estoque: 10 };
+    const r = await call(
+      "POST",
+      p("/produtos/importar"),
+      { linhas: [linha] },
+      ADMIN,
+      crypto.randomUUID(),
+      comCorrida(() =>
+        call("POST", p("/produtos/importar"), { linhas: [{ ...linha, nome: "CERVEJA LATA" }] }),
+      ),
+    );
+    expect(r.status).toBe(201);
+    const lista = (await call("GET", p("/produtos"))).body.produtos!;
+    expect(lista).toHaveLength(1);
+    expect(lista[0]).toMatchObject({ nome: "CERVEJA LATA", fisico: 10 });
+    const movs = await env.DB.prepare("SELECT COUNT(*) AS n FROM stock_movements").first<{
+      n: number;
+    }>();
+    expect(movs!.n).toBe(1);
+  });
+
+  it("recusa quando o cadastro tem campo obrigatório que a planilha não preenche", async () => {
+    // Outro sistema, com o telefone do cliente obrigatório.
+    const rascunho = structuredClone(DISTRIBUIDORA);
+    rascunho.campos = rascunho.campos.map((c) =>
+      c.id === "telefone" ? { ...c, obrigatorio: true } : c,
+    );
+    const outro = (await call("POST", "/systems", { nome: "Com telefone" })).body.sistema!.id;
+    const v = (await call("POST", `/systems/${outro}/versions`, { origem: "formulario", rascunho }))
+      .body.versao!;
+    await call("POST", `/systems/${outro}/versions/${v.id}/approve`, { hash: v.hash });
+    await call("POST", `/systems/${outro}/activate`, { versao: v.id });
+    const r = await call("POST", `/systems/${outro}/clientes/importar`, {
+      linhas: [{ nome: "Mercado" }],
+    });
+    expect(r.status).toBe(422);
+    expect(r.body.error!.message).toContain("Telefone");
   });
 
   it("importa clientes e ignora repetidos", async () => {

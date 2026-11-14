@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ProdutoDto } from "../../shared/api";
-import { lerClientes, lerProdutos, lerTabela, sugestaoDeReposicao } from "./planilha";
+import { inteiro, lerClientes, lerProdutos, lerTabela, sugestaoDeReposicao } from "./planilha";
 
 const SEM_REGRAS = { atacado: false, caixa: false, estoque: true };
 
@@ -57,6 +57,29 @@ describe("ler planilha", () => {
       "Linha 2 (Cerveja): informe o preço de atacado.",
       "Linha 3 (Água): preço inválido.",
       "Linha 4: falta o nome.",
+    ]);
+  });
+
+  it("quantidade com ponto só vale como milhar certo; fração é recusada", () => {
+    expect(inteiro("1.200")).toBe(1200);
+    expect(inteiro("12")).toBe(12);
+    expect(inteiro("1.5")).toBeNaN();
+    expect(inteiro("1.0")).toBeNaN();
+    expect(inteiro("1,5")).toBeNaN();
+    expect(lerProdutos("Arroz;28,90;1.5", SEM_REGRAS).erros).toHaveLength(1);
+  });
+
+  it("sem títulos, segue a ordem que a tela mostra para as regras do sistema", () => {
+    const r = lerProdutos("Arroz;28,90;6;20;5;789", { atacado: false, caixa: true, estoque: true });
+    expect(r.linhas).toEqual([
+      {
+        nome: "Arroz",
+        varejoCentavos: 2890,
+        unidadesPorCaixa: 6,
+        estoque: 20,
+        estoqueMinimo: 5,
+        codigoBarras: "789",
+      },
     ]);
   });
 

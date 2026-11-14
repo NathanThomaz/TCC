@@ -4,7 +4,7 @@ import { reaisParaCentavos } from "./nexus";
 
 // Importar de planilha (pedido do dono, 2026-11-14): a pessoa cola as linhas copiadas do Excel
 // (separadas por tabulação) ou envia um CSV (";" ou ","). A primeira linha pode ter os nomes das
-// colunas; sem ela, a ordem é nome, preço e estoque. Tudo é conferido antes de enviar.
+// colunas; sem ela, vale a ordem que a tela mostra (ordemSemTitulo). Tudo é conferido antes.
 
 /** Linhas e células, com aspas do CSV. */
 export function lerTabela(texto: string): string[][] {
@@ -40,7 +40,7 @@ export function lerTabela(texto: string): string[][] {
   });
 }
 
-type Coluna = "nome" | "preco" | "atacado" | "caixa" | "estoque" | "minimo" | "codigo";
+export type Coluna = "nome" | "preco" | "atacado" | "caixa" | "estoque" | "minimo" | "codigo";
 
 const NOMES: Record<Coluna, string[]> = {
   nome: ["nome", "produto", "item", "descricao", "nome do produto"],
@@ -64,11 +64,26 @@ function cabecalho(celulas: string[]): Partial<Record<Coluna, number>> | null {
   return mapa.nome !== undefined && mapa.preco !== undefined ? mapa : null;
 }
 
-/** Quantidade inteira ("1.200" = 1200); vazio = null; inválida = NaN. */
-function inteiro(texto: string | undefined): number | null {
-  const t = (texto ?? "").replace(/[\s.]/g, "");
+/** Quantidade inteira ("1.200" = 1200 só com milhares certos); vazio = null; inválida = NaN. */
+export function inteiro(texto: string | undefined): number | null {
+  const t = (texto ?? "").replace(/\s/g, "");
   if (t === "") return null;
-  return /^\d+$/.test(t) ? Number(t) : Number.NaN;
+  if (/^\d+$/.test(t)) return Number(t);
+  // "1.5" ou "1.0" não são milhares: recusa em vez de virar 15 ou 10.
+  return /^\d{1,3}(\.\d{3})+$/.test(t) ? Number(t.replace(/\./g, "")) : Number.NaN;
+}
+
+/** Ordem das colunas sem a linha de títulos, a mesma que a tela anuncia. */
+export function ordemSemTitulo(regras: RegrasImportacao): Partial<Record<Coluna, number>> {
+  const ordem: Coluna[] = [
+    "nome",
+    "preco",
+    ...(regras.atacado ? (["atacado"] as const) : []),
+    ...(regras.caixa ? (["caixa"] as const) : []),
+    ...(regras.estoque ? (["estoque", "minimo"] as const) : []),
+    "codigo",
+  ];
+  return Object.fromEntries(ordem.map((c, i) => [c, i]));
 }
 
 export interface LinhaProduto {
@@ -92,7 +107,7 @@ export function lerProdutos(texto: string, regras: RegrasImportacao) {
   const tabela = lerTabela(texto);
   const mapa = tabela[0] ? cabecalho(tabela[0]) : null;
   const corpo = mapa ? tabela.slice(1) : tabela;
-  const pos: Partial<Record<Coluna, number>> = mapa ?? { nome: 0, preco: 1, estoque: 2 };
+  const pos = mapa ?? ordemSemTitulo(regras);
   const linhas: LinhaProduto[] = [];
   const erros: string[] = [];
   corpo.forEach((c, i) => {
