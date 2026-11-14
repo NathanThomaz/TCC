@@ -429,15 +429,16 @@ function Rascunho({ venda, servicos }: { venda: VendaDto | null; servicos: Atend
                 // Citou um cliente que não existe: não deixa a venda ir para o anterior.
                 setCliente("");
               }
-              if (v.itens.length) {
-                setLinhas(
-                  v.itens.map((i) => ({
-                    produto: i.produto,
-                    caixas: String(i.caixas),
-                    unidades: String(i.unidades),
-                  })),
-                );
-              }
+              // A venda ditada é a venda inteira: os itens de antes saem, mesmo sem nenhum novo.
+              setLinhas(
+                v.itens.length
+                  ? v.itens.map((i) => ({
+                      produto: i.produto,
+                      caixas: String(i.caixas),
+                      unidades: String(i.unidades),
+                    }))
+                  : [linhaVazia()],
+              );
               const extras = [...v.naoEncontrados.map((t) => `Não encontrei: ${t}.`)];
               if (v.formaPagamento) {
                 extras.push(
@@ -445,7 +446,9 @@ function Rascunho({ venda, servicos }: { venda: VendaDto | null; servicos: Atend
                 );
               }
               setAvisos(extras);
-              toast.success("Venda montada. Confira os itens e salve.");
+              if (v.itens.length) toast.success("Venda montada. Confira os itens e salve.");
+              else
+                toast.error("Não reconheci nenhum produto. Confira os nomes ou escolha os itens.");
             }}
           />
         )}
