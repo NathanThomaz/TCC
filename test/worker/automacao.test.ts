@@ -408,6 +408,8 @@ describe("importar planilha", () => {
       ),
     );
     expect(r.status).toBe(201);
+    // O resultado é o efetivo: nada foi criado por esta importação.
+    expect(r.body.importacao).toEqual({ criados: 0, ignorados: ["Cerveja lata"] });
     const lista = (await call("GET", p("/produtos"))).body.produtos!;
     expect(lista).toHaveLength(1);
     expect(lista[0]).toMatchObject({ nome: "CERVEJA LATA", fisico: 10 });
@@ -433,6 +435,36 @@ describe("importar planilha", () => {
     });
     expect(r.status).toBe(422);
     expect(r.body.error!.message).toContain("Telefone");
+  });
+
+  it("clientes com acento na corrida também não duplicam", async () => {
+    const r = await call(
+      "POST",
+      p("/clientes/importar"),
+      { linhas: [{ nome: "José" }] },
+      ADMIN,
+      crypto.randomUUID(),
+      comCorrida(() => call("POST", p("/clientes/importar"), { linhas: [{ nome: "José" }] })),
+    );
+    expect(r.body.importacao).toEqual({ criados: 0, ignorados: ["José"] });
+    const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM customers").first<{ n: number }>();
+    expect(n!.n).toBe(1);
+  });
+
+  it("aceita 500 linhas completas num lote só (corpo maior que 64 KB)", async () => {
+    const linhas = Array.from({ length: 500 }, (_, i) => ({
+      nome: `Produto de teste com nome comprido número ${i + 1}`,
+      varejoCentavos: 123456,
+      atacadoCentavos: 110000,
+      unidadesPorCaixa: 12,
+      estoque: 1000,
+      estoqueMinimo: 100,
+      codigoBarras: `789${String(i).padStart(10, "0")}`,
+    }));
+    expect(JSON.stringify({ linhas }).length).toBeGreaterThan(64 * 1024);
+    const r = await call("POST", p("/produtos/importar"), { linhas });
+    expect(r.status).toBe(201);
+    expect(r.body.importacao!.criados).toBe(500);
   });
 
   it("importa clientes e ignora repetidos", async () => {

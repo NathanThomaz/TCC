@@ -179,6 +179,8 @@ export const ultimaCompra: Handler = async (ctx) => {
 
 /** Linhas por importação: o lote do D1 grava tudo ou nada (um lote conta como uma consulta). */
 export const MAX_IMPORTACAO = 500;
+/** Corpo de uma importação: 500 linhas completas passam de 64 KB (limite das outras rotas). */
+const CORPO_IMPORTACAO = 512 * 1024;
 
 const centavos = z.number().int().min(1).max(100_000_000);
 const LinhaProduto = z.object({
@@ -274,34 +276,49 @@ async function respostaImportacao(
   return json({ importacao: body }, { status });
 }
 
-/** Auditoria com o resultado e a chave (a repetição devolve a mesma resposta). */
+/**
+ * Auditoria com o resultado EFETIVO e a chave (a resposta e a repetição saem dela). Contados no
+ * próprio lote pelos ids gerados: criados = os que existem depois das inserções; ignorados = os
+ * já existentes e os que outra importação criou no meio (a inserção condicional não gravou).
+ */
 function auditoriaImportacao(
   ctx: RequestContext,
   op: Operacao,
   acao: string,
   alvo: string,
-  resultado: ImportacaoDto,
+  tabela: "products" | "customers",
+  ignorados: string[],
+  novas: { id: string; nome: string }[],
   now: number,
 ) {
+  const gravados = `SELECT id FROM ${tabela} WHERE system_id = ?3`;
   return ctx.env.DB.prepare(
     `INSERT INTO audit_events (system_id, actor_id, action, target_type, details_json, created_at)
-     VALUES (?, ?, ?, ?, json_object('chave', ?, 'criados', ?, 'ignorados', json(?)), ?)`,
+     VALUES (?3, ?4, ?6, ?7, json_object(
+       'chave', ?8,
+       'criados', (SELECT COUNT(*) FROM json_each(?2)
+                   WHERE json_extract(value, '$.id') IN (${gravados})),
+       'ignorados', (SELECT json_group_array(nome) FROM (
+          SELECT value AS nome FROM json_each(?1)
+          UNION ALL
+          SELECT json_extract(value, '$.nome') FROM json_each(?2)
+          WHERE json_extract(value, '$.id') NOT IN (${gravados})))), ?5)`,
   ).bind(
+    JSON.stringify(ignorados),
+    JSON.stringify(novas.map((l) => ({ id: l.id, nome: l.nome }))),
     op.systemId,
     op.user.id,
+    now,
     acao,
     alvo,
     idempotencyKey(ctx.request),
-    resultado.criados,
-    JSON.stringify(resultado.ignorados),
-    now,
   );
 }
 
 export const importarProdutos: Handler = async (ctx) => {
   const op = await abrirOperacao(ctx, "produtos");
   requireAdmin(op.user);
-  const { linhas } = parse(ImportarProdutosBody, await readJson(ctx.request));
+  const { linhas } = parse(ImportarProdutosBody, await readJson(ctx.request, CORPO_IMPORTACAO));
   const cmd = {
     scope: op.systemId,
     actorId: op.user.id,
@@ -331,15 +348,14 @@ export const importarProdutos: Handler = async (ctx) => {
     erros.push("Há códigos de barras repetidos na planilha.");
   if (erros.length) throw validationFailed(erros.slice(0, 10).join(" "), { erros });
 
-  const { novas, ignorados } = separarRepetidos(
-    linhas,
-    await nomesExistentes(ctx, "products", op.systemId),
-  );
+  const separadas = separarRepetidos(linhas, await nomesExistentes(ctx, "products", op.systemId));
+  const ignorados = separadas.ignorados;
+  const novas = separadas.novas.map((l) => ({ ...l, id: crypto.randomUUID() }));
   const now = ctx.clock.now();
   const db = ctx.env.DB;
   const instrucoes: D1PreparedStatement[] = [];
   for (const l of novas) {
-    const id = crypto.randomUUID();
+    const id = l.id;
     instrucoes.push(
       db
         .prepare(
@@ -378,11 +394,19 @@ export const importarProdutos: Handler = async (ctx) => {
       );
     }
   }
-  const resultado: ImportacaoDto = { criados: novas.length, ignorados };
   try {
     await db.batch([
       ...instrucoes,
-      auditoriaImportacao(ctx, op, "produto.importados", "produto", resultado, now),
+      auditoriaImportacao(
+        ctx,
+        op,
+        "produto.importados",
+        "produto",
+        "products",
+        ignorados,
+        novas,
+        now,
+      ),
       recordStatement(ctx, cmd, started, op.systemId, 201, now),
     ]);
   } catch (error) {
@@ -393,13 +417,13 @@ export const importarProdutos: Handler = async (ctx) => {
     if (codigoRepetido(error)) throw codigoEmUso();
     throw error;
   }
-  return json({ importacao: resultado }, { status: 201 });
+  return respostaImportacao(ctx, op.systemId, "produto.importados", 201);
 };
 
 export const importarClientes: Handler = async (ctx) => {
   const op = await abrirOperacao(ctx, "clientes");
   requireAdmin(op.user);
-  const { linhas } = parse(ImportarClientesBody, await readJson(ctx.request));
+  const { linhas } = parse(ImportarClientesBody, await readJson(ctx.request, CORPO_IMPORTACAO));
   const cmd = {
     scope: op.systemId,
     actorId: op.user.id,
@@ -411,13 +435,11 @@ export const importarClientes: Handler = async (ctx) => {
     return respostaImportacao(ctx, op.systemId, "cliente.importados", started.statusCode);
   }
   exigirSemObrigatorios(op, "clientes");
-  const { novas, ignorados } = separarRepetidos(
-    linhas,
-    await nomesExistentes(ctx, "customers", op.systemId),
-  );
+  const separadas = separarRepetidos(linhas, await nomesExistentes(ctx, "customers", op.systemId));
+  const ignorados = separadas.ignorados;
+  const novas = separadas.novas.map((l) => ({ ...l, id: crypto.randomUUID() }));
   const now = ctx.clock.now();
   const db = ctx.env.DB;
-  const resultado: ImportacaoDto = { criados: novas.length, ignorados };
   try {
     await db.batch([
       ...novas.map((l) =>
@@ -426,18 +448,18 @@ export const importarClientes: Handler = async (ctx) => {
             `INSERT INTO customers (id, system_id, name, created_by, created_at, updated_at)
              SELECT ?, ?, ?, ?, ?, ? ${SEM_NOME_IGUAL("customers")}`,
           )
-          .bind(
-            crypto.randomUUID(),
-            op.systemId,
-            l.nome,
-            op.user.id,
-            now,
-            now,
-            op.systemId,
-            chaveNome(l.nome),
-          ),
+          .bind(l.id, op.systemId, l.nome, op.user.id, now, now, op.systemId, l.nome),
       ),
-      auditoriaImportacao(ctx, op, "cliente.importados", "cliente", resultado, now),
+      auditoriaImportacao(
+        ctx,
+        op,
+        "cliente.importados",
+        "cliente",
+        "customers",
+        ignorados,
+        novas,
+        now,
+      ),
       recordStatement(ctx, cmd, started, op.systemId, 201, now),
     ]);
   } catch (error) {
@@ -447,5 +469,5 @@ export const importarClientes: Handler = async (ctx) => {
     }
     throw error;
   }
-  return json({ importacao: resultado }, { status: 201 });
+  return respostaImportacao(ctx, op.systemId, "cliente.importados", 201);
 };

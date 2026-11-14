@@ -3,15 +3,18 @@ import { AppError, validationFailed } from "./errors";
 const MAX_BODY_BYTES = 64 * 1024;
 
 /** Lê o corpo JSON com limite de tamanho; formato e campos são validados por quem chama. */
-export async function readJson(request: Request): Promise<unknown> {
+export async function readJson(
+  request: Request,
+  maxBytes: number = MAX_BODY_BYTES,
+): Promise<unknown> {
   const type = request.headers.get("content-type") ?? "";
   if (!type.toLowerCase().startsWith("application/json")) {
     throw new AppError(415, "tipo_nao_suportado", "Envie o corpo como application/json.");
   }
   const declared = Number(request.headers.get("content-length") ?? "0");
-  if (declared > MAX_BODY_BYTES) throw tooLarge();
+  if (declared > maxBytes) throw tooLarge(maxBytes);
   const text = await request.text();
-  if (new TextEncoder().encode(text).byteLength > MAX_BODY_BYTES) throw tooLarge();
+  if (new TextEncoder().encode(text).byteLength > maxBytes) throw tooLarge(maxBytes);
   try {
     return JSON.parse(text) as unknown;
   } catch {
@@ -19,5 +22,9 @@ export async function readJson(request: Request): Promise<unknown> {
   }
 }
 
-const tooLarge = () =>
-  new AppError(413, "corpo_grande_demais", "O corpo da requisição passa do limite de 64 KB.");
+const tooLarge = (maxBytes: number) =>
+  new AppError(
+    413,
+    "corpo_grande_demais",
+    `O corpo da requisição passa do limite de ${Math.round(maxBytes / 1024)} KB.`,
+  );
