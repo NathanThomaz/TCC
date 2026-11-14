@@ -444,6 +444,41 @@ describe("contas com senha e administradores (pedido do dono, 2026-11-13)", () =
     expect(chamadas).toEqual([`atualizar:fb-antigo:${SENHA.length}`]);
   });
 
+  describe("login de quem se cadastrou sozinho (ADR-009)", () => {
+    // ADMIN2 não é o dono do Nexus: com o cadastro aberto, pode ser qualquer pessoa.
+    it("outro administrador não troca a senha nem manda link para um login que já existe", async () => {
+      loginsExistentes.set("vitima@example.com", "fb-vitima");
+      const comSenha = await call("POST", "/contas", ADMIN2, {
+        email: "vitima@example.com",
+        senha: SENHA,
+      });
+      expect(comSenha.status).toBe(409);
+      expect(comSenha.body.error!.code).toBe("email_ja_tem_login");
+      const comLink = await call("POST", "/contas", ADMIN2, { email: "vitima@example.com" });
+      expect(comLink.body.error!.code).toBe("email_ja_tem_login");
+      expect(chamadas).toEqual([]);
+      const linha = await env.DB.prepare(
+        "SELECT id FROM users WHERE email = 'vitima@example.com'",
+      ).first();
+      expect(linha).toBeNull();
+    });
+
+    it("login criado depois do convite também não é tomado pelo reenvio nem pela senha", async () => {
+      falharConvite = true;
+      const r = await call("POST", "/contas", ADMIN2, { email: "vitima@example.com" });
+      const id = r.body.conta!.id;
+      falharConvite = false;
+      // A pessoa se cadastra sozinha antes de o convite sair.
+      loginsExistentes.set("vitima@example.com", "fb-vitima");
+      chamadas = [];
+      const reenvio = await call("POST", `/contas/${id}/convite`, ADMIN2);
+      expect(reenvio.body.error!.code).toBe("email_ja_tem_login");
+      const senha = await call("POST", `/contas/${id}/senha`, ADMIN2, { senha: SENHA });
+      expect(senha.body.error!.code).toBe("email_ja_tem_login");
+      expect(chamadas).toEqual([]);
+    });
+  });
+
   it("repetição atrasada não cria o acesso de novo nem volta a senha inicial", async () => {
     const chave = crypto.randomUUID();
     const corpo = { email: "novo@example.com", senha: SENHA };

@@ -1,6 +1,5 @@
 import { z } from "zod";
 import type { ConsumoContaDto, ConsumoDto } from "../../shared/api";
-import { paraCampoLocal } from "../../shared/dominio/agenda";
 import { authenticate, ehDonoDoNexus } from "../auth/session";
 import { readJson } from "../http/body";
 import { AppError, notFound } from "../http/errors";
@@ -95,7 +94,7 @@ export const obterConsumo: Handler = async (ctx) => {
   lista.sort((a, b) => b.gastoCentavos - a.gastoCentavos);
   const geral = await consumoDoMes(ctx.env, agora);
   const body: ConsumoDto = {
-    mes: paraCampoLocal(agora).slice(0, 7),
+    mes: new Date(inicio).toISOString().slice(0, 7),
     tetoCentavos: geral.tetoCentavos,
     gastoTotalCentavos: geral.gastoCentavos,
     limitePadraoCentavos: padrao,

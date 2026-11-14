@@ -176,6 +176,9 @@ async function aplicarNomePendente(usuario: Usuario): Promise<Usuario> {
     guardar(chave, null);
     return usuario;
   }
+  // Resposta atrasada de uma sessão anterior: o PATCH iria com o login atual, de outra pessoa.
+  const atual = (await obterAuth())?.currentUser?.email?.toLowerCase();
+  if (atual !== usuario.email.toLowerCase()) return usuario;
   try {
     const atualizado = await salvarNome(nome);
     guardar(chave, null);

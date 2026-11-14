@@ -190,6 +190,35 @@ async function uidDeOutraConta(ctx: RequestContext, uid: string, conta: string |
   return dono !== null;
 }
 
+/**
+ * Com o cadastro aberto (ADR-009), qualquer pessoa vira administrador: um login do Firebase sem
+ * vínculo com esta conta pode ser de alguém que se cadastrou e ainda não confirmou o e-mail. Só o
+ * dono do Nexus reaproveita esse login (com senha nova ou link); os demais recebem 409.
+ */
+async function exigirLoginLivre(
+  ctx: RequestContext,
+  admin: AuthUser,
+  email: string,
+  uidDaConta: string | null,
+) {
+  const contas = ctx.auth?.contas;
+  if (!contas || (await ehDonoDoNexus(ctx.env.DB, admin))) return;
+  let existente: string | null;
+  try {
+    existente = await contas.findUid(email);
+  } catch (error) {
+    ctx.log.warn("conta.consulta_login_falhou", { error });
+    throw unavailable("Não foi possível conferir o login agora. Tente de novo.");
+  }
+  if (existente && existente !== uidDaConta) {
+    throw new AppError(
+      409,
+      "email_ja_tem_login",
+      "Este e-mail já tem um login criado pela própria pessoa. Peça para ela entrar no Nexus com ele, ou use outro e-mail.",
+    );
+  }
+}
+
 const loginDeOutraConta = () =>
   new AppError(
     409,
@@ -211,6 +240,9 @@ async function respostaDoConvite(
   const conta = await carregarConta(ctx, admin, id);
   // Com senha, pronto é o acesso criado (uid gravado); sem senha, o link de e-mail ter saído.
   const pronto = senha ? conta.invited_uid !== null : conta.invite_sent_at !== null;
+  if (!pronto && conta.status === "pending") {
+    await exigirLoginLivre(ctx, admin, conta.email, conta.invited_uid);
+  }
   const feito =
     pronto ||
     (conta.status === "pending" &&
@@ -272,6 +304,7 @@ export const convidarConta: Handler = async (ctx) => {
     }
     if (existente && (await uidDeOutraConta(ctx, existente, null))) throw loginDeOutraConta();
   }
+  await exigirLoginLivre(ctx, admin, body.email, null);
   const novoAdmin = body.papel === "admin";
   if (novoAdmin) {
     if (!(await ehDonoDoNexus(ctx.env.DB, admin))) {
@@ -357,6 +390,7 @@ export const definirSenha: Handler = async (ctx) => {
   const contas = ctx.auth?.contas;
   if (!contas) throw conviteIndisponivel();
   const uid = await uidNoFirebase(ctx, conta.id);
+  if (!uid) await exigirLoginLivre(ctx, admin, conta.email, null);
   try {
     if (uid) await contas.setPassword(uid, nova);
     else if (!(await criarAcesso(ctx, conta, nova))) throw new Error("acesso não criado");
@@ -380,6 +414,7 @@ export const reenviarConvite: Handler = async (ctx) => {
   const conta = await carregarConta(ctx, admin, ctx.params.id ?? "");
   if (conta.status !== "pending") throw conflict("Esta conta já fez o primeiro acesso.");
   if (!ctx.auth?.contas) throw conviteIndisponivel();
+  await exigirLoginLivre(ctx, admin, conta.email, conta.invited_uid);
   if (!(await enviarConvite(ctx, conta))) {
     throw unavailable("Não foi possível enviar o convite agora. Tente de novo.");
   }

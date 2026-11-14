@@ -160,6 +160,13 @@ describe("limite de IA por conta (ADR-009)", () => {
     expect(audit).toEqual({ actor_id: "a", details_json: '{"limite_centavos":1000}' });
   });
 
+  it("limite reduzido pelo dono vale já na chamada seguinte", async () => {
+    const sistema = await novoSistema(NOVO);
+    await call("POST", "/consumo/b/limite", DONO, { limiteCentavos: 0 });
+    expect((await conversar(NOVO, sistema)).body.error!.code).toBe("limite_ia_conta");
+    expect(chamadasIa).toBe(0);
+  });
+
   it("tela inicial: o dono vê o teto do Nexus; as outras contas, o próprio limite", async () => {
     const sistema = await novoSistema(NOVO);
     await gastou("bs", sistema, 1_500_000);
