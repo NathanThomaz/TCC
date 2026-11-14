@@ -54,6 +54,7 @@ import {
   salvarItens,
 } from "./modules/operacao/vendas";
 import { editarPerfil, getSession } from "./modules/session";
+import { definirLimite, obterConsumo } from "./modules/consumo";
 import {
   convidarConta,
   definirAcesso,
@@ -149,6 +150,9 @@ export function createApp(
       { method: "GET", path: `${API_BASE}/config`, handler: getPublicConfig },
       { method: "GET", path: `${API_BASE}/session`, handler: getSession },
       { method: "PATCH", path: `${API_BASE}/session`, handler: editarPerfil },
+      // Consumo da IA por conta, só do dono do Nexus (ADR-009).
+      { method: "GET", path: `${API_BASE}/consumo`, handler: obterConsumo },
+      { method: "POST", path: `${API_BASE}/consumo/:id/limite`, handler: definirLimite },
       // Contas secundárias, só do administrador (seção 7).
       { method: "GET", path: `${API_BASE}/contas`, handler: listarContas },
       { method: "POST", path: `${API_BASE}/contas`, handler: convidarConta },

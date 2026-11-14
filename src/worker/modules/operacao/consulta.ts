@@ -364,6 +364,7 @@ export const perguntar: Handler = async (ctx) => {
     {
       sistema: op.systemId,
       usuario: op.user.id,
+      conta: op.user.adminId,
       finalidade: "consulta",
       chave: ctx.request.headers.get("idempotency-key") ?? "",
     },

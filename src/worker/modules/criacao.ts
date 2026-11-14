@@ -510,6 +510,7 @@ export const enviarMensagem: Handler = async (ctx) => {
     {
       sistema: c.systemId,
       usuario: c.user.id,
+      conta: c.user.adminId,
       finalidade: "levantamento",
       chave: chaveDoPedido(ctx),
     },
@@ -866,7 +867,13 @@ async function gerarVersao(
   const resposta = await chamarComOrcamento(
     ctx,
     ctx.ia,
-    { sistema: c.systemId, usuario: c.user.id, finalidade, chave: chaveDoPedido(ctx) },
+    {
+      sistema: c.systemId,
+      usuario: c.user.id,
+      conta: c.user.adminId,
+      finalidade,
+      chave: chaveDoPedido(ctx),
+    },
     pedido,
   );
   return aposIa(ctx, resposta.usoId, async () => {

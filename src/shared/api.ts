@@ -417,8 +417,11 @@ export interface InicioDto {
   truncado: boolean;
   /** Só para o administrador. */
   pedidos: { abertos: number; emAnalise: number; implementados: number } | null;
-  /** Só para o administrador: o teto é do Nexus inteiro. */
-  ia: { gastoCentavos: number; tetoCentavos: number } | null;
+  /**
+   * Só para administradores. Dono: o teto do Nexus inteiro. Demais: o limite da própria conta
+   * (ADR-009).
+   */
+  ia: { gastoCentavos: number; tetoCentavos: number; escopo: "nexus" | "conta" } | null;
 }
 
 /** Assuntos da entrevista guiada (ADR-004), na ordem em que a IA conduz. */
@@ -522,6 +525,8 @@ export interface CriacaoApiBody {
 /** GET /api/v1/config — configuração pública do front. `firebase` nulo = login indisponível. */
 export interface PublicConfig {
   environment: string;
+  /** A tela de entrada mostra "Criar conta" (ADR-009). */
+  cadastroAberto: boolean;
   firebase: { apiKey: string; authDomain: string; projectId: string; appId: string } | null;
 }
 
@@ -545,4 +550,37 @@ export interface HealthResponse {
   checks: {
     database: "ok" | "error";
   };
+}
+
+/** GET /api/v1/consumo — consumo de IA do mês por conta, só para o dono do Nexus (ADR-009). */
+export interface ConsumoContaDto {
+  id: string;
+  email: string;
+  nome: string | null;
+  status: "pending" | "active" | "disabled";
+  /** Criou a própria conta pela tela de entrada. */
+  cadastro: boolean;
+  dono: boolean;
+  criadoEm: number;
+  sistemas: number;
+  /** Conta = o administrador e as contas secundárias dele. */
+  chamadas: number;
+  gastoCentavos: number;
+  porEtapa: {
+    finalidade: "levantamento" | "modelagem" | "correcao" | "consulta";
+    chamadas: number;
+    gastoCentavos: number;
+  }[];
+  /** null = sem limite (dono). */
+  limiteCentavos: number | null;
+  /** O limite é o padrão do Nexus (não foi ajustado para esta conta). */
+  limitePadrao: boolean;
+}
+
+export interface ConsumoDto {
+  mes: string;
+  tetoCentavos: number;
+  gastoTotalCentavos: number;
+  limitePadraoCentavos: number;
+  contas: ConsumoContaDto[];
 }

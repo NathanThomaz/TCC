@@ -1683,7 +1683,7 @@ describe("módulos opcionais (ADR-006)", () => {
     expect(r.status).toBe(200);
     const inicio = (r.body as unknown as { inicio: InicioDto }).inicio;
     expect(inicio.hoje).toBe("2026-11-05");
-    expect(inicio.ia).toEqual({ gastoCentavos: 0, tetoCentavos: 2000 });
+    expect(inicio.ia).toEqual({ gastoCentavos: 0, tetoCentavos: 2000, escopo: "nexus" });
     const deste = inicio.sistemas.find((x) => x.sistema.id === S)!;
     expect(deste).toMatchObject({
       modelo: "comercio_com_servicos",

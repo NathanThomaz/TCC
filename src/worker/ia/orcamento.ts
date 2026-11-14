@@ -62,6 +62,13 @@ export const limiteAtingido = () =>
     "O limite mensal de uso da IA foi atingido. A conversa está pausada; o progresso foi salvo e as telas continuam disponíveis.",
   );
 
+export const limiteContaAtingido = () =>
+  new AppError(
+    503,
+    "limite_ia_conta",
+    "O limite mensal de uso da IA desta conta foi atingido. O progresso foi salvo e as telas continuam disponíveis; peça ao dono do Nexus para ampliar o limite.",
+  );
+
 export const iaIndisponivel = () =>
   new AppError(
     503,
@@ -82,6 +89,8 @@ export const chamadaEmAndamento = () =>
 export interface ChamadaIa {
   sistema: string;
   usuario: string;
+  /** Conta que paga a chamada: o administrador (o próprio, ou o dono da conta secundária). */
+  conta: string;
   finalidade: "levantamento" | "modelagem" | "correcao" | "consulta";
   /** Idempotency-Key do pedido: trava a chave enquanto a chamada está em andamento. */
   chave: string;
@@ -92,6 +101,45 @@ const CONSUMO_DO_MES = `(SELECT COALESCE(SUM(CASE state
     WHEN 'concluido' THEN cost_micro_brl
     WHEN 'falhou' THEN COALESCE(cost_micro_brl, 0)
     ELSE reserved_micro_brl END), 0) FROM ai_usage WHERE created_at >= ?8)`;
+
+/** O mesmo, só das chamadas da conta (?12 = administrador; inclui as contas secundárias dele). */
+const CONSUMO_DA_CONTA = `(SELECT COALESCE(SUM(CASE state
+    WHEN 'concluido' THEN cost_micro_brl
+    WHEN 'falhou' THEN COALESCE(cost_micro_brl, 0)
+    ELSE reserved_micro_brl END), 0) FROM ai_usage WHERE created_at >= ?8
+      AND user_id IN (SELECT id FROM users WHERE id = ?12 OR owner_id = ?12))`;
+
+/** Limite padrão por conta, em centavos (R$ 3: cerca de 300 turnos de conversa no mês). */
+export const LIMITE_CONTA_PADRAO_CENTAVOS = 300;
+
+export function limitePadraoCentavos(env: Env): number {
+  const n = Number(env.IA_LIMITE_CONTA_CENTAVOS ?? LIMITE_CONTA_PADRAO_CENTAVOS);
+  return Number.isFinite(n) && n >= 0 ? n : LIMITE_CONTA_PADRAO_CENTAVOS;
+}
+
+/** Limite mensal da conta em micro-reais; null para o dono do Nexus (sem limite por conta). */
+export async function limiteDaContaMicroBrl(env: Env, conta: string): Promise<number | null> {
+  const row = await env.DB.prepare(
+    `SELECT u.ai_limit_cents,
+       (SELECT id FROM users WHERE role = 'admin' AND created_by IS NULL AND self_signup = 0
+        ORDER BY created_at, rowid LIMIT 1) AS dono
+     FROM users u WHERE u.id = ?`,
+  )
+    .bind(conta)
+    .first<{ ai_limit_cents: number | null; dono: string | null }>();
+  if (!row || row.dono === conta) return null;
+  return (row.ai_limit_cents ?? limitePadraoCentavos(env)) * 10_000;
+}
+
+/** Consumo do mês da conta (administrador e contas secundárias), em micro-reais. */
+export async function consumoDaContaMicroBrl(env: Env, conta: string, agora: number) {
+  const row = await env.DB.prepare(
+    `SELECT ${CONSUMO_DA_CONTA.replaceAll("?8", "?1").replaceAll("?12", "?2")} AS gasto`,
+  )
+    .bind(inicioDoMes(agora), conta)
+    .first<{ gasto: number }>();
+  return row?.gasto ?? 0;
+}
 
 /**
  * Solta a chave de uma chamada concluída cujo resultado NÃO foi gravado (resposta inválida, estado
@@ -132,6 +180,7 @@ export async function chamarComOrcamento(
   const db = ctx.env.DB;
   const agora = ctx.clock.now();
   const reserva = custoMicroBrl(estimarTokens(pedido), MAX_TOKENS_SAIDA);
+  const limite = await limiteDaContaMicroBrl(ctx.env, chamada.conta);
   const id = crypto.randomUUID();
   let inserida: D1Result;
   try {
@@ -151,7 +200,9 @@ export async function chamarComOrcamento(
       db
         .prepare(
           `INSERT INTO ai_usage (id, system_id, user_id, purpose, model, idempotency_key, reserved_micro_brl, created_at)
-           SELECT ?1, ?2, ?3, ?4, ?5, ?10, ?6, ?7 WHERE ${CONSUMO_DO_MES} + ?6 <= ?9`,
+           SELECT ?1, ?2, ?3, ?4, ?5, ?10, ?6, ?7
+           WHERE ${CONSUMO_DO_MES} + ?6 <= ?9
+             AND (?11 IS NULL OR ${CONSUMO_DA_CONTA} + ?6 <= ?11)`,
         )
         .bind(
           id,
@@ -164,6 +215,8 @@ export async function chamarComOrcamento(
           inicioDoMes(agora),
           tetoMicroBrl(ctx.env),
           chamada.chave,
+          limite,
+          chamada.conta,
         ),
     ]);
     inserida = resultado!;
@@ -171,7 +224,14 @@ export async function chamarComOrcamento(
     if (error instanceof Error && /UNIQUE/i.test(error.message)) throw chamadaEmAndamento();
     throw error;
   }
-  if (inserida.meta.changes !== 1) throw limiteAtingido();
+  if (inserida.meta.changes !== 1) {
+    // Qual limite barrou: o da conta (com recado próprio) ou o teto do Nexus.
+    if (limite !== null) {
+      const gasto = await consumoDaContaMicroBrl(ctx.env, chamada.conta, agora);
+      if (gasto + reserva > limite) throw limiteContaAtingido();
+    }
+    throw limiteAtingido();
+  }
 
   let resposta: RespostaIa;
   try {

@@ -16,7 +16,7 @@ import { beginIdempotent, recordStatement, replayAfterRace } from "../http/idemp
 import { AppError, conflict, notFound } from "../http/errors";
 import { json } from "../http/responses";
 import type { Handler, RequestContext } from "../http/router";
-import { consumoDoMes } from "../ia/orcamento";
+import { consumoDaContaMicroBrl, consumoDoMes, limiteDaContaMicroBrl } from "../ia/orcamento";
 import { canonicalJson, sha256Hex } from "../lib/hash";
 import { isUnique, parse, triggerConflict } from "./comum";
 
@@ -354,7 +354,7 @@ export const obterInicio: Handler = async (ctx) => {
           implementados: contar("implementado"),
         }
       : null,
-    ia: admin ? await consumoDoMes(ctx.env, agora) : null,
+    ia: admin ? await usoDeIa(ctx, user.id, agora) : null,
   };
   return json({ inicio: resumo });
 };
@@ -722,4 +722,20 @@ async function aplicarAlteracao(
     throw conflict("O sistema foi alterado em outra tela. Recarregue e confira.");
   }
   return json({ sistema: publicSystem(depois) });
+}
+
+/** Uso de IA mostrado na tela inicial: o dono vê o teto do Nexus; os demais, o da própria conta. */
+async function usoDeIa(
+  ctx: RequestContext,
+  conta: string,
+  agora: number,
+): Promise<NonNullable<InicioDto["ia"]>> {
+  const limite = await limiteDaContaMicroBrl(ctx.env, conta);
+  if (limite === null) return { ...(await consumoDoMes(ctx.env, agora)), escopo: "nexus" };
+  const gasto = await consumoDaContaMicroBrl(ctx.env, conta, agora);
+  return {
+    gastoCentavos: Math.ceil(gasto / 10_000),
+    tetoCentavos: Math.round(limite / 10_000),
+    escopo: "conta",
+  };
 }

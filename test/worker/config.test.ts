@@ -10,7 +10,11 @@ const get = async (e: typeof env) =>
 
 describe("GET /api/v1/config", () => {
   it("sem Firebase configurado, informa login indisponível", async () => {
-    expect(await get(env)).toEqual({ environment: "development", firebase: null });
+    expect(await get(env)).toEqual({
+      environment: "development",
+      firebase: null,
+      cadastroAberto: false,
+    });
   });
 
   it("com as quatro variáveis, devolve só a configuração pública do SDK web", async () => {
@@ -30,5 +34,18 @@ describe("GET /api/v1/config", () => {
       appId: "1:0:web:ficticio",
     });
     expect(JSON.stringify(body)).not.toContain("segredo");
+    expect(body.cadastroAberto).toBe(true);
+  });
+
+  it("cadastro fechado pela variável (ADR-009)", async () => {
+    const body = await get({
+      ...env,
+      CADASTRO_ABERTO: "false",
+      FIREBASE_WEB_API_KEY: "chave-web-ficticia",
+      FIREBASE_AUTH_DOMAIN: "projeto-ficticio.firebaseapp.com",
+      FIREBASE_PROJECT_ID: "projeto-ficticio",
+      FIREBASE_APP_ID: "1:0:web:ficticio",
+    });
+    expect(body.cadastroAberto).toBe(false);
   });
 });

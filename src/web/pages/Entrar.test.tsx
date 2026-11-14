@@ -4,8 +4,12 @@ import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const entrar = vi.fn();
+const criarConta = vi.fn();
+let aberto = false;
 vi.mock("@/api/auth", () => ({
   entrar: (...args: unknown[]) => entrar(...args) as unknown,
+  criarConta: (...args: unknown[]) => criarConta(...args) as unknown,
+  cadastroAberto: () => Promise.resolve(aberto),
   enviarRecuperacao: () => Promise.resolve(),
   reenviarConfirmacao: () => Promise.resolve(),
 }));
@@ -22,7 +26,11 @@ vi.mock("@/lib/auth", () => ({
 const { ApiError } = await import("@/api/cliente");
 const { Entrar } = await import("./Entrar");
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  aberto = false;
+  criarConta.mockReset();
+});
 
 function renderizar() {
   render(
@@ -53,8 +61,58 @@ describe("Entrar", () => {
     expect(await screen.findByText(titulo)).toBeTruthy();
   });
 
-  it("informa que não há cadastro público", () => {
+  it("com o cadastro fechado, informa que o acesso vem do administrador", () => {
     renderizar();
     expect(screen.getByText(/O acesso é criado pelo administrador/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Criar conta" })).toBeNull();
+  });
+
+  describe("cadastro aberto (ADR-009)", () => {
+    async function abrirCadastro() {
+      aberto = true;
+      renderizar();
+      fireEvent.click(await screen.findByRole("button", { name: "Criar conta" }));
+      expect(screen.getByRole("heading", { name: "Criar conta" })).toBeTruthy();
+    }
+
+    function preencher(senha: string, confirmacao = senha) {
+      fireEvent.change(screen.getByLabelText("Seu nome"), { target: { value: "Maria Souza" } });
+      fireEvent.change(screen.getByLabelText("E-mail"), {
+        target: { value: "maria@exemplo.com" },
+      });
+      fireEvent.change(screen.getByLabelText("Senha"), { target: { value: senha } });
+      fireEvent.change(screen.getByLabelText("Confirmar senha"), {
+        target: { value: confirmacao },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Criar conta" }));
+    }
+
+    it("cria a conta e pede para confirmar o e-mail", async () => {
+      criarConta.mockResolvedValueOnce(undefined);
+      await abrirCadastro();
+      preencher("senha-ficticia-1");
+      expect(await screen.findByText("Conta criada. Falta confirmar o e-mail.")).toBeTruthy();
+      expect(criarConta).toHaveBeenCalledWith(
+        "Maria Souza",
+        "maria@exemplo.com",
+        "senha-ficticia-1",
+      );
+    });
+
+    it("confere a senha antes de enviar", async () => {
+      await abrirCadastro();
+      preencher("curta");
+      expect(screen.getByRole("alert").textContent).toMatch(/pelo menos 8/);
+      preencher("senha-ficticia-1", "outra-senha-123");
+      expect(screen.getByRole("alert").textContent).toMatch(/não conferem/);
+      expect(criarConta).not.toHaveBeenCalled();
+    });
+
+    it("avisa quando o e-mail já tem conta", async () => {
+      criarConta.mockRejectedValueOnce(new ApiError("email_em_uso", "x"));
+      await abrirCadastro();
+      preencher("senha-ficticia-1");
+      expect(await screen.findByText("Este e-mail já tem conta")).toBeTruthy();
+    });
   });
 });

@@ -15,6 +15,7 @@
   // Ambiente padrão = desenvolvimento local, só com dados fictícios.
   "vars": {
     "APP_ENV": "development",
+    "CADASTRO_ABERTO": "true",
   },
   "d1_databases": [
     {
@@ -33,6 +34,8 @@
     "production": {
       "vars": {
         "APP_ENV": "production",
+        // Cadastro aberto com e-mail confirmado (ADR-009); "false" fecha sem mudar o código.
+        "CADASTRO_ABERTO": "true",
         "FIREBASE_PROJECT_ID": "nexus-tcc-2026",
         "FIREBASE_AUTH_DOMAIN": "nexus-tcc-2026.firebaseapp.com",
         "FIREBASE_APP_ID": "1:208631748107:web:fbe678ca6f6762b898190e",
