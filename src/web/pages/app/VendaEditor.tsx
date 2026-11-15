@@ -488,44 +488,50 @@ function Rascunho({ venda, servicos }: { venda: VendaDto | null; servicos: Atend
             ))}
           </ul>
         )}
+        {/* Cliente e leitor na mesma linha: a linha do cliente não fica com metade vazia. */}
         {!venda && (
-          <div className="max-w-sm space-y-1.5">
-            <Label htmlFor="venda-cliente">Cliente</Label>
-            <Select value={cliente} onValueChange={setCliente}>
-              <SelectTrigger id="venda-cliente">
-                <SelectValue
-                  placeholder={clientes.isPending ? "Carregando…" : "Escolha o cliente"}
-                />
-              </SelectTrigger>
-              <SelectContent>
-                {[
-                  ...(clientes.data ?? []).filter((c) => c.status === "active"),
-                  ...clientesExtras.filter((e) => !clientes.data?.some((c) => c.id === e.id)),
-                ].map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.nome}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="grid items-start gap-4 sm:grid-cols-2">
+            <div>
+              <div className="space-y-1.5">
+                <Label htmlFor="venda-cliente">Cliente</Label>
+                <Select value={cliente} onValueChange={setCliente}>
+                  <SelectTrigger id="venda-cliente">
+                    <SelectValue
+                      placeholder={clientes.isPending ? "Carregando…" : "Escolha o cliente"}
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[
+                      ...(clientes.data ?? []).filter((c) => c.status === "active"),
+                      ...clientesExtras.filter((e) => !clientes.data?.some((c) => c.id === e.id)),
+                    ].map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.nome}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {cliente && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="mt-2"
+                  disabled={repetir.isPending}
+                  onClick={() => repetir.mutate(cliente)}
+                >
+                  {repetir.isPending ? (
+                    <Loader2 className="animate-spin" aria-hidden />
+                  ) : (
+                    <History aria-hidden />
+                  )}
+                  Repetir a última compra deste cliente
+                </Button>
+              )}
+            </div>
+            <LeitorCodigo onCodigo={(c) => void lerCodigo(c)} />
           </div>
-        )}
-
-        {!venda && cliente && (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={repetir.isPending}
-            onClick={() => repetir.mutate(cliente)}
-          >
-            {repetir.isPending ? (
-              <Loader2 className="animate-spin" aria-hidden />
-            ) : (
-              <History aria-hidden />
-            )}
-            Repetir a última compra deste cliente
-          </Button>
         )}
 
         <fieldset className="space-y-3">
@@ -535,7 +541,7 @@ function Rascunho({ venda, servicos }: { venda: VendaDto | null; servicos: Atend
               ({linhas.filter((l) => l.produto).length})
             </span>
           </legend>
-          <LeitorCodigo onCodigo={(c) => void lerCodigo(c)} />
+          {venda && <LeitorCodigo onCodigo={(c) => void lerCodigo(c)} />}
           {/* Altura limitada: uma venda com muitos itens rola aqui dentro, sem esticar a tela. */}
           <div
             ref={listaItens}

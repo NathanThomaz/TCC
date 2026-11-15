@@ -13,6 +13,7 @@ import {
   registrarEntrada,
 } from "@/api/operacao";
 import { CamposForm, ErroApi, Tabela, useChavePorConteudo } from "@/components/app/Comum";
+import { BotaoCamera } from "@/components/app/VendaRapida";
 import { ColunaEditavel, NovaColuna } from "@/components/app/Colunas";
 import { ImportarPlanilha } from "@/components/app/ImportarPlanilha";
 import { CampoDinheiro } from "@/components/nexus/CampoDinheiro";
@@ -440,20 +441,26 @@ function ProdutoDialog({ atual, onFechar }: { atual: ProdutoDto | null; onFechar
             )}
             <div className="space-y-1.5">
               <Label htmlFor="produto-codigo">Código de barras</Label>
-              <Input
-                id="produto-codigo"
-                value={codigo}
-                maxLength={64}
-                inputMode="numeric"
-                autoComplete="off"
-                placeholder="Leitor ou digite"
-                onChange={(e) => setCodigo(e.target.value)}
-                // O leitor USB termina com Enter: não envia o formulário antes da hora.
-                onKeyDown={(e) => e.key === "Enter" && e.preventDefault()}
-                aria-describedby="dica-codigo"
-              />
+              <div className="flex gap-2">
+                <Input
+                  id="produto-codigo"
+                  value={codigo}
+                  maxLength={64}
+                  inputMode="numeric"
+                  autoComplete="off"
+                  placeholder="Leitor ou digite"
+                  onChange={(e) => setCodigo(e.target.value)}
+                  // O leitor USB termina com Enter: não envia o formulário antes da hora.
+                  onKeyDown={(e) => e.key === "Enter" && e.preventDefault()}
+                  aria-describedby="dica-codigo"
+                />
+                <BotaoCamera
+                  descricao="O código lido entra no cadastro deste produto."
+                  onLido={setCodigo}
+                />
+              </div>
               <p id="dica-codigo" className="text-xs text-muted-foreground">
-                Opcional. A venda aceita o leitor ou a câmera.
+                Opcional. Com o código, a venda aceita o leitor ou a câmera.
               </p>
             </div>
           </div>
