@@ -1,12 +1,13 @@
 import { useState, type ReactNode } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef } from "react";
-import { novaChave } from "@/api/cliente";
+import { ApiError, novaChave } from "@/api/cliente";
 import { useNavigate } from "@/lib/rotas";
-import { Bot, CircleCheck, Loader2, SlidersHorizontal } from "lucide-react";
+import { Bot, CircleAlert, CircleCheck, Loader2, SlidersHorizontal } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { criarSistema } from "@/api/sistemas";
+import { criarSistema, listarSistemas } from "@/api/sistemas";
+import { chaveNomeSistema } from "../../../shared/dominio/nomes";
 import { validarNomeSistema } from "@/lib/nexus";
 import { Button } from "@/components/ui/button";
 import {
@@ -46,6 +47,12 @@ export function CriarSistemaDialog({ gatilho }: { gatilho: ReactNode }) {
   const chaveRef = useRef<{ nome: string; chave: string } | null>(null);
   const navigate = useNavigate();
   const erro = validarNomeSistema(nome);
+  // Aviso enquanto digita: mesma regra do servidor (sem acento, maiúsculas nem espaços extras).
+  const sistemas = useQuery({ queryKey: ["sistemas"], queryFn: listarSistemas, enabled: aberto });
+  const chave = chaveNomeSistema(nome);
+  const repetido = chave
+    ? sistemas.data?.find((s) => chaveNomeSistema(s.nome) === chave)
+    : undefined;
 
   const m = useMutation({
     mutationFn: (nome: string) => {
@@ -64,6 +71,12 @@ export function CriarSistemaDialog({ gatilho }: { gatilho: ReactNode }) {
         params: { id: s.id },
       });
     },
+    // Nome criado em outra aba ou fora da lista carregada: atualiza a lista para o aviso aparecer.
+    onError: (e) => {
+      if (e instanceof ApiError && e.code === "nome_em_uso") {
+        void qc.invalidateQueries({ queryKey: ["sistemas"] });
+      }
+    },
   });
 
   return (
@@ -74,7 +87,7 @@ export function CriarSistemaDialog({ gatilho }: { gatilho: ReactNode }) {
           onSubmit={(e) => {
             e.preventDefault();
             setTocado(true);
-            if (!erro) m.mutate(nome);
+            if (!erro && !repetido) m.mutate(nome);
           }}
         >
           <DialogHeader>
@@ -91,8 +104,10 @@ export function CriarSistemaDialog({ gatilho }: { gatilho: ReactNode }) {
               maxLength={80}
               onChange={(e) => setNome(e.target.value)}
               onBlur={() => setTocado(true)}
-              aria-invalid={tocado && !!erro}
-              aria-describedby="nome-sistema-ajuda"
+              aria-invalid={(tocado && !!erro) || !!repetido}
+              aria-describedby={
+                repetido ? "nome-sistema-ajuda nome-repetido" : "nome-sistema-ajuda"
+              }
               autoFocus
             />
             <p
@@ -107,7 +122,21 @@ export function CriarSistemaDialog({ gatilho }: { gatilho: ReactNode }) {
                 <span className="tabular-nums">{nome.trim().length}/80 caracteres</span>
               )}
             </p>
-            {m.isError && (
+            {repetido && (
+              <p
+                id="nome-repetido"
+                role="status"
+                className="flex gap-2 rounded-lg border border-warning/30 bg-warning-soft p-3 text-sm"
+              >
+                <CircleAlert className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
+                <span>
+                  Você já tem um sistema chamado <strong>{repetido.nome}</strong>
+                  {repetido.status === "archived" ? " (arquivado)" : ""}. Escolha outro nome para
+                  não confundir os dois.
+                </span>
+              </p>
+            )}
+            {m.isError && !repetido && (
               <p role="alert" className="text-sm text-destructive">
                 {m.error.message}
               </p>
@@ -153,7 +182,7 @@ export function CriarSistemaDialog({ gatilho }: { gatilho: ReactNode }) {
             <Button type="button" variant="outline" onClick={() => setAberto(false)}>
               Cancelar
             </Button>
-            <Button type="submit" disabled={m.isPending}>
+            <Button type="submit" disabled={m.isPending || !!repetido}>
               {m.isPending && <Loader2 className="animate-spin" aria-hidden />}Criar
             </Button>
           </DialogFooter>

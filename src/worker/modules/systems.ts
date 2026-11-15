@@ -18,6 +18,7 @@ import { json } from "../http/responses";
 import type { Handler, RequestContext } from "../http/router";
 import { consumoDaContaMicroBrl, consumoDoMes, limiteDaContaMicroBrl } from "../ia/orcamento";
 import { canonicalJson, sha256Hex } from "../lib/hash";
+import { chaveNomeSistema } from "../../shared/dominio/nomes";
 import { isUnique, parse, triggerConflict } from "./comum";
 
 // Sistemas e o ciclo de configuração (seção 8): rascunho → versão validada → aprovação da versão
@@ -88,6 +89,19 @@ async function loadSystem(ctx: RequestContext, systemId: string): Promise<System
   return row;
 }
 
+/** Outro sistema do mesmo dono com o mesmo nome (sem acento, maiúsculas nem espaços extras). */
+const sistemaComNome = (ctx: RequestContext, ownerId: string, chave: string) =>
+  ctx.env.DB.prepare("SELECT name, status FROM systems WHERE owner_id = ? AND name_key = ?")
+    .bind(ownerId, chave)
+    .first<{ name: string; status: SystemRow["status"] }>();
+
+const nomeRepetido = (outro: { name: string; status: SystemRow["status"] } | null, nome: string) =>
+  new AppError(
+    409,
+    "nome_em_uso",
+    `Você já tem um sistema chamado "${outro?.name ?? nome}"${outro?.status === "archived" ? " (arquivado)" : ""}. Escolha outro nome.`,
+  );
+
 export const createSystem: Handler = async (ctx) => {
   const user = await authenticate(ctx, ctx.auth);
   requireAdmin(user);
@@ -100,6 +114,19 @@ export const createSystem: Handler = async (ctx) => {
       { status: started.statusCode },
     );
   }
+  const chave = chaveNomeSistema(body.nome);
+  const repetido = await sistemaComNome(ctx, user.id, chave);
+  if (repetido) {
+    // O nome pode ser deste mesmo pedido, gravado por uma repetição simultânea: replay primeiro.
+    const replay = await replayAfterRace(ctx, cmd, started);
+    if (replay?.kind === "replay") {
+      return json(
+        { sistema: publicSystem(await loadSystem(ctx, replay.resourceId)) },
+        { status: replay.statusCode },
+      );
+    }
+    throw nomeRepetido(repetido, body.nome);
+  }
   const now = ctx.clock.now();
   const id = crypto.randomUUID();
   const db = ctx.env.DB;
@@ -107,9 +134,9 @@ export const createSystem: Handler = async (ctx) => {
     await db.batch([
       db
         .prepare(
-          "INSERT INTO systems (id, owner_id, name, status, created_at, updated_at) VALUES (?, ?, ?, 'draft', ?, ?)",
+          "INSERT INTO systems (id, owner_id, name, name_key, status, created_at, updated_at) VALUES (?, ?, ?, ?, 'draft', ?, ?)",
         )
-        .bind(id, user.id, body.nome, now, now),
+        .bind(id, user.id, body.nome, chave, now, now),
       db
         .prepare(
           "INSERT INTO audit_events (system_id, actor_id, action, target_type, target_id, created_at) VALUES (?, ?, 'system.created', 'system', ?, ?)",
@@ -119,11 +146,17 @@ export const createSystem: Handler = async (ctx) => {
     ]);
   } catch (error) {
     const replay = isUnique(error) ? await replayAfterRace(ctx, cmd, started) : null;
-    if (replay?.kind !== "replay") throw error;
-    return json(
-      { sistema: publicSystem(await loadSystem(ctx, replay.resourceId)) },
-      { status: replay.statusCode },
-    );
+    if (replay?.kind === "replay") {
+      return json(
+        { sistema: publicSystem(await loadSystem(ctx, replay.resourceId)) },
+        { status: replay.statusCode },
+      );
+    }
+    // Outro pedido gravou o mesmo nome entre a conferência e o lote: o índice único recusou.
+    if (error instanceof Error && error.message.includes("systems.name_key")) {
+      throw nomeRepetido(await sistemaComNome(ctx, user.id, chave), body.nome);
+    }
+    throw error;
   }
   return json({ sistema: publicSystem(await loadSystem(ctx, id)) }, { status: 201 });
 };

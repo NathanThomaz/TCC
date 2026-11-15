@@ -104,6 +104,84 @@ export function alertasDoInicio(d: InicioDto, agora = Date.now()): Alerta[] {
   return lista.sort((a, b) => a.peso - b.peso);
 }
 
+/**
+ * Mesma grade em todas as faixas da tela inicial. Quatro colunas só a partir de xl: com o menu
+ * lateral aberto, telas menores deixariam os cartões estreitos demais e cortariam os textos.
+ */
+const GRADE = "grid gap-4 sm:grid-cols-2 xl:grid-cols-4";
+/** "Precisa de atenção" ocupa as colunas que os outros quadros deixam livres. */
+const LARGURA_ATENCAO = ["xl:col-span-4", "xl:col-span-3", "xl:col-span-2"] as const;
+
+interface NumeroInicio {
+  rotulo: string;
+  valor: string;
+  detalhe: string;
+  icone: LucideIcon;
+  cor: string;
+}
+
+/** Os números do topo: no máximo 4, uma faixa da grade. "Precisa de atenção" sai primeiro. */
+export function numerosDoInicio(
+  t: ReturnType<typeof totaisDoInicio>,
+  alertas: number,
+  conta: (status: string) => number,
+): NumeroInicio[] {
+  const destaque = "bg-accent text-accent-foreground";
+  const lista: NumeroInicio[] = t.temVendas
+    ? [
+        {
+          rotulo: "Vendas hoje",
+          icone: ShoppingCart,
+          cor: destaque,
+          valor: formatarCentavos(t.vendasHoje),
+          detalhe: `${plural(t.qtdHoje, "venda", "vendas")} em todos os sistemas`,
+        },
+        {
+          rotulo: "Vendas no mês",
+          icone: TrendingUp,
+          cor: destaque,
+          valor: formatarCentavos(t.vendasMes),
+          detalhe: plural(t.qtdMes, "venda concluída", "vendas concluídas"),
+        },
+      ]
+    : [
+        {
+          rotulo: "Sistemas",
+          icone: CheckCircle2,
+          cor: "bg-success-soft text-success",
+          valor: String(conta("active")),
+          detalhe: `${plural(conta("draft"), "rascunho", "rascunhos")} · ${plural(conta("archived"), "arquivado", "arquivados")}`,
+        },
+      ];
+  if (t.temAgenda) {
+    lista.push({
+      rotulo: "Atendimentos hoje",
+      icone: CalendarDays,
+      cor: destaque,
+      valor: String(t.atendimentosHoje),
+      detalhe: "Agendados, em andamento e concluídos",
+    });
+  }
+  lista.push({
+    rotulo: "Clientes ativos",
+    icone: Users,
+    cor: destaque,
+    valor: String(t.clientes),
+    detalhe: "Somando os sistemas ativos",
+  });
+  // O quadro de atenção mais abaixo já lista tudo; aqui o número só entra se couber.
+  if (lista.length < 4) {
+    lista.push({
+      rotulo: "Precisa de atenção",
+      icone: CircleAlert,
+      cor: alertas ? "bg-warning-soft text-warning" : "bg-success-soft text-success",
+      valor: String(alertas),
+      detalhe: alertas ? "Veja em Acompanhamento" : "Tudo em dia",
+    });
+  }
+  return lista;
+}
+
 /** Totais do dia e do mês somando os sistemas ativos. */
 export function totaisDoInicio(d: InicioDto) {
   const resumos = d.sistemas.flatMap((s) => (s.resumo ? [s.resumo] : []));
@@ -120,26 +198,14 @@ export function totaisDoInicio(d: InicioDto) {
   };
 }
 
-function Numero({
-  rotulo,
-  valor,
-  detalhe,
-  icone: Icone,
-  cor,
-}: {
-  rotulo: string;
-  valor: string;
-  detalhe: string;
-  icone: LucideIcon;
-  cor: string;
-}) {
+function Numero({ rotulo, valor, detalhe, icone: Icone, cor }: NumeroInicio) {
   return (
     <div className="rounded-xl border bg-card p-5 shadow-card">
       <div className="flex items-center gap-3">
-        <span className={cn("flex size-9 items-center justify-center rounded-lg", cor)}>
+        <span className={cn("flex size-9 shrink-0 items-center justify-center rounded-lg", cor)}>
           <Icone className="size-4.5" aria-hidden />
         </span>
-        <p className="text-sm text-muted-foreground">{rotulo}</p>
+        <p className="truncate text-sm text-muted-foreground">{rotulo}</p>
       </div>
       <p className="mt-3 text-2xl font-semibold tabular-nums">{valor}</p>
       <p className="mt-1 text-xs text-muted-foreground">{detalhe}</p>
@@ -203,6 +269,7 @@ export function Inicio() {
   const conta = (s: string) => d.sistemas.filter((x) => x.sistema.status === s).length;
   const ativos = d.sistemas.filter((s) => s.sistema.status === "active");
   const rascunhos = d.sistemas.filter((s) => s.sistema.status === "draft");
+  const numeros = numerosDoInicio(t, alertas.length, conta);
 
   return (
     <>
@@ -239,102 +306,72 @@ export function Inicio() {
       {d.sistemas.length === 0 ? (
         <PrimeirosPassos />
       ) : (
-        <div className="space-y-6">
+        // Uma grade só (1, 2 ou 4 colunas, mesmo espaçamento) para os números, os sistemas e o
+        // acompanhamento: as bordas dos cartões ficam alinhadas entre as faixas.
+        <div className="space-y-8">
           <section aria-labelledby="titulo-hoje">
             <h2 id="titulo-hoje" className="sr-only">
               Resumo de hoje
             </h2>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {t.temVendas ? (
-                <>
-                  <Numero
-                    rotulo="Vendas hoje"
-                    icone={ShoppingCart}
-                    cor="bg-accent text-accent-foreground"
-                    valor={formatarCentavos(t.vendasHoje)}
-                    detalhe={`${plural(t.qtdHoje, "venda", "vendas")} em todos os sistemas`}
-                  />
-                  <Numero
-                    rotulo="Vendas no mês"
-                    icone={TrendingUp}
-                    cor="bg-accent text-accent-foreground"
-                    valor={formatarCentavos(t.vendasMes)}
-                    detalhe={plural(t.qtdMes, "venda concluída", "vendas concluídas")}
-                  />
-                </>
-              ) : (
-                <Numero
-                  rotulo="Sistemas"
-                  icone={CheckCircle2}
-                  cor="bg-success-soft text-success"
-                  valor={String(conta("active"))}
-                  detalhe={`${plural(conta("draft"), "rascunho", "rascunhos")} · ${plural(conta("archived"), "arquivado", "arquivados")}`}
-                />
-              )}
-              {t.temAgenda && (
-                <Numero
-                  rotulo="Atendimentos hoje"
-                  icone={CalendarDays}
-                  cor="bg-accent text-accent-foreground"
-                  valor={String(t.atendimentosHoje)}
-                  detalhe="Agendados, em andamento e concluídos"
-                />
-              )}
-              <Numero
-                rotulo="Clientes ativos"
-                icone={Users}
-                cor="bg-accent text-accent-foreground"
-                valor={String(t.clientes)}
-                detalhe="Somando os sistemas ativos"
-              />
-              <Numero
-                rotulo="Precisa de atenção"
-                icone={CircleAlert}
-                cor={
-                  alertas.length ? "bg-warning-soft text-warning" : "bg-success-soft text-success"
-                }
-                valor={String(alertas.length)}
-                detalhe={alertas.length ? "Veja a lista ao lado" : "Tudo em dia"}
-              />
+            <div className={GRADE}>
+              {numeros.map((n) => (
+                <Numero key={n.rotulo} {...n} />
+              ))}
             </div>
           </section>
 
-          <div className="grid gap-6 lg:grid-cols-3">
-            <section aria-labelledby="titulo-sistemas" className="space-y-3 lg:col-span-2">
-              <div className="flex items-center justify-between">
-                <h2 id="titulo-sistemas" className="text-lg font-semibold">
-                  Seus sistemas
-                </h2>
-                <Link
-                  to="/sistemas"
-                  className="text-sm text-primary underline-offset-4 hover:underline"
-                >
-                  Ver todos
-                </Link>
-              </div>
-              <div className="grid gap-4 md:grid-cols-2">
-                {[...ativos, ...rascunhos].slice(0, 6).map((s) => (
-                  <CartaoSistema key={s.sistema.id} item={s} />
-                ))}
-              </div>
-              {(conta("archived") > 0 || d.truncado) && (
-                <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <Archive className="size-3.5" aria-hidden />
-                  {d.truncado
-                    ? "Os números consideram os 100 sistemas mais relevantes (ativos primeiro)."
-                    : `${plural(conta("archived"), "sistema arquivado", "sistemas arquivados")} em Sistemas.`}
-                </p>
-              )}
-            </section>
-
-            <aside className="space-y-6">
-              <section
-                aria-labelledby="titulo-atencao"
-                className="rounded-xl border bg-card p-4 shadow-card"
+          <section aria-labelledby="titulo-sistemas" className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 id="titulo-sistemas" className="text-lg font-semibold">
+                Seus sistemas
+              </h2>
+              <Link
+                to="/sistemas"
+                className="text-sm text-primary underline-offset-4 hover:underline"
               >
-                <h2 id="titulo-atencao" className="mb-3 text-lg font-semibold">
-                  Precisa de atenção
-                </h2>
+                Ver todos
+              </Link>
+            </div>
+            <div className={GRADE}>
+              {[...ativos, ...rascunhos].slice(0, 7).map((s) => (
+                <CartaoSistema key={s.sistema.id} item={s} />
+              ))}
+              <CriarSistemaDialog
+                gatilho={
+                  <button
+                    type="button"
+                    className="flex min-h-40 flex-col items-center justify-center gap-2 rounded-xl border border-dashed p-4 text-sm text-muted-foreground transition-colors hover:border-primary hover:text-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                  >
+                    <Plus className="size-5" aria-hidden />
+                    Novo sistema
+                  </button>
+                }
+              />
+            </div>
+            {(conta("archived") > 0 || d.truncado) && (
+              <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Archive className="size-3.5" aria-hidden />
+                {d.truncado
+                  ? "Os números consideram os 100 sistemas mais relevantes (ativos primeiro)."
+                  : `${plural(conta("archived"), "sistema arquivado", "sistemas arquivados")} em Sistemas.`}
+              </p>
+            )}
+          </section>
+
+          <section aria-labelledby="titulo-acompanhamento" className="space-y-3">
+            <h2 id="titulo-acompanhamento" className="text-lg font-semibold">
+              Acompanhamento
+            </h2>
+            <div className={GRADE}>
+              <div
+                className={cn(
+                  "rounded-xl border bg-card p-5 shadow-card sm:col-span-2",
+                  LARGURA_ATENCAO[(d.pedidos ? 1 : 0) + (d.ia ? 1 : 0)],
+                )}
+              >
+                <h3 className="mb-3 flex items-center gap-2 font-semibold">
+                  <CircleAlert className="size-4.5 text-primary" aria-hidden /> Precisa de atenção
+                </h3>
                 {alertas.length === 0 ? (
                   <p className="flex items-center gap-2 text-sm text-muted-foreground">
                     <CheckCircle2 className="size-4 text-success" aria-hidden />
@@ -359,20 +396,14 @@ export function Inicio() {
                     ))}
                   </ul>
                 )}
-              </section>
+              </div>
 
               {d.pedidos && (
-                <section
-                  aria-labelledby="titulo-pedidos"
-                  className="rounded-xl border bg-card p-4 shadow-card"
-                >
-                  <h2
-                    id="titulo-pedidos"
-                    className="mb-3 flex items-center gap-2 text-lg font-semibold"
-                  >
-                    <Inbox className="size-5 text-primary" aria-hidden /> Pedidos ao desenvolvedor
-                  </h2>
-                  <dl className="grid grid-cols-3 gap-2 text-center">
+                <div className="flex flex-col rounded-xl border bg-card p-5 shadow-card">
+                  <h3 className="mb-3 flex items-center gap-2 font-semibold">
+                    <Inbox className="size-4.5 text-primary" aria-hidden /> Pedidos
+                  </h3>
+                  <dl className="space-y-1.5 text-sm">
                     {(
                       [
                         ["Abertos", d.pedidos.abertos],
@@ -380,16 +411,17 @@ export function Inicio() {
                         ["Prontos", d.pedidos.implementados],
                       ] as const
                     ).map(([rotulo, n]) => (
-                      <div key={rotulo} className="rounded-lg bg-muted/60 p-2">
-                        <dt className="text-xs text-muted-foreground">{rotulo}</dt>
-                        <dd className="text-xl font-semibold tabular-nums">{n}</dd>
+                      <div key={rotulo} className="flex items-baseline justify-between gap-2">
+                        <dt className="text-muted-foreground">{rotulo}</dt>
+                        <dd className="font-semibold tabular-nums">{n}</dd>
                       </div>
                     ))}
                   </dl>
-                  <p className="mt-3 text-xs text-muted-foreground">
-                    O que os módulos não cobrem vira pedido, registrado na conversa ou nos ajustes.
+                  <p className="mt-auto pt-3 text-xs text-muted-foreground">
+                    Pedidos ao desenvolvedor: o que os módulos não cobrem, registrado na conversa ou
+                    nos ajustes.
                   </p>
-                </section>
+                </div>
               )}
 
               {d.ia && (
@@ -400,8 +432,8 @@ export function Inicio() {
                   dono={usuario?.dono === true}
                 />
               )}
-            </aside>
-          </div>
+            </div>
+          </section>
         </div>
       )}
     </>
@@ -447,17 +479,16 @@ function CartaoSistema({ item }: { item: ItemSistema }) {
             {ativo ? "Ativo" : "Rascunho"}
           </span>
         </div>
-        {modulos.length > 0 && (
-          <p className="mt-2 line-clamp-2 text-xs text-muted-foreground">
-            {modulos.map((m) => ROTULO_MODULO[m]).join(" · ")}
-          </p>
-        )}
+        {/* Sempre a altura de 2 linhas: as métricas começam na mesma altura em todos os cartões. */}
+        <p className="mt-2 line-clamp-2 min-h-8 text-xs text-muted-foreground">
+          {modulos.map((m) => ROTULO_MODULO[m]).join(" · ")}
+        </p>
         {ativo && metricas.length > 0 && (
-          <dl className="mt-3 grid grid-cols-2 gap-2">
+          <dl className="mt-3 space-y-1.5 border-t pt-3 text-sm">
             {metricas.map(([rotulo, valor]) => (
-              <div key={rotulo}>
-                <dt className="text-xs text-muted-foreground">{rotulo}</dt>
-                <dd className="font-semibold tabular-nums">{valor}</dd>
+              <div key={rotulo} className="flex items-baseline justify-between gap-2">
+                <dt className="truncate text-muted-foreground">{rotulo}</dt>
+                <dd className="shrink-0 font-semibold tabular-nums">{valor}</dd>
               </div>
             ))}
           </dl>
@@ -501,11 +532,11 @@ function UsoIa({
 }) {
   const pct = teto > 0 ? Math.min(100, Math.round((gasto / teto) * 100)) : 100;
   return (
-    <section aria-labelledby="titulo-ia" className="rounded-xl border bg-card p-4 shadow-card">
-      <h2 id="titulo-ia" className="mb-2 flex items-center gap-2 text-lg font-semibold">
-        <Sparkles className="size-5 text-primary" aria-hidden />{" "}
+    <div className="flex flex-col rounded-xl border bg-card p-5 shadow-card">
+      <h3 className="mb-3 flex items-center gap-2 font-semibold">
+        <Sparkles className="size-4.5 text-primary" aria-hidden />{" "}
         {escopo === "conta" ? "Uso da IA da sua conta" : "Uso da IA no mês"}
-      </h2>
+      </h3>
       <p className="text-sm">
         <span className="font-semibold tabular-nums">{formatarCentavos(gasto)}</span>{" "}
         <span className="text-muted-foreground">de {formatarCentavos(teto)}</span>
@@ -531,12 +562,12 @@ function UsoIa({
       {dono && (
         <Link
           to="/consumo"
-          className="mt-2 inline-block rounded text-sm font-medium text-primary underline-offset-4 hover:underline"
+          className="mt-auto inline-block rounded pt-2 text-sm font-medium text-primary underline-offset-4 hover:underline"
         >
           Ver consumo por conta
         </Link>
       )}
-    </section>
+    </div>
   );
 }
 

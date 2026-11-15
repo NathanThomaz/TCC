@@ -118,7 +118,10 @@ async function callComCorrida(
 }
 
 async function ativar(token: string, rascunho: unknown): Promise<string> {
-  const criado = await call("POST", "/systems", token, { nome: "Sistema de teste" });
+  // Nome único por dono (migration 0013): cada sistema do teste ganha o seu.
+  const criado = await call("POST", "/systems", token, {
+    nome: `Sistema de teste ${crypto.randomUUID().slice(0, 8)}`,
+  });
   const id = criado.body.sistema!.id;
   const versao = (
     await call("POST", `/systems/${id}/versions`, token, { origem: "formulario", rascunho })
