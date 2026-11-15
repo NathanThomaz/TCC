@@ -341,7 +341,7 @@ function AgendarDialog({
 
   return (
     <Dialog open onOpenChange={(a) => !a && onFechar()}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
         <form
           className="space-y-4"
           onSubmit={(e) => {
@@ -356,55 +356,63 @@ function AgendarDialog({
               atendimentos no mesmo horário.
             </DialogDescription>
           </DialogHeader>
-          <Escolha
-            id="agendar-cliente"
-            rotulo="Cliente"
-            valor={cliente}
-            onChange={setCliente}
-            opcoes={(clientes.data ?? [])
-              .filter((c) => c.status === "active")
-              .map((c) => [c.id, c.nome])}
-          />
-          <Escolha
-            id="agendar-profissional"
-            rotulo={rotuloModulo(app, "profissionais")}
-            valor={profissional}
-            onChange={setProfissional}
-            opcoes={(profissionais.data ?? [])
-              .filter((p) => p.status === "active")
-              .map((p) => [p.id, p.nome])}
-          />
-          <Escolha
-            id="agendar-tipo"
-            rotulo="Atendimento"
-            valor={tipo}
-            onChange={setTipo}
-            opcoes={tipos.map((t) => [t.id, `${t.rotulo} (${t.duracao_minutos} min)`])}
-          />
-          <div className="space-y-1.5">
-            <Label htmlFor="agendar-inicio">Início</Label>
-            <Input
-              id="agendar-inicio"
-              type="datetime-local"
-              value={inicio}
-              required
-              onChange={(e) => setInicio(e.target.value)}
+          <div className="grid items-start gap-x-3 gap-y-4 sm:grid-cols-2">
+            <Escolha
+              id="agendar-cliente"
+              rotulo="Cliente"
+              valor={cliente}
+              onChange={setCliente}
+              opcoes={(clientes.data ?? [])
+                .filter((c) => c.status === "active")
+                .map((c) => [c.id, c.nome])}
             />
-          </div>
-          {par && (
+            <Escolha
+              id="agendar-profissional"
+              rotulo={rotuloModulo(app, "profissionais")}
+              valor={profissional}
+              onChange={setProfissional}
+              opcoes={(profissionais.data ?? [])
+                .filter((p) => p.status === "active")
+                .map((p) => [p.id, p.nome])}
+            />
+            <Escolha
+              id="agendar-tipo"
+              rotulo="Atendimento"
+              valor={tipo}
+              onChange={setTipo}
+              opcoes={tipos.map((t) => [t.id, `${t.rotulo} (${t.duracao_minutos} min)`])}
+              // Com o par, os dois horários ficam lado a lado na linha de baixo.
+              className={cn(par && "sm:col-span-2")}
+            />
             <div className="space-y-1.5">
-              <Label htmlFor="agendar-segundo">
-                Início de {rotuloTipo(app.config, par.segundo)} (mesmo profissional)
-              </Label>
+              <Label htmlFor="agendar-inicio">Início</Label>
               <Input
-                id="agendar-segundo"
+                id="agendar-inicio"
                 type="datetime-local"
-                value={inicioSegundo}
+                value={inicio}
                 required
-                onChange={(e) => setInicioSegundo(e.target.value)}
+                onChange={(e) => setInicio(e.target.value)}
               />
             </div>
-          )}
+            {par && (
+              <div className="space-y-1.5">
+                <Label htmlFor="agendar-segundo">
+                  Início de {rotuloTipo(app.config, par.segundo)}
+                </Label>
+                <Input
+                  id="agendar-segundo"
+                  type="datetime-local"
+                  value={inicioSegundo}
+                  required
+                  onChange={(e) => setInicioSegundo(e.target.value)}
+                  aria-describedby="dica-segundo"
+                />
+                <p id="dica-segundo" className="text-xs text-muted-foreground">
+                  Com o mesmo profissional.
+                </p>
+              </div>
+            )}
+          </div>
           <CamposForm
             config={app.config}
             entidade="agendamentos"
@@ -433,15 +441,17 @@ function Escolha({
   valor,
   onChange,
   opcoes,
+  className,
 }: {
   id: string;
   rotulo: string;
   valor: string;
   onChange: (v: string) => void;
   opcoes: [string, string][];
+  className?: string;
 }) {
   return (
-    <div className="space-y-1.5">
+    <div className={cn("space-y-1.5", className)}>
       <Label htmlFor={id}>{rotulo}</Label>
       <Select value={valor} onValueChange={onChange}>
         <SelectTrigger id={id}>

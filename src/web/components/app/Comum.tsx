@@ -51,54 +51,56 @@ export function CamposForm({
     onChange(novo);
   };
   return (
-    <fieldset className="space-y-3">
-      <legend className="mb-1 text-sm font-medium">Informações adicionais</legend>
-      {campos.map((c) => {
-        const id = `${prefixo}-${c.id}`;
-        const atual = valores[c.id];
-        return (
-          <div key={c.id} className="space-y-1.5">
-            <Label htmlFor={id}>
-              {c.rotulo}
-              {c.obrigatorio ? " *" : <span className="text-muted-foreground"> (opcional)</span>}
-            </Label>
-            {c.tipo === "lista" ? (
-              <Select
-                value={typeof atual === "string" ? atual : ""}
-                onValueChange={(v) => definir(c.id, v)}
-              >
-                <SelectTrigger id={id}>
-                  <SelectValue placeholder="Escolha" />
-                </SelectTrigger>
-                <SelectContent>
-                  {(c.opcoes ?? []).map((o) => (
-                    <SelectItem key={o} value={o}>
-                      {o}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ) : (
-              <Input
-                id={id}
-                type={c.tipo === "numero" ? "number" : c.tipo === "data" ? "date" : "text"}
-                {...(c.tipo === "numero" ? { step: "any" } : {})}
-                value={atual ?? ""}
-                required={c.obrigatorio}
-                maxLength={200}
-                onChange={(e) =>
-                  definir(
-                    c.id,
-                    c.tipo === "numero" && e.target.value !== ""
-                      ? Number(e.target.value)
-                      : e.target.value,
-                  )
-                }
-              />
-            )}
-          </div>
-        );
-      })}
+    <fieldset>
+      <legend className="mb-2 text-sm font-medium">Informações adicionais</legend>
+      <div className="grid items-start gap-x-3 gap-y-3 sm:grid-cols-2">
+        {campos.map((c) => {
+          const id = `${prefixo}-${c.id}`;
+          const atual = valores[c.id];
+          return (
+            <div key={c.id} className="space-y-1.5">
+              <Label htmlFor={id}>
+                {c.rotulo}
+                {c.obrigatorio ? " *" : <span className="text-muted-foreground"> (opcional)</span>}
+              </Label>
+              {c.tipo === "lista" ? (
+                <Select
+                  value={typeof atual === "string" ? atual : ""}
+                  onValueChange={(v) => definir(c.id, v)}
+                >
+                  <SelectTrigger id={id}>
+                    <SelectValue placeholder="Escolha" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(c.opcoes ?? []).map((o) => (
+                      <SelectItem key={o} value={o}>
+                        {o}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input
+                  id={id}
+                  type={c.tipo === "numero" ? "number" : c.tipo === "data" ? "date" : "text"}
+                  {...(c.tipo === "numero" ? { step: "any" } : {})}
+                  value={atual ?? ""}
+                  required={c.obrigatorio}
+                  maxLength={200}
+                  onChange={(e) =>
+                    definir(
+                      c.id,
+                      c.tipo === "numero" && e.target.value !== ""
+                        ? Number(e.target.value)
+                        : e.target.value,
+                    )
+                  }
+                />
+              )}
+            </div>
+          );
+        })}
+      </div>
     </fieldset>
   );
 }
