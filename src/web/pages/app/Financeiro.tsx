@@ -13,7 +13,8 @@ import {
   type FiltroFinanceiro,
   type NovoLancamento,
 } from "@/api/operacao";
-import { ErroApi, Tabela, useChavePorConteudo } from "@/components/app/Comum";
+import { AvisoRascunho, ErroApi, Tabela, useChavePorConteudo } from "@/components/app/Comum";
+import { type Rascunho, useRascunho, useRascunhoDaBusca } from "@/lib/rascunhos";
 import { EmptyState, ErrorState, PageHeader } from "@/components/nexus/Estados";
 import { Button } from "@/components/ui/button";
 import {
@@ -98,7 +99,10 @@ export function Financeiro() {
     queryKey: ["app", app.id, "financeiro", filtro],
     queryFn: () => listarLancamentos(app.id, filtro),
   });
-  const [nova, setNova] = useState(false);
+  // Aberto pela aba Rascunhos: a conta volta como a pessoa deixou.
+  const retomado = useRascunhoDaBusca<DadosConta>(app.id, "conta");
+  const [rascunho, setRascunho] = useState(retomado);
+  const [nova, setNova] = useState(retomado !== null);
   const [cancelando, setCancelando] = useState<LancamentoDto | null>(null);
 
   const atualizar = () => {
@@ -272,7 +276,16 @@ export function Financeiro() {
           demais.
         </p>
       )}
-      {nova && <NovaContaDialog onFechar={() => setNova(false)} onCriada={atualizar} />}
+      {nova && (
+        <NovaContaDialog
+          rascunho={rascunho}
+          onFechar={() => {
+            setNova(false);
+            setRascunho(null);
+          }}
+          onCriada={atualizar}
+        />
+      )}
       {cancelando && (
         <CancelarContaDialog
           lancamento={cancelando}
@@ -303,15 +316,42 @@ function SituacaoConta({ lancamento: l }: { lancamento: LancamentoDto }) {
   );
 }
 
-function NovaContaDialog({ onFechar, onCriada }: { onFechar: () => void; onCriada: () => void }) {
+interface DadosConta {
+  tipo: TipoLancamento;
+  descricao: string;
+  valor: string;
+  vencimento: string;
+  contraparte: string;
+}
+
+function NovaContaDialog({
+  rascunho,
+  onFechar,
+  onCriada,
+}: {
+  rascunho: Rascunho<DadosConta> | null;
+  onFechar: () => void;
+  onCriada: () => void;
+}) {
   const app = useApp();
   const temFornecedores = app.config.modulos.includes("fornecedores");
-  const [tipo, setTipo] = useState<TipoLancamento>("pagar");
-  const [descricao, setDescricao] = useState("");
-  const [valor, setValor] = useState("");
-  const [vencimento, setVencimento] = useState("");
-  const [contraparte, setContraparte] = useState(NENHUM);
+  const r = rascunho?.dados;
+  const [tipo, setTipo] = useState<TipoLancamento>(r?.tipo ?? "pagar");
+  const [descricao, setDescricao] = useState(r?.descricao ?? "");
+  const [valor, setValor] = useState(r?.valor ?? "");
+  const [vencimento, setVencimento] = useState(r?.vencimento ?? "");
+  const [contraparte, setContraparte] = useState(r?.contraparte ?? NENHUM);
   const chave = useChavePorConteudo();
+  const guardado = useRascunho<DadosConta>({
+    sistema: app.id,
+    tipo: "conta",
+    ativo: true,
+    inicial: rascunho,
+    dados: { tipo, descricao, valor, vencimento, contraparte },
+    vazio: !descricao.trim() && !valor.trim() && !vencimento && contraparte === NENHUM,
+    titulo: descricao.trim() || "Conta sem descrição",
+    resumo: `${tipo === "pagar" ? "A pagar" : "A receber"}${valor.trim() ? ` · R$ ${valor.trim()}` : ""}`,
+  });
   const pessoas = useQuery({
     queryKey: ["app", app.id, tipo === "receber" ? "clientes" : "fornecedores"],
     queryFn: () => listarPessoas(app.id, tipo === "receber" ? "clientes" : "fornecedores"),
@@ -337,6 +377,7 @@ function NovaContaDialog({ onFechar, onCriada }: { onFechar: () => void; onCriad
       return criarLancamento(app.id, dados, chave(dados));
     },
     onSuccess: () => {
+      guardado.descartar();
       toast.success("Conta lançada.");
       onCriada();
       onFechar();
@@ -435,6 +476,7 @@ function NovaContaDialog({ onFechar, onCriada }: { onFechar: () => void; onCriad
             )}
           </div>
           <ErroApi erro={m.error} />
+          <AvisoRascunho salvoEm={guardado.salvoEm} />
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onFechar}>
               Cancelar

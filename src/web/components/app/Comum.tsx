@@ -156,3 +156,17 @@ export function dadosDoErro<T>(erro: unknown, campo: string): T | undefined {
 export function codigoDoErro(erro: unknown): string | undefined {
   return erro instanceof ApiError ? erro.code : undefined;
 }
+
+/** Aviso discreto de que o formulário está guardado como rascunho neste aparelho. */
+export function AvisoRascunho({ salvoEm }: { salvoEm: number | null }) {
+  return (
+    <p className="text-xs text-muted-foreground" aria-live="polite">
+      {salvoEm
+        ? `Rascunho guardado neste aparelho às ${new Date(salvoEm).toLocaleTimeString("pt-BR", {
+            hour: "2-digit",
+            minute: "2-digit",
+          })}. Se fechar, continue depois pela aba Rascunhos.`
+        : ""}
+    </p>
+  );
+}

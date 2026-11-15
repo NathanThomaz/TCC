@@ -21,6 +21,7 @@ import { Vendas } from "@/pages/app/Vendas";
 import { Configuracoes } from "@/pages/Configuracoes";
 import { Consumo } from "@/pages/Consumo";
 import { PedidosRecebidos } from "@/pages/PedidosRecebidos";
+import { Rascunhos } from "@/pages/app/Rascunhos";
 import { Configurar } from "@/pages/Configurar";
 import { Criar } from "@/pages/Criar";
 import { CriarRevisao } from "@/pages/CriarRevisao";
@@ -78,6 +79,7 @@ createRoot(root).render(
                   <Route path="vendas/:venda" element={<VendaEditor />} />
                   <Route path="agenda" element={<Agenda />} />
                   <Route path="assistente" element={<Consulta />} />
+                  <Route path="rascunhos" element={<Rascunhos />} />
                   {/* Endereço antigo da aba, antes de virar "Assistente". */}
                   <Route path="perguntar" element={<Navigate to="../assistente" replace />} />
                 </Route>

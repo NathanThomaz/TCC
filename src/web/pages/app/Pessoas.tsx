@@ -13,7 +13,13 @@ import {
   mudarStatus,
   type TipoPessoa,
 } from "@/api/operacao";
-import { CamposForm, ErroApi, Tabela, useChavePorConteudo } from "@/components/app/Comum";
+import {
+  AvisoRascunho,
+  CamposForm,
+  ErroApi,
+  Tabela,
+  useChavePorConteudo,
+} from "@/components/app/Comum";
 import { ColunaEditavel, NovaColuna } from "@/components/app/Colunas";
 import { ImportarPlanilha } from "@/components/app/ImportarPlanilha";
 import { EmptyState, ErrorState, PageHeader } from "@/components/nexus/Estados";
@@ -37,6 +43,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { rotuloModulo, useApp } from "./Aplicacao";
 import { rotuloCampo } from "@/lib/nexus";
+import { type Rascunho, useRascunho, useRascunhoDaBusca } from "@/lib/rascunhos";
 
 // Clientes e profissionais (seção 14): cadastrar, editar, inativar e reativar; sem exclusão.
 // Cadastro de técnico não cria login (seção 7).
@@ -109,7 +116,10 @@ export function Pessoas({ tipo }: { tipo: TipoPessoa }) {
   const qc = useQueryClient();
   const chave = ["app", app.id, tipo];
   const q = useQuery({ queryKey: chave, queryFn: () => listarPessoas(app.id, tipo) });
-  const [editando, setEditando] = useState<ClienteDto | "novo" | null>(null);
+  // Aberto pela aba Rascunhos: o cadastro volta como a pessoa deixou.
+  const retomado = useRascunhoDaBusca<DadosPessoa>(app.id, tipo);
+  const [rascunho, setRascunho] = useState(retomado);
+  const [editando, setEditando] = useState<ClienteDto | "novo" | null>(retomado ? "novo" : null);
   const titulo = rotuloModulo(app, tipo);
 
   const status = useMutation({
@@ -314,27 +324,50 @@ export function Pessoas({ tipo }: { tipo: TipoPessoa }) {
         <PessoaDialog
           tipo={tipo}
           atual={editando === "novo" ? null : editando}
-          onFechar={() => setEditando(null)}
+          rascunho={editando === "novo" ? rascunho : null}
+          onFechar={() => {
+            setEditando(null);
+            setRascunho(null);
+          }}
         />
       )}
     </>
   );
 }
 
+interface DadosPessoa {
+  nome: string;
+  campos: CamposInformativos;
+}
+
 function PessoaDialog({
   tipo,
   atual,
+  rascunho,
   onFechar,
 }: {
   tipo: TipoPessoa;
   atual: ClienteDto | null;
+  rascunho: Rascunho<DadosPessoa> | null;
   onFechar: () => void;
 }) {
   const app = useApp();
   const qc = useQueryClient();
-  const [nome, setNome] = useState(atual?.nome ?? "");
-  const [campos, setCampos] = useState<CamposInformativos>(atual?.campos ?? {});
+  const [nome, setNome] = useState(atual?.nome ?? rascunho?.dados.nome ?? "");
+  const [campos, setCampos] = useState<CamposInformativos>(
+    atual?.campos ?? rascunho?.dados.campos ?? {},
+  );
   const chave = useChavePorConteudo();
+  const guardado = useRascunho<DadosPessoa>({
+    sistema: app.id,
+    tipo,
+    ativo: !atual,
+    inicial: rascunho,
+    dados: { nome, campos },
+    vazio: nome.trim() === "" && Object.keys(campos).length === 0,
+    titulo: nome.trim() || "Cadastro sem nome",
+    resumo: `Novo cadastro em ${rotuloModulo(app, tipo)}`,
+  });
 
   const m = useMutation({
     mutationFn: () => {
@@ -343,6 +376,7 @@ function PessoaDialog({
       return criarPessoa(app.id, tipo, dados, chave(dados));
     },
     onSuccess: () => {
+      guardado.descartar();
       void qc.invalidateQueries({ queryKey: ["app", app.id, tipo] });
       toast.success(atual ? "Cadastro atualizado." : "Cadastro criado.");
       onFechar();
@@ -383,6 +417,7 @@ function PessoaDialog({
             prefixo="pessoa"
           />
           <ErroApi erro={m.error} />
+          <AvisoRascunho salvoEm={guardado.salvoEm} />
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onFechar}>
               Cancelar

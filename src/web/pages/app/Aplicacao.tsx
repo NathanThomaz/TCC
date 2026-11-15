@@ -9,6 +9,7 @@ import { ErrorState } from "@/components/nexus/Estados";
 import { Skeleton } from "@/components/ui/skeleton";
 import { textoSobre } from "@/lib/cores";
 import { ROTULO_MODULO } from "@/lib/nexus";
+import { useRascunhos } from "@/lib/rascunhos";
 import { Link } from "@/lib/rotas";
 import { cn } from "@/lib/utils";
 import { Logotipo } from "@/components/nexus/Logotipo";
@@ -49,6 +50,7 @@ export function rotuloModulo(app: App, modulo: ModuleId): string {
 export function Aplicacao() {
   const { id = "" } = useParams();
   const q = useQuery({ queryKey: ["app", id], queryFn: () => obterApp(id) });
+  const rascunhos = useRascunhos(id).lista.length;
   // Tema escolhido na criação do sistema; ao sair dele, volta a preferência da pessoa.
   const { forcar } = useTema();
   const temaDoSistema = q.data?.config.aparencia.tema ?? null;
@@ -128,6 +130,12 @@ export function Aplicacao() {
             id={id}
             caminho="assistente"
             rotulo="Assistente"
+            destaque={aparencia.cor_destaque}
+          />
+          <MenuLink
+            id={id}
+            caminho="rascunhos"
+            rotulo={rascunhos ? `Rascunhos (${rascunhos})` : "Rascunhos"}
             destaque={aparencia.cor_destaque}
           />
         </nav>

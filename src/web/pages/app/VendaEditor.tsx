@@ -42,6 +42,7 @@ import {
   dadosDoErro,
   ErroApi,
   Tabela,
+  AvisoRascunho,
   useChavePorConteudo,
 } from "@/components/app/Comum";
 import { ErrorState, PageHeader } from "@/components/nexus/Estados";
@@ -65,6 +66,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useRascunho, useRascunhoDaBusca } from "@/lib/rascunhos";
 import { Link, useNavigate } from "@/lib/rotas";
 import { useApp } from "./Aplicacao";
 import { SituacaoVenda } from "./Vendas";
@@ -82,6 +84,15 @@ interface Linha {
 }
 
 const linhaVazia = (): Linha => ({ produto: "", caixas: "0", unidades: "0" });
+
+/** Venda nova como a pessoa deixou (o que o rascunho deste aparelho guarda). */
+interface DadosVenda {
+  cliente: string;
+  linhas: Linha[];
+  campos: CamposInformativos;
+  clientesExtras: { id: string; nome: string }[];
+  produtosExtras: ProdutoDto[];
+}
 
 function paraPedido(linhas: Linha[]): ItemPedido[] {
   return linhas
@@ -171,11 +182,17 @@ function Rascunho({ venda, servicos }: { venda: VendaDto | null; servicos: Atend
     queryKey: ["app", app.id, "produtos"],
     queryFn: () => listarProdutos(app.id),
   });
-  const [cliente, setCliente] = useState(venda?.cliente ?? "");
+  // Venda nova aberta pela aba Rascunhos: volta como a pessoa deixou.
+  const retomadoDaBusca = useRascunhoDaBusca<DadosVenda>(app.id, "venda");
+  const retomado = venda ? null : retomadoDaBusca;
+  const r = retomado?.dados;
+  const [cliente, setCliente] = useState(venda?.cliente ?? r?.cliente ?? "");
   // Produtos e cliente trazidos pela venda ditada, pelo leitor ou pela última compra que não estão
   // na lista carregada: ficam guardados na tela (sobrevivem à recarga da lista).
-  const [produtosExtras, setProdutosExtras] = useState<ProdutoDto[]>([]);
-  const [clientesExtras, setClientesExtras] = useState<{ id: string; nome: string }[]>([]);
+  const [produtosExtras, setProdutosExtras] = useState<ProdutoDto[]>(r?.produtosExtras ?? []);
+  const [clientesExtras, setClientesExtras] = useState<{ id: string; nome: string }[]>(
+    r?.clientesExtras ?? [],
+  );
   // Itens da venda salva que não estão na lista carregada: busca só esses no servidor.
   const faltantes = produtos.data
     ? (venda?.itens ?? [])
@@ -211,7 +228,9 @@ function Rascunho({ venda, servicos }: { venda: VendaDto | null; servicos: Atend
       )?.formas) ||
     [];
   const [forma, setForma] = useState<PaymentMethod | "">("");
-  const [linhas, setLinhas] = useState<Linha[]>(venda ? deVenda(venda) : [linhaVazia()]);
+  const [linhas, setLinhas] = useState<Linha[]>(
+    venda ? deVenda(venda) : r?.linhas.length ? r.linhas : [linhaVazia()],
+  );
   // Item novo (botão, leitor ou venda ditada) aparece no fim da lista com rolagem: leva até ele.
   const listaItens = useRef<HTMLDivElement>(null);
   const qtdLinhas = useRef(linhas.length);
@@ -224,7 +243,27 @@ function Rascunho({ venda, servicos }: { venda: VendaDto | null; servicos: Atend
   // do servidor), nada é salvo nem concluído até o usuário carregar a versão atual.
   const [base, setBase] = useState<VendaDto | null>(venda);
   const desatualizada = venda !== null && base !== null && venda.revisao !== base.revisao;
-  const [campos, setCampos] = useState<CamposInformativos>(venda?.campos ?? {});
+  const [campos, setCampos] = useState<CamposInformativos>(venda?.campos ?? r?.campos ?? {});
+  const comItem = linhas.filter((l) => l.produto).length;
+  const nomeCliente = [...(clientes.data ?? []), ...clientesExtras].find(
+    (c) => c.id === cliente,
+  )?.nome;
+  const guardado = useRascunho<DadosVenda>({
+    sistema: app.id,
+    tipo: "venda",
+    // Venda já salva tem reserva e fica em Vendas; só a nova, ainda não salva, vira rascunho.
+    ativo: !venda,
+    inicial: retomado,
+    dados: { cliente, linhas, campos, clientesExtras, produtosExtras },
+    vazio:
+      !cliente &&
+      Object.keys(campos).length === 0 &&
+      linhas.every(
+        (l) => !l.produto && Number(l.caixas || 0) === 0 && Number(l.unidades || 0) === 0,
+      ),
+    titulo: nomeCliente ? `Venda para ${nomeCliente}` : "Venda sem cliente",
+    resumo: `${comItem} ${comItem === 1 ? "item" : "itens"}`,
+  });
   const [faltas, setFaltas] = useState<FaltaDto[] | null>(null);
   const [agora, setAgora] = useState(() => Date.now());
   useEffect(() => {
@@ -281,6 +320,7 @@ function Rascunho({ venda, servicos }: { venda: VendaDto | null; servicos: Atend
       return criarVenda(app.id, dados, chave(dados));
     },
     onSuccess: (v) => {
+      if (!venda) guardado.descartar();
       setBase(v);
       setLinhas(deVenda(v));
       invalidar();
@@ -677,6 +717,7 @@ function Rascunho({ venda, servicos }: { venda: VendaDto | null; servicos: Atend
         {!faltas && <ErroApi erro={salvar.error} />}
         <ErroApi erro={concluir.error} />
         <ErroApi erro={descartar.error} />
+        {!venda && <AvisoRascunho salvoEm={guardado.salvoEm} />}
 
         <div className="flex flex-wrap gap-2">
           <Button
