@@ -126,8 +126,8 @@ export function Aplicacao() {
           <Divisoria />
           <MenuLink
             id={id}
-            caminho="perguntar"
-            rotulo="Perguntar"
+            caminho="assistente"
+            rotulo="Assistente"
             destaque={aparencia.cor_destaque}
           />
         </nav>

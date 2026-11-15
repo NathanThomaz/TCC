@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { BrowserRouter, Outlet, Route, Routes } from "react-router";
+import { BrowserRouter, Navigate, Outlet, Route, Routes } from "react-router";
 import { AppShell } from "@/components/nexus/AppShell";
 import { AvisoConexao } from "@/components/nexus/AvisoConexao";
 import { Toaster } from "@/components/ui/sonner";
@@ -77,7 +77,9 @@ createRoot(root).render(
                   <Route path="vendas" element={<Vendas />} />
                   <Route path="vendas/:venda" element={<VendaEditor />} />
                   <Route path="agenda" element={<Agenda />} />
-                  <Route path="perguntar" element={<Consulta />} />
+                  <Route path="assistente" element={<Consulta />} />
+                  {/* Endereço antigo da aba, antes de virar "Assistente". */}
+                  <Route path="perguntar" element={<Navigate to="../assistente" replace />} />
                 </Route>
                 <Route path="/perfil" element={<Perfil />} />
                 <Route path="/configuracoes" element={<Configuracoes />} />

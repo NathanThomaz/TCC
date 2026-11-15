@@ -525,7 +525,7 @@ function ComoFunciona({ config }: { config: ConfigDraft }) {
           <li key={l}>{l}</li>
         ))}
         <li>
-          Em “Perguntar”, você conversa com a IA sobre qualquer parte do sistema (vendas, estoque,
+          No “Assistente”, você conversa com a IA sobre qualquer parte do sistema (vendas, estoque,
           clientes, contas…), e as respostas usam os números reais.
         </li>
       </ul>

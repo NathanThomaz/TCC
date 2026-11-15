@@ -11,7 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { useApp } from "./Aplicacao";
 
-// Perguntar ao sistema (seção 15): somente leitura, sobre todos os módulos do sistema (vendas,
+// Assistente do negócio (seção 15): somente leitura, sobre todos os módulos do sistema (vendas,
 // estoque, clientes, agenda, compras, financeiro, regras e como usar). Os números vêm do sistema,
 // com os filtros e a origem de cada resposta; a conversa é só sua e só deste sistema.
 
@@ -57,8 +57,8 @@ export function Consulta() {
   return (
     <>
       <PageHeader
-        titulo="Perguntar"
-        descricao="Consulte vendas, estoque, reservas, agenda e regras deste sistema. Só leitura: para alterar dados, use as telas."
+        titulo="Assistente do negócio"
+        descricao="Pergunte sobre vendas, estoque, reservas, agenda, contas e regras deste sistema. Ele só consulta: para alterar dados, use as telas."
       />
       {!q.data.iaDisponivel && (
         <div role="note" className="mb-4 rounded-lg border bg-muted p-4 text-sm">
