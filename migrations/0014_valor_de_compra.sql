@@ -9,6 +9,7 @@ ALTER TABLE products ADD COLUMN cost_set_at INTEGER CHECK (cost_set_at IS NULL
 
 -- Igual ao da 0008, menos o custo: cancelada a compra, vale a compra válida mais recente que o
 -- valor informado; sem ela, o valor informado; sem os dois, a última compra válida (ou nenhum).
+-- No mesmo milissegundo, a compra vale (como no trigger de entrada, que sempre grava o custo).
 DROP TRIGGER purchases_cancel_effects;
 CREATE TRIGGER purchases_cancel_effects
 AFTER UPDATE OF status ON purchases
@@ -20,7 +21,7 @@ BEGIN
       last_cost_cents = COALESCE(
         (SELECT i.unit_cost_cents FROM purchase_items i JOIN purchases c ON c.id = i.purchase_id
          WHERE i.product_id = products.id AND c.status = 'completed' AND c.id <> NEW.id
-           AND c.created_at > COALESCE(products.cost_set_at, -1)
+           AND c.created_at >= COALESCE(products.cost_set_at, -1)
          ORDER BY c.created_at DESC, c.rowid DESC LIMIT 1),
         products.cost_cents,
         (SELECT i.unit_cost_cents FROM purchase_items i JOIN purchases c ON c.id = i.purchase_id
