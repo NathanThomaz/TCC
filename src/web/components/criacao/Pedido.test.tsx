@@ -6,8 +6,8 @@ import type { PedidoDto } from "../../../shared/api";
 // Ficha do pedido: quem pediu vê a resposta do desenvolvedor marcada e pode cancelar; o
 // desenvolvedor (dono do Nexus) dá o andamento e responde, sem o botão de cancelar.
 
-const mudarEstadoPedido = vi.fn((..._: unknown[]) => Promise.resolve({}));
-const responderPedido = vi.fn((..._: unknown[]) => Promise.resolve({}));
+const mudarEstadoPedido = vi.fn<(...x: unknown[]) => Promise<object>>(() => Promise.resolve({}));
+const responderPedido = vi.fn<(...x: unknown[]) => Promise<object>>(() => Promise.resolve({}));
 vi.mock("@/api/pedidos", () => ({
   cancelarPedido: vi.fn(),
   comentarPedido: vi.fn(),

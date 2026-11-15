@@ -31,8 +31,7 @@ import {
 const NAV = [
   { to: "/", rotulo: "Início", Icone: Home },
   { to: "/sistemas", rotulo: "Sistemas", Icone: LayoutGrid },
-  { to: "/perfil", rotulo: "Perfil", Icone: UserRound },
-  { to: "/configuracoes", rotulo: "Configurações", Icone: Settings },
+  { to: "/configuracoes", rotulo: "Conta e configurações", Icone: Settings },
 ] as const;
 
 /** Só o dono do Nexus (ADR-009). */
@@ -164,8 +163,8 @@ export function AppShell({ children }: { children: ReactNode }) {
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuItem asChild>
-                <Link to="/perfil">
-                  <UserRound aria-hidden /> Perfil
+                <Link to="/configuracoes">
+                  <UserRound aria-hidden /> Conta e configurações
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem

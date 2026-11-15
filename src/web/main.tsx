@@ -29,7 +29,6 @@ import { Entrar } from "@/pages/Entrar";
 import { Inicio } from "@/pages/Inicio";
 import { NaoEncontrada } from "@/pages/NaoEncontrada";
 import { Pedidos } from "@/pages/Pedidos";
-import { Perfil } from "@/pages/Perfil";
 import { Sistemas } from "@/pages/Sistemas";
 // Inter hospedada no próprio app (a CSP só permite fontes do mesmo domínio).
 import "@fontsource-variable/inter";
@@ -82,7 +81,8 @@ createRoot(root).render(
                   {/* Endereço antigo da aba, antes de virar "Assistente". */}
                   <Route path="perguntar" element={<Navigate to="../assistente" replace />} />
                 </Route>
-                <Route path="/perfil" element={<Perfil />} />
+                {/* Perfil e Configurações viraram uma página só (pedido do dono, 2026-11-15). */}
+                <Route path="/perfil" element={<Navigate to="/configuracoes" replace />} />
                 <Route path="/configuracoes" element={<Configuracoes />} />
                 <Route path="/consumo" element={<Consumo />} />
                 <Route path="/pedidos" element={<PedidosRecebidos />} />

@@ -1,10 +1,13 @@
 import { FirebaseError } from "firebase/app";
 import {
   createUserWithEmailAndPassword,
+  EmailAuthProvider,
+  reauthenticateWithCredential,
   sendEmailVerification,
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signOut,
+  updatePassword,
 } from "firebase/auth";
 import type { SessionResponse } from "../../shared/api";
 import { obterAuth, obterConfig } from "@/lib/firebase";
@@ -101,6 +104,36 @@ export async function entrar(email: string, senha: string): Promise<Usuario> {
     }
     throw error;
   }
+}
+
+/**
+ * A pessoa troca a própria senha: confirma a atual (o Firebase exige login recente) e grava a
+ * nova. A troca encerra as sessões abertas em outros aparelhos; aqui, entra de novo com a senha
+ * nova para que a sessão atual seja posterior a esse marco e o servidor continue aceitando.
+ */
+export async function trocarSenha(atual: string, nova: string): Promise<void> {
+  const auth = await exigirAuth();
+  const user = auth.currentUser;
+  if (!user?.email) throw new ApiError("sessao_expirada", "Entre de novo para trocar a senha.");
+  try {
+    await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email, atual));
+  } catch (error) {
+    if (
+      error instanceof FirebaseError &&
+      ["auth/wrong-password", "auth/invalid-credential", "auth/invalid-login-credentials"].includes(
+        error.code,
+      )
+    ) {
+      throw new ApiError("senha_atual_incorreta", "A senha atual não confere.");
+    }
+    traduzir(error);
+  }
+  try {
+    await updatePassword(user, nova);
+  } catch (error) {
+    traduzir(error);
+  }
+  await signInWithEmailAndPassword(auth, user.email, nova).catch(() => undefined);
 }
 
 /** Link de definir/redefinir senha (também confirma o e-mail; provas/firebase-convite). */
