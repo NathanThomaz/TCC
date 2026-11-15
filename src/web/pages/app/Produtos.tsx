@@ -316,7 +316,7 @@ function ProdutoDialog({ atual, onFechar }: { atual: ProdutoDto | null; onFechar
 
   return (
     <Dialog open onOpenChange={(a) => !a && onFechar()}>
-      <DialogContent>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
         <form
           className="space-y-4"
           onSubmit={(e) => {
@@ -332,18 +332,19 @@ function ProdutoDialog({ atual, onFechar }: { atual: ProdutoDto | null; onFechar
               {regraCaixa ? " Na caixa, o preço é o da unidade × unidades por caixa." : ""}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-1.5">
-            <Label htmlFor="produto-nome">{rotuloCampo(app.config, "produtos.nome")}</Label>
-            <Input
-              id="produto-nome"
-              value={nome}
-              maxLength={120}
-              required
-              autoFocus
-              onChange={(e) => setNome(e.target.value)}
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
+          {/* Grade única: os campos curtos ficam lado a lado e o formulário não cresce para baixo. */}
+          <div className="grid grid-cols-2 items-start gap-x-3 gap-y-4 sm:grid-cols-3">
+            <div className="col-span-2 space-y-1.5">
+              <Label htmlFor="produto-nome">{rotuloCampo(app.config, "produtos.nome")}</Label>
+              <Input
+                id="produto-nome"
+                value={nome}
+                maxLength={120}
+                required
+                autoFocus
+                onChange={(e) => setNome(e.target.value)}
+              />
+            </div>
             <div className="space-y-1.5">
               <Label htmlFor="produto-varejo">
                 {rotuloCampo(app.config, "produtos.varejo")} (R$)
@@ -370,10 +371,8 @@ function ProdutoDialog({ atual, onFechar }: { atual: ProdutoDto | null; onFechar
                 />
               </div>
             )}
-          </div>
-          <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label htmlFor="produto-custo">Valor de compra (R$, opcional)</Label>
+              <Label htmlFor="produto-custo">Valor de compra (R$)</Label>
               <CampoDinheiro
                 id="produto-custo"
                 placeholder="0,00"
@@ -381,53 +380,49 @@ function ProdutoDialog({ atual, onFechar }: { atual: ProdutoDto | null; onFechar
                 onValor={setCusto}
                 aria-describedby="dica-custo"
               />
+              <p id="dica-custo" className="text-xs text-muted-foreground" aria-live="polite">
+                {margemDaTela(varejo, custo) ??
+                  "Opcional. Quanto você paga pela unidade: mostra margem e lucro."}
+              </p>
             </div>
-            <p
-              id="dica-custo"
-              className="self-end pb-2 text-xs text-muted-foreground"
-              aria-live="polite"
-            >
-              {margemDaTela(varejo, custo) ??
-                "Quanto você paga pela unidade. Serve para o balanço: margem e lucro previsto."}
-            </p>
-          </div>
-          {regraCaixa && (
-            <div className="space-y-1.5">
-              <Label htmlFor="produto-caixa">
-                Unidades por caixa (vazio = vende só em unidades)
-              </Label>
-              <Input
-                id="produto-caixa"
-                type="number"
-                min={2}
-                max={1000}
-                value={caixa}
-                onChange={(e) => setCaixa(e.target.value)}
-              />
-            </div>
-          )}
-          {temEstoque && (
-            <div className="grid grid-cols-2 gap-3">
-              {!atual && (
-                <div className="space-y-1.5">
-                  <Label htmlFor="produto-inicial">Quantidade em estoque</Label>
-                  <Input
-                    id="produto-inicial"
-                    type="number"
-                    min={1}
-                    step={1}
-                    placeholder="0"
-                    value={inicial}
-                    onChange={(e) => setInicial(e.target.value)}
-                    aria-describedby="dica-inicial"
-                  />
-                  <p id="dica-inicial" className="text-xs text-muted-foreground">
-                    O que você já tem hoje (em unidades).
-                  </p>
-                </div>
-              )}
+            {regraCaixa && (
               <div className="space-y-1.5">
-                <Label htmlFor="produto-minimo">Avisar quando ficar abaixo de</Label>
+                <Label htmlFor="produto-caixa">{rotuloCampo(app.config, "produtos.caixa")}</Label>
+                <Input
+                  id="produto-caixa"
+                  type="number"
+                  min={2}
+                  max={1000}
+                  value={caixa}
+                  onChange={(e) => setCaixa(e.target.value)}
+                  aria-describedby="dica-caixa"
+                />
+                <p id="dica-caixa" className="text-xs text-muted-foreground">
+                  Vazio: vende só em unidades.
+                </p>
+              </div>
+            )}
+            {temEstoque && !atual && (
+              <div className="space-y-1.5">
+                <Label htmlFor="produto-inicial">Estoque inicial</Label>
+                <Input
+                  id="produto-inicial"
+                  type="number"
+                  min={1}
+                  step={1}
+                  placeholder="0"
+                  value={inicial}
+                  onChange={(e) => setInicial(e.target.value)}
+                  aria-describedby="dica-inicial"
+                />
+                <p id="dica-inicial" className="text-xs text-muted-foreground">
+                  O que já tem hoje, em unidades.
+                </p>
+              </div>
+            )}
+            {temEstoque && (
+              <div className="space-y-1.5">
+                <Label htmlFor="produto-minimo">Avisar abaixo de</Label>
                 <Input
                   id="produto-minimo"
                   type="number"
@@ -439,28 +434,28 @@ function ProdutoDialog({ atual, onFechar }: { atual: ProdutoDto | null; onFechar
                   aria-describedby="dica-minimo"
                 />
                 <p id="dica-minimo" className="text-xs text-muted-foreground">
-                  Cada {item} tem o seu limite; vazio, avisa só quando acabar.
+                  Unidades deste {item}; vazio, avisa só quando acabar.
                 </p>
               </div>
+            )}
+            <div className="space-y-1.5">
+              <Label htmlFor="produto-codigo">Código de barras</Label>
+              <Input
+                id="produto-codigo"
+                value={codigo}
+                maxLength={64}
+                inputMode="numeric"
+                autoComplete="off"
+                placeholder="Leitor ou digite"
+                onChange={(e) => setCodigo(e.target.value)}
+                // O leitor USB termina com Enter: não envia o formulário antes da hora.
+                onKeyDown={(e) => e.key === "Enter" && e.preventDefault()}
+                aria-describedby="dica-codigo"
+              />
+              <p id="dica-codigo" className="text-xs text-muted-foreground">
+                Opcional. A venda aceita o leitor ou a câmera.
+              </p>
             </div>
-          )}
-          <div className="space-y-1.5">
-            <Label htmlFor="produto-codigo">Código de barras (opcional)</Label>
-            <Input
-              id="produto-codigo"
-              value={codigo}
-              maxLength={64}
-              inputMode="numeric"
-              autoComplete="off"
-              placeholder="Passe o leitor no produto ou digite"
-              onChange={(e) => setCodigo(e.target.value)}
-              // O leitor USB termina com Enter: não envia o formulário antes da hora.
-              onKeyDown={(e) => e.key === "Enter" && e.preventDefault()}
-              aria-describedby="dica-codigo"
-            />
-            <p id="dica-codigo" className="text-xs text-muted-foreground">
-              Com o código, a venda aceita o leitor ou a câmera do celular.
-            </p>
           </div>
           <CamposForm
             config={app.config}
