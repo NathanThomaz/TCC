@@ -141,7 +141,12 @@ export function useRascunho<T>(o: {
   const { ativo, vazio, tipo, titulo, resumo } = o;
 
   useEffect(() => {
-    if (!ativo || encerrado.current || texto === ultimo.current) return;
+    if (!ativo || encerrado.current) return;
+    // Voltou ao que já está guardado: a gravação pendente (de uma edição desfeita) não vale mais.
+    if (texto === ultimo.current) {
+      pendente.current = null;
+      return;
+    }
     const escrever = () => {
       pendente.current = null;
       if (encerrado.current) return;

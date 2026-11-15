@@ -83,6 +83,20 @@ describe("rascunhos", () => {
     expect(guardados()).toEqual([]);
   });
 
+  it("desfazer antes da pausa não ressuscita a edição desfeita ao fechar", () => {
+    const { rerender, unmount } = renderHook((p: ReturnType<typeof props>) => useRascunho(p), {
+      initialProps: props("Cerveja"),
+      wrapper: com(),
+    });
+    act(() => {
+      vi.advanceTimersByTime(700);
+    });
+    rerender(props("Cerveja preta"));
+    rerender(props("Cerveja"));
+    unmount();
+    expect(guardados()).toMatchObject([{ titulo: "Cerveja" }]);
+  });
+
   it("edição de registro existente não vira rascunho", () => {
     renderHook(() => useRascunho(props("Refrigerante", { ativo: false })), { wrapper: com() });
     act(() => {
