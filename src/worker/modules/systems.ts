@@ -89,11 +89,19 @@ async function loadSystem(ctx: RequestContext, systemId: string): Promise<System
   return row;
 }
 
-/** Outro sistema do mesmo dono com o mesmo nome (sem acento, maiúsculas nem espaços extras). */
-const sistemaComNome = (ctx: RequestContext, ownerId: string, chave: string) =>
-  ctx.env.DB.prepare("SELECT name, status FROM systems WHERE owner_id = ? AND name_key = ?")
-    .bind(ownerId, chave)
-    .first<{ name: string; status: SystemRow["status"] }>();
+/**
+ * Outro sistema do mesmo dono com o mesmo nome (sem acento, maiúsculas nem espaços extras).
+ * Compara em JavaScript, com a mesma regra da tela: o name_key dos sistemas anteriores à 0013 veio
+ * de um preenchimento em SQL, que pode divergir em nomes incomuns. O índice único cobre a corrida.
+ */
+async function sistemaComNome(ctx: RequestContext, ownerId: string, chave: string) {
+  const { results } = await ctx.env.DB.prepare(
+    "SELECT name, status FROM systems WHERE owner_id = ?",
+  )
+    .bind(ownerId)
+    .all<{ name: string; status: SystemRow["status"] }>();
+  return results.find((s) => chaveNomeSistema(s.name) === chave) ?? null;
+}
 
 const nomeRepetido = (outro: { name: string; status: SystemRow["status"] } | null, nome: string) =>
   new AppError(

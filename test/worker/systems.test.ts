@@ -291,6 +291,17 @@ describe("nome de sistema sem repetição (migration 0013)", () => {
     expect(n?.n).toBe(1);
   });
 
+  it("sistema antigo com chave divergente (ou sem chave) ainda conta, pela regra da API", async () => {
+    await env.DB.prepare(
+      "INSERT INTO systems (id, owner_id, name, name_key, created_at, updated_at) VALUES ('antigo', 'a', 'Ālamo   Loja', NULL, ?, ?)",
+    )
+      .bind(NOW, NOW)
+      .run();
+    const r = await criar("alamo loja");
+    expect(r.status).toBe(409);
+    expect(r.body.error!.message).toContain('"Ālamo   Loja"');
+  });
+
   it("outro dono pode usar o mesmo nome; arquivado continua contando e é avisado", async () => {
     const a = await criar("Mercado");
     expect((await criar("Mercado", ADMIN2)).status).toBe(201);
@@ -337,7 +348,7 @@ describe("nome de sistema sem repetição (migration 0013)", () => {
                     return new Proxy(ligado, {
                       get(l, q) {
                         const v: unknown = Reflect.get(l, q);
-                        if (q === "first") {
+                        if (q === "first" || q === "all") {
                           return async (...x: unknown[]) => {
                             await disparar(sql);
                             return (v as (...y: unknown[]) => unknown).apply(l, x);
@@ -398,7 +409,7 @@ describe("nome de sistema sem repetição (migration 0013)", () => {
     const r = await criarComCorrida(
       "Açougue",
       "chave-repetida-nome",
-      (sql) => sql?.includes("name_key = ?") === true,
+      (sql) => sql?.startsWith("SELECT name, status FROM systems") === true,
       async () => {
         primeiro = (await criar("Açougue", ADMIN, "chave-repetida-nome")).body.sistema!.id;
       },

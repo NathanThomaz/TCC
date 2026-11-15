@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { AvisoConexao } from "./AvisoConexao";
 
 // Sem internet: aviso na tela, a alteração fica esperando (não falha) e sai sozinha quando a
-// conexão volta.
+// conexão volta. O aviso só some quando o envio retomado termina.
 
 afterEach(() => {
   cleanup();
@@ -30,17 +30,28 @@ function renderizar(enviar: () => Promise<string>) {
   );
 }
 
+const aviso = () => screen.getByRole("status");
+
 describe("AvisoConexao", () => {
-  it("com internet não mostra nada", () => {
+  it("com internet a região fica vazia, mas presente (aria-live, visível com diálogo aberto)", () => {
     renderizar(() => Promise.resolve("ok"));
-    expect(screen.queryByRole("status")).toBeNull();
+    expect(aviso().textContent).toBe("");
+    expect(aviso().getAttribute("aria-live")).toBe("polite");
+  });
+
+  it("um envio comum, com internet, não mostra aviso", async () => {
+    renderizar(() => new Promise<string>(() => {}));
+    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+    await act(() => Promise.resolve());
+    expect(aviso().textContent).toBe("");
   });
 
   it("sem internet avisa, guarda a alteração e envia quando a conexão volta", async () => {
-    const enviar = vi.fn(() => Promise.resolve("ok"));
+    let responder: (v: string) => void = () => {};
+    const enviar = vi.fn(() => new Promise<string>((ok) => (responder = ok)));
     renderizar(enviar);
     act(() => onlineManager.setOnline(false));
-    expect(screen.getByRole("status").textContent).toContain("Sem internet");
+    expect(aviso().textContent).toContain("Sem internet");
 
     fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
     expect((await screen.findByText(/1 alteração esperando/)).textContent).toContain(
@@ -48,9 +59,14 @@ describe("AvisoConexao", () => {
     );
     expect(enviar).not.toHaveBeenCalled();
 
+    // Conexão de volta, resposta ainda a caminho: o aviso continua até o envio terminar.
     act(() => onlineManager.setOnline(true));
-    expect(await screen.findByRole("button", { name: "Salvo" })).toBeTruthy();
+    expect((await screen.findByText(/Conexão de volta/)).textContent).toBeTruthy();
+    expect(aviso().textContent).toContain("Enviando 1 alteração");
     expect(enviar).toHaveBeenCalledTimes(1);
-    expect(screen.queryByRole("status")).toBeNull();
+
+    act(() => responder("ok"));
+    expect(await screen.findByRole("button", { name: "Salvo" })).toBeTruthy();
+    expect(aviso().textContent).toBe("");
   });
 });
