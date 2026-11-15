@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { InicioDto, ResumoSistemaDto } from "../../shared/api";
-import { alertasDoInicio, totaisDoInicio } from "./Inicio";
+import { alertasDoInicio, numerosDoInicio, totaisDoInicio } from "./Inicio";
 
 // Tela inicial: o que precisa de atenção e os totais do dia vêm dos painéis de cada sistema.
 
@@ -83,5 +83,22 @@ describe("tela inicial", () => {
       sistemas: [{ ...dados.sistemas[2]!, ultimaAtividade: AGORA - DIA }],
     };
     expect(alertasDoInicio(recente, AGORA)).toEqual([]);
+  });
+
+  it("os números do topo cabem numa faixa de 4; com agenda, a atenção fica só no quadro", () => {
+    const conta = () => 0;
+    const t = totaisDoInicio(dados);
+    expect(numerosDoInicio(t, 2, conta).map((n) => n.rotulo)).toEqual([
+      "Vendas hoje",
+      "Vendas no mês",
+      "Clientes ativos",
+      "Precisa de atenção",
+    ]);
+    expect(numerosDoInicio({ ...t, temAgenda: true }, 2, conta).map((n) => n.rotulo)).toEqual([
+      "Vendas hoje",
+      "Vendas no mês",
+      "Atendimentos hoje",
+      "Clientes ativos",
+    ]);
   });
 });

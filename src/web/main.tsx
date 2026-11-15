@@ -3,6 +3,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Outlet, Route, Routes } from "react-router";
 import { AppShell } from "@/components/nexus/AppShell";
+import { AvisoConexao } from "@/components/nexus/AvisoConexao";
 import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider } from "@/lib/auth";
 import { TemaProvider } from "@/lib/tema";
@@ -86,6 +87,7 @@ createRoot(root).render(
             </Routes>
           </BrowserRouter>
           <Toaster richColors position="top-right" />
+          <AvisoConexao />
         </AuthProvider>
       </TemaProvider>
     </QueryClientProvider>

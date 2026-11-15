@@ -66,6 +66,7 @@ function ImportarDialog({
           ...(regras.caixa ? ["Caixa"] : []),
           ...(regras.estoque ? ["Estoque", "Mínimo"] : []),
           "Código de barras (opcional)",
+          "Valor de compra (opcional)",
         ]
       : ["Nome"];
 

@@ -56,7 +56,12 @@ export async function chamar<T>(
       ...(opcoes.body !== undefined ? { body: JSON.stringify(opcoes.body) } : {}),
     });
   } catch {
-    throw new ApiError("servico_indisponivel", "Não conseguimos falar com o servidor.");
+    throw new ApiError(
+      "servico_indisponivel",
+      navigator.onLine
+        ? "Não conseguimos falar com o servidor."
+        : "Sem internet agora. O que você digitou continua na tela; tente de novo quando a conexão voltar.",
+    );
   }
 
   const corpo = (await resposta.json().catch(() => null)) as (T & Partial<ApiErrorBody>) | null;

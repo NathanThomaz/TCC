@@ -273,6 +273,151 @@ describe("permissões e isolamento (T01, T02, T04)", () => {
   });
 });
 
+describe("nome de sistema sem repetição (migration 0013)", () => {
+  const criar = (nome: string, token = ADMIN, chave?: string) =>
+    call("POST", "/systems", token, { nome }, chave);
+
+  it("recusa o mesmo nome do mesmo dono, ignorando acento, maiúsculas e espaços", async () => {
+    expect((await criar("Loja Água Viva")).status).toBe(201);
+    for (const nome of ["Loja Água Viva", "loja agua viva", "LOJA  ÁGUA   VIVA "]) {
+      const r = await criar(nome);
+      expect(r.status).toBe(409);
+      expect(r.body.error).toMatchObject({
+        code: "nome_em_uso",
+        message: 'Você já tem um sistema chamado "Loja Água Viva". Escolha outro nome.',
+      });
+    }
+    const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM systems").first<{ n: number }>();
+    expect(n?.n).toBe(1);
+  });
+
+  it("sistema antigo com chave divergente (ou sem chave) ainda conta, pela regra da API", async () => {
+    await env.DB.prepare(
+      "INSERT INTO systems (id, owner_id, name, name_key, created_at, updated_at) VALUES ('antigo', 'a', 'Ālamo   Loja', NULL, ?, ?)",
+    )
+      .bind(NOW, NOW)
+      .run();
+    const r = await criar("alamo loja");
+    expect(r.status).toBe(409);
+    expect(r.body.error!.message).toContain('"Ālamo   Loja"');
+  });
+
+  it("outro dono pode usar o mesmo nome; arquivado continua contando e é avisado", async () => {
+    const a = await criar("Mercado");
+    expect((await criar("Mercado", ADMIN2)).status).toBe(201);
+    await env.DB.prepare("UPDATE systems SET status = 'archived' WHERE id = ?")
+      .bind(a.body.sistema!.id)
+      .run();
+    const r = await criar("mercado");
+    expect(r.body.error!.message).toBe(
+      'Você já tem um sistema chamado "Mercado" (arquivado). Escolha outro nome.',
+    );
+  });
+
+  /** Roda `antes` uma vez, logo antes da primeira instrução que `quando` reconhecer. */
+  async function criarComCorrida(
+    nome: string,
+    chave: string,
+    /** `sql` nulo = o lote (batch). */
+    quando: (sql: string | null) => boolean,
+    antes: () => Promise<unknown>,
+  ) {
+    let usado = false;
+    const disparar = async (sql: string | null) => {
+      if (!usado && quando(sql)) {
+        usado = true;
+        await antes();
+      }
+    };
+    const db = new Proxy(env.DB, {
+      get(alvo, prop) {
+        if (prop === "batch") {
+          return async (lote: D1PreparedStatement[]) => {
+            await disparar(null);
+            return alvo.batch(lote);
+          };
+        }
+        if (prop === "prepare") {
+          return (sql: string) => {
+            const st = alvo.prepare(sql);
+            return new Proxy(st, {
+              get(s, p) {
+                if (p === "bind") {
+                  return (...args: unknown[]) => {
+                    const ligado = s.bind(...args);
+                    return new Proxy(ligado, {
+                      get(l, q) {
+                        const v: unknown = Reflect.get(l, q);
+                        if (q === "first" || q === "all") {
+                          return async (...x: unknown[]) => {
+                            await disparar(sql);
+                            return (v as (...y: unknown[]) => unknown).apply(l, x);
+                          };
+                        }
+                        return typeof v === "function"
+                          ? (v as (...y: unknown[]) => unknown).bind(l)
+                          : v;
+                      },
+                    });
+                  };
+                }
+                const v: unknown = Reflect.get(s, p);
+                return typeof v === "function" ? (v as (...y: unknown[]) => unknown).bind(s) : v;
+              },
+            });
+          };
+        }
+        const valor: unknown = Reflect.get(alvo, prop);
+        return typeof valor === "function"
+          ? (valor as (...x: unknown[]) => unknown).bind(alvo)
+          : valor;
+      },
+    });
+    const ambiente = new Proxy(env, {
+      get: (alvo, prop): unknown => (prop === "DB" ? db : Reflect.get(alvo, prop)),
+    });
+    const response = await app(
+      new Request("https://app.test/api/v1/systems", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${ADMIN}`,
+          "content-type": "application/json",
+          "idempotency-key": chave,
+        },
+        body: JSON.stringify({ nome }),
+      }),
+      ambiente,
+    );
+    return { status: response.status, body: await response.json<SystemsApiBody>() };
+  }
+
+  it("mesmo nome gravado por outro pedido entre a conferência e o lote: o índice recusa com 409", async () => {
+    const r = await criarComCorrida(
+      "PADARIA",
+      crypto.randomUUID(),
+      (sql) => sql === null,
+      () => criar("Padaria"),
+    );
+    expect(r.status).toBe(409);
+    expect(r.body.error!.message).toContain('"Padaria"');
+    const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM systems").first<{ n: number }>();
+    expect(n?.n).toBe(1);
+  });
+
+  it("repetição do mesmo pedido que encontra o nome já gravado por ele devolve o mesmo sistema", async () => {
+    let primeiro = "";
+    const r = await criarComCorrida(
+      "Açougue",
+      "chave-repetida-nome",
+      (sql) => sql?.startsWith("SELECT name, status FROM systems") === true,
+      async () => {
+        primeiro = (await criar("Açougue", ADMIN, "chave-repetida-nome")).body.sistema!.id;
+      },
+    );
+    expect(r).toMatchObject({ status: 201, body: { sistema: { id: primeiro } } });
+  });
+});
+
 describe("idempotência e concorrência (seção 19, T10, T31)", () => {
   async function count(sql: string): Promise<number> {
     return (await env.DB.prepare(sql).first<{ n: number }>())?.n ?? -1;

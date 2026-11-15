@@ -20,6 +20,7 @@ const estoque: NonNullable<PainelDto["estoque"]> = {
   criticos: [],
   unidades: 10,
   valorVarejoCentavos: 5000,
+  custo: null,
 };
 const clientes = { ativos: 4, inativos: 0, novosNoMes: 1 };
 const agenda: NonNullable<PainelDto["agenda"]> = {
@@ -97,5 +98,18 @@ describe("indicadores do painel", () => {
       financeiro: { ...financeiro, vencidosReceber: { quantidade: 0, totalCentavos: 0 } },
     });
     expect(semVencidos).not.toContain("vencidos");
+  });
+
+  it("com valor de compra, o lucro previsto toma o lugar do valor em estoque", () => {
+    const custo = {
+      produtos: 2,
+      semCusto: 1,
+      valorCustoCentavos: 3000,
+      valorVendaCentavos: 4500,
+      lucroPrevistoCentavos: 1500,
+    };
+    const lista = ids({ hoje: "", vendas, clientes, estoque: { ...estoque, custo } });
+    expect(lista).toContain("lucro-estoque");
+    expect(lista).not.toContain("valor-estoque");
   });
 });

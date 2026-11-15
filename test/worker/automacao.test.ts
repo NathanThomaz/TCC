@@ -380,6 +380,7 @@ describe("importar planilha", () => {
           estoque: 24,
           estoqueMinimo: 6,
           codigoBarras: "789",
+          custoCentavos: 320,
         },
         { nome: "água", varejoCentavos: 300, atacadoCentavos: 250 },
         { nome: "Vinho", varejoCentavos: 4500, atacadoCentavos: 4000 },
@@ -394,6 +395,7 @@ describe("importar planilha", () => {
       estoqueMinimo: 6,
       codigoBarras: "789",
       unidadesPorCaixa: 12,
+      custoCentavos: 320,
     });
     const movs = await env.DB.prepare("SELECT reason, delta FROM stock_movements").all();
     expect(movs.results).toEqual([{ reason: "Estoque inicial (planilha)", delta: 24 }]);

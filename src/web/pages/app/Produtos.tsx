@@ -41,6 +41,23 @@ type Dialogo =
   | { tipo: "entrada"; produto: ProdutoDto }
   | { tipo: "correcao"; produto: ProdutoDto };
 
+/** Margem sobre o preço de venda ("35%"); null sem valor de compra. */
+export function margem(vendaCentavos: number, custoCentavos: number | null): string | null {
+  if (custoCentavos === null || vendaCentavos <= 0) return null;
+  return `${Math.round(((vendaCentavos - custoCentavos) / vendaCentavos) * 100)}%`;
+}
+
+/** Prévia no formulário: margem e lucro por unidade, enquanto a pessoa digita. */
+function margemDaTela(venda: string, custo: string): string | null {
+  const v = reaisParaCentavos(venda);
+  const c = custo.trim() === "" ? null : reaisParaCentavos(custo);
+  if (v === null || v <= 0 || c === null) return null;
+  const lucro = v - c;
+  return lucro >= 0
+    ? `Margem de ${margem(v, c)}: ${formatarCentavos(lucro)} de lucro por unidade.`
+    : `Atenção: o preço de venda está ${formatarCentavos(-lucro)} abaixo do valor de compra.`;
+}
+
 export function Produtos() {
   const app = useApp();
   const qc = useQueryClient();
@@ -67,6 +84,8 @@ export function Produtos() {
   const cabecalho = [
     col("produtos.item"),
     col("produtos.varejo"),
+    "Compra",
+    "Margem",
     ...(temAtacado ? [col("produtos.atacado")] : []),
     ...(temCaixa ? [col("produtos.caixa")] : []),
     ...campos.map((c) => <ColunaEditavel chave={`campo:produtos:${c.id}`} rotulo={c.rotulo} />),
@@ -116,6 +135,12 @@ export function Produtos() {
               </td>
               <td className="whitespace-nowrap px-4 py-2 tabular-nums">
                 {formatarCentavos(p.varejoCentavos)}
+              </td>
+              <td className="whitespace-nowrap px-4 py-2 tabular-nums text-muted-foreground">
+                {p.custoCentavos === null ? "—" : formatarCentavos(p.custoCentavos)}
+              </td>
+              <td className="whitespace-nowrap px-4 py-2 tabular-nums">
+                {margem(p.varejoCentavos, p.custoCentavos) ?? "—"}
               </td>
               {temAtacado && (
                 <td className="whitespace-nowrap px-4 py-2 tabular-nums">
@@ -235,6 +260,9 @@ function ProdutoDialog({ atual, onFechar }: { atual: ProdutoDto | null; onFechar
   const [inicial, setInicial] = useState("");
   const [minimo, setMinimo] = useState(atual?.estoqueMinimo ? String(atual.estoqueMinimo) : "");
   const [codigo, setCodigo] = useState(atual?.codigoBarras ?? "");
+  const [custo, setCusto] = useState(
+    atual && atual.custoCentavos !== null ? centavosParaReais(atual.custoCentavos) : "",
+  );
   const [erroLocal, setErroLocal] = useState<string | null>(null);
   const item = rotuloCampo(app.config, "produtos.item").toLowerCase();
 
@@ -246,6 +274,8 @@ function ProdutoDialog({ atual, onFechar }: { atual: ProdutoDto | null; onFechar
         throw new Error(`Informe o ${rotuloCampo(app.config, "produtos.varejo").toLowerCase()}.`);
       }
       if (temAtacado && (a === null || a <= 0)) throw new Error("Informe o preço de atacado.");
+      const c = custo.trim() === "" ? null : reaisParaCentavos(custo);
+      if (custo.trim() !== "" && c === null) throw new Error("Valor de compra inválido.");
       const qtd = (t: string) => (t.trim() === "" ? null : Number(t));
       const estoqueInicial = qtd(inicial);
       const estoqueMinimo = qtd(minimo);
@@ -262,6 +292,9 @@ function ProdutoDialog({ atual, onFechar }: { atual: ProdutoDto | null; onFechar
         campos,
         estoqueMinimo: temEstoque ? estoqueMinimo : null,
         codigoBarras: codigo.trim() || null,
+        // Na edição, só manda o custo se a pessoa mudou: o campo vem com o custo em uso (talvez
+        // o da última compra), que não deve virar "valor informado" só por salvar o nome.
+        ...(!atual || c !== atual.custoCentavos ? { custoCentavos: c } : {}),
         ...(!atual && temEstoque && estoqueInicial !== null ? { estoqueInicial } : {}),
       };
       return atual
@@ -337,6 +370,26 @@ function ProdutoDialog({ atual, onFechar }: { atual: ProdutoDto | null; onFechar
                 />
               </div>
             )}
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="produto-custo">Valor de compra (R$, opcional)</Label>
+              <CampoDinheiro
+                id="produto-custo"
+                placeholder="0,00"
+                valor={custo}
+                onValor={setCusto}
+                aria-describedby="dica-custo"
+              />
+            </div>
+            <p
+              id="dica-custo"
+              className="self-end pb-2 text-xs text-muted-foreground"
+              aria-live="polite"
+            >
+              {margemDaTela(varejo, custo) ??
+                "Quanto você paga pela unidade. Serve para o balanço: margem e lucro previsto."}
+            </p>
           </div>
           {regraCaixa && (
             <div className="space-y-1.5">

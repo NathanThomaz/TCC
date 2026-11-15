@@ -10,6 +10,26 @@ import { hojeLocal } from "./financeiro";
 // dos módulos que o sistema tem. Mesma conta que a consulta usa: vendas concluídas pelo dia da
 // conclusão, sem as canceladas; disponível = físico − reservas ativas não vencidas.
 
+/**
+ * Balanço do estoque (valor de compra opcional no produto): só os produtos com custo entram, para
+ * o lucro previsto não ficar inflado pelos que não têm. null quando nenhum produto tem custo.
+ */
+export function balancoDoEstoque(
+  produtos: { physical: number; retail_cents: number; custo: number | null }[],
+) {
+  const comCusto = produtos.filter((p) => p.custo !== null);
+  if (comCusto.length === 0) return null;
+  const custo = comCusto.reduce((t, p) => t + p.physical * (p.custo ?? 0), 0);
+  const venda = comCusto.reduce((t, p) => t + p.physical * p.retail_cents, 0);
+  return {
+    produtos: comCusto.length,
+    semCusto: produtos.length - comCusto.length,
+    valorCustoCentavos: custo,
+    valorVendaCentavos: venda,
+    lucroPrevistoCentavos: venda - custo,
+  };
+}
+
 /** Quantos produtos aparecem no estoque crítico. */
 const CRITICOS = 6;
 
@@ -101,6 +121,7 @@ export async function calcularPainel(
     const { results } = await db
       .prepare(
         `SELECT p.id, p.name, p.physical, p.retail_cents, p.min_units,
+           COALESCE(p.last_cost_cents, p.cost_cents) AS custo,
            (SELECT COALESCE(SUM(r.quantity), 0) FROM reservations r
              WHERE r.product_id = p.id AND r.status = 'active' AND r.expires_at > ?1) AS reserved
          FROM products p WHERE p.system_id = ?2 AND p.status = 'active'`,
@@ -112,6 +133,7 @@ export async function calcularPainel(
         physical: number;
         retail_cents: number;
         min_units: number | null;
+        custo: number | null;
         reserved: number;
       }>();
     // Cada produto avisa pelo próprio mínimo; sem ele, pelo da regra (se houver).
@@ -142,6 +164,7 @@ export async function calcularPainel(
         .slice(0, CRITICOS),
       unidades: results.reduce((soma, p) => soma + p.physical, 0),
       valorVarejoCentavos: results.reduce((soma, p) => soma + p.physical * p.retail_cents, 0),
+      custo: balancoDoEstoque(results),
     };
   }
 
@@ -258,8 +281,9 @@ export async function calcularPainel(
            (SELECT COALESCE(SUM(total_cents), 0) FROM purchases WHERE system_id = ?1
               AND status = 'completed' AND created_at >= ?2 AND created_at < ?3) AS total,
            (SELECT COUNT(*) FROM suppliers WHERE system_id = ?1 AND status = 'active') AS ativos,
-           (SELECT COALESCE(SUM(physical * last_cost_cents), 0) FROM products
-              WHERE system_id = ?1 AND status = 'active' AND last_cost_cents IS NOT NULL) AS custo`,
+           (SELECT COALESCE(SUM(physical * COALESCE(last_cost_cents, cost_cents)), 0) FROM products
+              WHERE system_id = ?1 AND status = 'active'
+                AND COALESCE(last_cost_cents, cost_cents) IS NOT NULL) AS custo`,
       )
       .bind(s, inicioMes, inicioProximoMes)
       .first<{ n: number; total: number; ativos: number; custo: number }>();

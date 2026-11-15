@@ -1,0 +1,10 @@
+-- Migration 0013: nome de sistema sem repetição por dono (pedido do dono, 2026-11-14). Aditiva.
+-- name_key é o nome comparável (minúsculas, sem acento, espaços simples), calculado pela API
+-- (chaveNomeSistema). Aqui preenche os sistemas que já existem; em produção não havia repetidos.
+-- O SQL cobre os acentos do português; para nomes incomuns a API ainda compara pelo nome, com
+-- a regra exata.
+ALTER TABLE systems ADD COLUMN name_key TEXT;
+
+UPDATE systems SET name_key = replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(lower(trim(replace(replace(replace(name, char(9), ' '), char(10), ' '), char(13), ' '))), char(768), ''), char(769), ''), char(770), ''), char(771), ''), char(776), ''), char(807), ''), 'á', 'a'), 'Á', 'a'), 'à', 'a'), 'À', 'a'), 'â', 'a'), 'Â', 'a'), 'ã', 'a'), 'Ã', 'a'), 'ä', 'a'), 'Ä', 'a'), 'é', 'e'), 'É', 'e'), 'è', 'e'), 'È', 'e'), 'ê', 'e'), 'Ê', 'e'), 'ë', 'e'), 'Ë', 'e'), 'í', 'i'), 'Í', 'i'), 'ì', 'i'), 'Ì', 'i'), 'î', 'i'), 'Î', 'i'), 'ï', 'i'), 'Ï', 'i'), 'ó', 'o'), 'Ó', 'o'), 'ò', 'o'), 'Ò', 'o'), 'ô', 'o'), 'Ô', 'o'), 'õ', 'o'), 'Õ', 'o'), 'ö', 'o'), 'Ö', 'o'), 'ú', 'u'), 'Ú', 'u'), 'ù', 'u'), 'Ù', 'u'), 'û', 'u'), 'Û', 'u'), 'ü', 'u'), 'Ü', 'u'), 'ç', 'c'), 'Ç', 'c'), 'ñ', 'n'), 'Ñ', 'n'), '  ', ' '), '  ', ' '), '  ', ' '), '  ', ' '), '  ', ' '), '  ', ' '), '  ', ' ');
+
+CREATE UNIQUE INDEX systems_owner_name_key ON systems (owner_id, name_key) WHERE name_key IS NOT NULL;

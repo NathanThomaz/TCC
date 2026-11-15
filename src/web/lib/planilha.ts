@@ -51,7 +51,8 @@ export function lerTabela(texto: string): string[][] {
   return linhas;
 }
 
-export type Coluna = "nome" | "preco" | "atacado" | "caixa" | "estoque" | "minimo" | "codigo";
+export type Coluna =
+  "nome" | "preco" | "atacado" | "caixa" | "estoque" | "minimo" | "codigo" | "compra";
 
 const NOMES: Record<Coluna, string[]> = {
   nome: ["nome", "produto", "item", "descricao", "nome do produto"],
@@ -61,6 +62,7 @@ const NOMES: Record<Coluna, string[]> = {
   estoque: ["estoque", "quantidade", "qtd", "qtde", "saldo", "quantidade em estoque"],
   minimo: ["minimo", "estoque minimo", "aviso", "avisar abaixo de"],
   codigo: ["codigo", "codigo de barras", "ean", "gtin", "barras", "cod barras"],
+  compra: ["custo", "compra", "valor de compra", "preco de compra", "preco de custo"],
 };
 
 /** Mapa coluna → posição, se a primeira linha for de títulos (tem nome e preço). */
@@ -93,6 +95,8 @@ export function ordemSemTitulo(regras: RegrasImportacao): Partial<Record<Coluna,
     ...(regras.caixa ? (["caixa"] as const) : []),
     ...(regras.estoque ? (["estoque", "minimo"] as const) : []),
     "codigo",
+    // Por último, para não mudar a ordem de quem já importava sem títulos.
+    "compra",
   ];
   return Object.fromEntries(ordem.map((c, i) => [c, i]));
 }
@@ -105,6 +109,8 @@ export interface LinhaProduto {
   estoque?: number | null;
   estoqueMinimo?: number | null;
   codigoBarras?: string | null;
+  /** Valor de compra da unidade (opcional, para o balanço). */
+  custoCentavos?: number | null;
 }
 
 /** O que o sistema aceita: colunas de atacado, caixa e estoque só valem se ele tiver. */
@@ -160,6 +166,12 @@ export function lerProdutos(texto: string, regras: RegrasImportacao) {
         return erros.push(`Linha ${n} (${nome}): código de barras inválido.`);
       }
       linha.codigoBarras = codigo;
+    }
+    const compra = (cel("compra") ?? "").trim();
+    if (compra) {
+      const custo = reaisParaCentavos(compra);
+      if (custo === null) return erros.push(`Linha ${n} (${nome}): valor de compra inválido.`);
+      linha.custoCentavos = custo;
     }
     linhas.push(linha);
   });

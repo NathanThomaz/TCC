@@ -249,7 +249,8 @@ export async function clientes(ctx: RequestContext, op: Operacao, c: Consulta): 
 export async function produtos(ctx: RequestContext, op: Operacao, c: Consulta): Promise<Resposta> {
   if (!tem(op.config, "produtos")) return semModulo("produtos");
   const { results } = await ctx.env.DB.prepare(
-    `SELECT name, retail_cents, wholesale_cents, units_per_box, last_cost_cents FROM products
+    `SELECT name, retail_cents, wholesale_cents, units_per_box,
+       COALESCE(last_cost_cents, cost_cents) AS last_cost_cents FROM products
      WHERE system_id = ?1 AND status = 'active' AND (?2 IS NULL OR instr(${semAcentoSql("name")}, ?2) > 0)
      ORDER BY name COLLATE NOCASE LIMIT ${LISTA + 1}`,
   )

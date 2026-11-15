@@ -315,6 +315,8 @@ const ProdutoBody = z.object({
   estoqueInicial: z.number().int().min(1).max(1_000_000).optional(),
   /** Código de barras; ausente na edição mantém o atual. */
   codigoBarras: codigoBarras.nullable().optional(),
+  /** Valor de compra (custo da unidade), opcional; ausente na edição mantém o atual. */
+  custoCentavos: z.number().int().min(0).max(100_000_000).nullable().optional(),
 });
 type ProdutoBody = z.infer<typeof ProdutoBody>;
 
@@ -339,7 +341,8 @@ export function publicProduto(row: ProdutoRow): ProdutoDto {
 /** Produtos com o reservado ativo no instante `now` (EST-05: soma das reservas não vencidas). */
 export const SELECT_PRODUTO = `
   SELECT p.id, p.name, p.status, p.retail_cents, p.wholesale_cents, p.units_per_box, p.physical,
-         p.extra_json, p.last_cost_cents, p.min_units, p.barcode,
+         p.extra_json, COALESCE(p.last_cost_cents, p.cost_cents) AS last_cost_cents,
+         p.min_units, p.barcode,
          (SELECT COALESCE(SUM(r.quantity), 0) FROM reservations r
           WHERE r.product_id = p.id AND r.status = 'active' AND r.expires_at > ?1) AS reserved
   FROM products p`;
@@ -444,8 +447,8 @@ export const criarProduto: Handler = async (ctx) => {
       // EST-01: o físico começa em zero (default da coluna); só entradas o aumentam.
       db
         .prepare(
-          `INSERT INTO products (id, system_id, name, retail_cents, wholesale_cents, units_per_box, extra_json, min_units, barcode, created_by, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO products (id, system_id, name, retail_cents, wholesale_cents, units_per_box, extra_json, min_units, barcode, cost_cents, last_cost_cents, cost_set_at, created_by, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .bind(
           id,
@@ -457,6 +460,9 @@ export const criarProduto: Handler = async (ctx) => {
           extra,
           body.estoqueMinimo ?? null,
           body.codigoBarras || null,
+          body.custoCentavos ?? null,
+          body.custoCentavos ?? null,
+          (body.custoCentavos ?? null) === null ? null : now,
           op.user.id,
           now,
           now,
@@ -510,10 +516,15 @@ export const editarProduto: Handler = async (ctx) => {
     .batch([
       db
         .prepare(
-          `UPDATE products SET name = ?, retail_cents = ?, wholesale_cents = ?, units_per_box = ?, extra_json = ?,
-           min_units = CASE WHEN ? THEN ? ELSE min_units END,
-           barcode = CASE WHEN ? THEN ? ELSE barcode END,
-           updated_at = max(updated_at, ?) WHERE id = ? AND system_id = ?`,
+          `UPDATE products SET name = ?1, retail_cents = ?2, wholesale_cents = ?3, units_per_box = ?4,
+           extra_json = ?5,
+           min_units = CASE WHEN ?6 THEN ?7 ELSE min_units END,
+           barcode = CASE WHEN ?8 THEN ?9 ELSE barcode END,
+           -- Valor de compra informado agora vira também o último custo conhecido.
+           cost_cents = CASE WHEN ?13 THEN ?14 ELSE cost_cents END,
+           last_cost_cents = CASE WHEN ?13 THEN ?14 ELSE last_cost_cents END,
+           cost_set_at = CASE WHEN ?13 THEN ?10 ELSE cost_set_at END,
+           updated_at = max(updated_at, ?10) WHERE id = ?11 AND system_id = ?12`,
         )
         .bind(
           body.nome,
@@ -528,6 +539,8 @@ export const editarProduto: Handler = async (ctx) => {
           now,
           id,
           op.systemId,
+          body.custoCentavos === undefined ? 0 : 1,
+          body.custoCentavos ?? null,
         ),
       db
         .prepare(

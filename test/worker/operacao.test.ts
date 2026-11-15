@@ -118,7 +118,10 @@ async function callComCorrida(
 }
 
 async function ativar(token: string, rascunho: unknown): Promise<string> {
-  const criado = await call("POST", "/systems", token, { nome: "Sistema de teste" });
+  // Nome único por dono (migration 0013): cada sistema do teste ganha o seu.
+  const criado = await call("POST", "/systems", token, {
+    nome: `Sistema de teste ${crypto.randomUUID().slice(0, 8)}`,
+  });
   const id = criado.body.sistema!.id;
   const versao = (
     await call("POST", `/systems/${id}/versions`, token, { origem: "formulario", rascunho })
@@ -1481,6 +1484,92 @@ describe("módulos opcionais (ADR-006)", () => {
     expect(await custo()).toBe(10_000);
     await call("POST", p(`/compras/${errada.id}/cancelar`), ADMIN, { motivo: "Preço errado" });
     expect(await custo()).toBe(100);
+  });
+
+  it("valor de compra informado no cadastro: vira o custo, sobrevive ao cancelamento da única compra e entra no balanço", async () => {
+    await ativarModulos(["fornecedores"]);
+    const f = await fornecedor();
+    const prod = await produto({ custoCentavos: 300 });
+    await entrada(prod, 10);
+    const lerProduto = async () =>
+      ((await call("GET", p("/produtos"), ADMIN)).body.produtos ?? []).find((x) => x.id === prod)!;
+    expect((await lerProduto()).custoCentavos).toBe(300);
+
+    // Compra atualiza o custo; cancelada a única compra, volta o informado (não some).
+    const compra = (
+      await comprar({
+        fornecedor: f,
+        itens: [{ produto: prod, unidades: 10, custoUnitarioCentavos: 350 }],
+      })
+    ).body.compra!;
+    expect((await lerProduto()).custoCentavos).toBe(350);
+    await call("POST", p(`/compras/${compra.id}/cancelar`), ADMIN, { motivo: "Errada" });
+    expect((await lerProduto()).custoCentavos).toBe(300);
+
+    // Edição sem o campo mantém; com o campo, troca; null limpa.
+    const base = { nome: "Cerveja lata", varejoCentavos: 500, atacadoCentavos: 400 };
+    await call("PATCH", p(`/produtos/${prod}`), ADMIN, base);
+    expect((await lerProduto()).custoCentavos).toBe(300);
+    await call("PATCH", p(`/produtos/${prod}`), ADMIN, { ...base, custoCentavos: 250 });
+    expect((await lerProduto()).custoCentavos).toBe(250);
+
+    // Balanço: 10 un. a R$ 2,50 de custo e R$ 5,00 de venda; o produto sem custo fica de fora.
+    await produto({ nome: "Sem custo" });
+    const painel = (await call("GET", p("/painel"), ADMIN)).body as unknown as {
+      painel: { estoque: { custo: unknown } };
+    };
+    expect(painel.painel.estoque.custo).toEqual({
+      produtos: 1,
+      semCusto: 1,
+      valorCustoCentavos: 2500,
+      valorVendaCentavos: 5000,
+      lucroPrevistoCentavos: 2500,
+    });
+
+    await call("PATCH", p(`/produtos/${prod}`), ADMIN, { ...base, custoCentavos: null });
+    expect((await lerProduto()).custoCentavos).toBeNull();
+  });
+
+  it("custo informado e compras: vale o mais recente, mesmo cancelando compra antiga (revisão do Codex)", async () => {
+    await ativarModulos(["fornecedores"]);
+    const f = await fornecedor();
+    const prod = await produto({ custoCentavos: 300 });
+    const lerCusto = async () =>
+      ((await call("GET", p("/produtos"), ADMIN)).body.produtos ?? []).find((x) => x.id === prod)!
+        .custoCentavos;
+    const compra = async (custo: number) => {
+      agora += MIN;
+      return (
+        await comprar({
+          fornecedor: f,
+          itens: [{ produto: prod, unidades: 5, custoUnitarioCentavos: custo }],
+        })
+      ).body.compra!;
+    };
+    const cancelar = (id: string) =>
+      call("POST", p(`/compras/${id}/cancelar`), ADMIN, { motivo: "Errada" });
+    const base = { nome: "Cerveja lata", varejoCentavos: 500, atacadoCentavos: 400 };
+
+    // Editar só o nome (sem o campo) não transforma o custo da compra em "informado".
+    const unica = await compra(350);
+    agora += MIN;
+    await call("PATCH", p(`/produtos/${prod}`), ADMIN, { ...base, nome: "Cerveja" });
+    await cancelar(unica.id);
+    expect(await lerCusto()).toBe(300);
+
+    // Informado depois de duas compras: cancelar a mais antiga não volta para a outra.
+    const a = await compra(350);
+    await compra(400);
+    agora += MIN;
+    await call("PATCH", p(`/produtos/${prod}`), ADMIN, { ...base, custoCentavos: 250 });
+    await cancelar(a.id);
+    expect(await lerCusto()).toBe(250);
+
+    // Compra nova depois do informado passa a valer; cancelada, volta o informado.
+    const nova = await compra(420);
+    expect(await lerCusto()).toBe(420);
+    await cancelar(nova.id);
+    expect(await lerCusto()).toBe(250);
   });
 
   it("compras: filtro por período da compra (para chegar às além das 200 últimas)", async () => {
