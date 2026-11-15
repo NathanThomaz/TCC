@@ -118,10 +118,12 @@ export async function trocarSenha(atual: string, nova: string): Promise<void> {
   try {
     await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email, atual));
   } catch (error) {
+    // Pelo código do erro (o mesmo em qualquer versão do SDK), não pela classe.
+    const codigo = (error as { code?: unknown } | null)?.code;
     if (
-      error instanceof FirebaseError &&
+      typeof codigo === "string" &&
       ["auth/wrong-password", "auth/invalid-credential", "auth/invalid-login-credentials"].includes(
-        error.code,
+        codigo,
       )
     ) {
       throw new ApiError("senha_atual_incorreta", "A senha atual não confere.");
