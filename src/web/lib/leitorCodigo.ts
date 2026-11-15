@@ -42,7 +42,7 @@ export async function criarDetector(): Promise<Detector> {
     locateFile: (caminho: string, prefixo: string) =>
       caminho.endsWith(".wasm") ? new URL(wasm, window.location.href).href : prefixo + caminho,
   });
-  return new BarcodeDetector({ formats: FORMATOS as never }) as unknown as Detector;
+  return new BarcodeDetector({ formats: FORMATOS as never });
 }
 
 /** Mensagem para a pessoa quando a câmera não abre. */

@@ -82,7 +82,15 @@ import {
   gerarConfiguracao,
   obterCriacao,
 } from "./modules/criacao";
-import { cancelarPedido, comentarPedido, criarPedido, listarPedidos } from "./modules/pedidos";
+import {
+  cancelarPedido,
+  comentarComoDesenvolvedor,
+  comentarPedido,
+  criarPedido,
+  listarPedidos,
+  listarTodosPedidos,
+  mudarEstadoPedido,
+} from "./modules/pedidos";
 import { enviarLogotipo, obterLogotipo, removerLogotipo } from "./modules/logotipo";
 import { obterPainel } from "./modules/operacao/painel";
 import { cancelarCompra, criarCompra, listarCompras } from "./modules/operacao/compras";
@@ -161,6 +169,14 @@ export function createApp(
       // Consumo da IA por conta, só do dono do Nexus (ADR-009).
       { method: "GET", path: `${API_BASE}/consumo`, handler: obterConsumo },
       { method: "POST", path: `${API_BASE}/consumo/:id/limite`, handler: definirLimite },
+      // Pedidos de todas as contas, só do dono do Nexus (o desenvolvedor).
+      { method: "GET", path: `${API_BASE}/pedidos`, handler: listarTodosPedidos },
+      { method: "POST", path: `${API_BASE}/pedidos/:pedidoId/estado`, handler: mudarEstadoPedido },
+      {
+        method: "POST",
+        path: `${API_BASE}/pedidos/:pedidoId/comentarios`,
+        handler: comentarComoDesenvolvedor,
+      },
       // Contas secundárias, só do administrador (seção 7).
       { method: "GET", path: `${API_BASE}/contas`, handler: listarContas },
       { method: "POST", path: `${API_BASE}/contas`, handler: convidarConta },

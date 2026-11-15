@@ -5,6 +5,7 @@ import {
   ChevronDown,
   Gauge,
   Home,
+  Inbox,
   LayoutGrid,
   LogOut,
   Menu,
@@ -35,7 +36,10 @@ const NAV = [
 ] as const;
 
 /** Só o dono do Nexus (ADR-009). */
-const NAV_DONO = [{ to: "/consumo", rotulo: "Consumo da IA", Icone: Gauge }] as const;
+const NAV_DONO = [
+  { to: "/pedidos", rotulo: "Pedidos recebidos", Icone: Inbox },
+  { to: "/consumo", rotulo: "Consumo da IA", Icone: Gauge },
+] as const;
 
 export const ROTULO_PAPEL = { administrador: "Administrador", secundario: "Secundário" } as const;
 
