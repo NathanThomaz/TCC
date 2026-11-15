@@ -11,7 +11,13 @@ import {
   paraCampoLocal,
 } from "../../../shared/dominio/agenda";
 import { acaoAtendimento, agendar, listarAgenda, listarPessoas } from "@/api/operacao";
-import { CamposForm, ErroApi, resumoCampos, useChavePorConteudo } from "@/components/app/Comum";
+import {
+  AvisoRascunho,
+  CamposForm,
+  ErroApi,
+  resumoCampos,
+  useChavePorConteudo,
+} from "@/components/app/Comum";
 import { EmptyState, ErrorState, PageHeader } from "@/components/nexus/Estados";
 import { Button } from "@/components/ui/button";
 import {
@@ -34,6 +40,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { useBusca, useNavigate } from "@/lib/rotas";
 import { cn } from "@/lib/utils";
+import { type Rascunho, useRascunho, useRascunhoDaBusca } from "@/lib/rascunhos";
 import { rotuloModulo, useApp } from "./Aplicacao";
 import { ROTULO_STATUS, rotuloTipo } from "./VendaEditor";
 
@@ -64,7 +71,12 @@ export function Agenda() {
   const navigate = useNavigate();
   const [profissional, setProfissional] = useState(TODOS);
   const [inicioDia, setInicioDia] = useState(() => paraCampoLocal(Date.now()).slice(0, 10));
-  const [dialogo, setDialogo] = useState<Dialogo | null>(busca.venda ? { tipo: "agendar" } : null);
+  // Aberto pela aba Rascunhos: o agendamento volta como a pessoa deixou.
+  const retomado = useRascunhoDaBusca<DadosAgendamento>(app.id, "agendamento");
+  const [rascunho, setRascunho] = useState(busca.venda ? null : retomado);
+  const [dialogo, setDialogo] = useState<Dialogo | null>(
+    busca.venda || retomado ? { tipo: "agendar" } : null,
+  );
   // O campo de data sempre traz AAAA-MM-DD válido (vazio é ignorado no onChange).
   const de = deCampoLocal(`${inicioDia}T00:00`) ?? 1;
   const filtro = {
@@ -164,8 +176,10 @@ export function Agenda() {
         <AgendarDialog
           venda={busca.venda}
           cliente={busca.cliente}
+          rascunho={rascunho}
           onFechar={() => {
             setDialogo(null);
+            setRascunho(null);
             // O vínculo com a venda vale só para este agendamento: sai da URL ao fechar.
             if (busca.venda) navigate({ search: {}, replace: true });
           }}
@@ -287,13 +301,24 @@ function LinhaAtendimento({
   );
 }
 
+interface DadosAgendamento {
+  cliente: string;
+  profissional: string;
+  tipo: string;
+  inicio: string;
+  inicioSegundo: string;
+  campos: CamposInformativos;
+}
+
 function AgendarDialog({
   venda,
   cliente: clienteInicial,
+  rascunho,
   onFechar,
 }: {
   venda?: string | undefined;
   cliente?: string | undefined;
+  rascunho: Rascunho<DadosAgendamento> | null;
   onFechar: () => void;
 }) {
   const app = useApp();
@@ -308,13 +333,33 @@ function AgendarDialog({
     queryKey: ["app", app.id, "profissionais"],
     queryFn: () => listarPessoas(app.id, "profissionais"),
   });
-  const [cliente, setCliente] = useState(clienteInicial ?? "");
-  const [profissional, setProfissional] = useState("");
-  const [tipo, setTipo] = useState(tipos[0]?.id ?? "");
-  const [inicio, setInicio] = useState("");
-  const [inicioSegundo, setInicioSegundo] = useState("");
-  const [campos, setCampos] = useState<CamposInformativos>({});
+  const r = rascunho?.dados;
+  const [cliente, setCliente] = useState(clienteInicial ?? r?.cliente ?? "");
+  const [profissional, setProfissional] = useState(r?.profissional ?? "");
+  const tipoPadrao = tipos[0]?.id ?? "";
+  const [tipo, setTipo] = useState(r?.tipo ?? tipoPadrao);
+  const [inicio, setInicio] = useState(r?.inicio ?? "");
+  const [inicioSegundo, setInicioSegundo] = useState(r?.inicioSegundo ?? "");
+  const [campos, setCampos] = useState<CamposInformativos>(r?.campos ?? {});
   const par = parDoTipo(app.config, tipo);
+  const nomeCliente = (clientes.data ?? []).find((c) => c.id === cliente)?.nome;
+  const guardado = useRascunho<DadosAgendamento>({
+    sistema: app.id,
+    tipo: "agendamento",
+    // Agendamento ligado a uma venda faz parte dela: não vira rascunho solto.
+    ativo: !venda,
+    inicial: rascunho,
+    dados: { cliente, profissional, tipo, inicio, inicioSegundo, campos },
+    vazio:
+      !cliente &&
+      !profissional &&
+      !inicio &&
+      !inicioSegundo &&
+      tipo === tipoPadrao &&
+      Object.keys(campos).length === 0,
+    titulo: nomeCliente ? `Atendimento de ${nomeCliente}` : "Atendimento sem cliente",
+    resumo: tipos.find((t) => t.id === tipo)?.rotulo ?? "Agendamento",
+  });
 
   const m = useMutation({
     mutationFn: () => {
@@ -333,6 +378,7 @@ function AgendarDialog({
       return agendar(app.id, dados, chave(dados));
     },
     onSuccess: () => {
+      guardado.descartar();
       invalidar();
       toast.success(par ? "Par agendado." : "Atendimento agendado.");
       onFechar();
@@ -421,6 +467,7 @@ function AgendarDialog({
             prefixo="agendar"
           />
           <ErroApi erro={m.error} />
+          <AvisoRascunho salvoEm={guardado.salvoEm} />
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onFechar}>
               Cancelar

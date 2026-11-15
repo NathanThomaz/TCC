@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Check,
@@ -23,8 +23,10 @@ import {
   listarContas,
   reenviarConvite,
 } from "@/api/contas";
+import { salvarNome, trocarSenha } from "@/api/auth";
 import { listarSistemas } from "@/api/sistemas";
 import { ErroApi, useChavePorConteudo } from "@/components/app/Comum";
+import { ROTULO_PAPEL } from "@/components/nexus/AppShell";
 import { EmptyState, ErrorState, PageHeader } from "@/components/nexus/Estados";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -43,6 +45,9 @@ import { Switch } from "@/components/ui/switch";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 
+// Conta e configurações (pedido do dono, 2026-11-15): perfil, troca de senha e, para o
+// administrador, contas e acessos numa página só (antes, Perfil e Configurações eram separadas).
+//
 // Contas e acessos (seção 7): o administrador cria contas, escolhe os sistemas que cada uma opera,
 // revoga acessos e desativa contas. Desde 2026-11-13 (pedido do dono), ele define a senha e manda
 // à pessoa, sem validação por e-mail (o link por e-mail continua como alternativa). O dono do Nexus
@@ -56,19 +61,195 @@ const STATUS: Record<ContaDto["status"], { rotulo: string; classe: string }> = {
 
 export function Configuracoes() {
   const { usuario } = useAuth();
-  if (usuario?.papel !== "administrador") {
-    return (
-      <>
-        <PageHeader titulo="Configurações" />
-        <EmptyState
-          icone={Users}
-          titulo="Contas são gerenciadas pelo administrador"
-          descricao="Peça ao administrador para conceder ou revisar o seu acesso aos sistemas."
+  if (!usuario) return null;
+  const admin = usuario.papel === "administrador";
+  return (
+    <>
+      <PageHeader
+        titulo="Conta e configurações"
+        descricao={
+          admin
+            ? "Seu perfil, sua senha e as contas de quem opera os seus sistemas."
+            : "Seu perfil e sua senha. O acesso aos sistemas é definido pelo administrador."
+        }
+      />
+      <div className="grid items-start gap-6 lg:grid-cols-2">
+        <SeuPerfil />
+        <TrocarSenha />
+      </div>
+      {admin && (
+        <div className="mt-10">
+          <ContasEAcessos />
+        </div>
+      )}
+    </>
+  );
+}
+
+function Cartao({
+  titulo,
+  descricao,
+  children,
+  onSubmit,
+}: {
+  titulo: string;
+  descricao: string;
+  children: ReactNode;
+  onSubmit: () => void;
+}) {
+  return (
+    <form
+      className="space-y-4 rounded-xl border bg-card p-5 shadow-card"
+      onSubmit={(e) => {
+        e.preventDefault();
+        onSubmit();
+      }}
+    >
+      <div>
+        <h2 className="text-lg font-semibold tracking-tight">{titulo}</h2>
+        <p className="text-sm text-muted-foreground">{descricao}</p>
+      </div>
+      {children}
+    </form>
+  );
+}
+
+/** A pessoa ajusta o próprio nome; e-mail e papel são definidos por quem criou a conta. */
+function SeuPerfil() {
+  const { usuario, iniciar } = useAuth();
+  const [nome, setNome] = useState(usuario?.temNome ? usuario.nome : "");
+  const m = useMutation({
+    mutationFn: () => salvarNome(nome.trim()),
+    onSuccess: (u) => {
+      iniciar(u);
+      toast.success("Nome atualizado.");
+    },
+  });
+  if (!usuario) return null;
+  return (
+    <Cartao titulo="Seu perfil" descricao="Como você aparece no Nexus." onSubmit={() => m.mutate()}>
+      <div className="space-y-1.5">
+        <Label htmlFor="perfil-nome">Nome</Label>
+        <Input
+          id="perfil-nome"
+          value={nome}
+          maxLength={120}
+          placeholder={usuario.nome}
+          autoComplete="name"
+          onChange={(e) => setNome(e.target.value)}
         />
-      </>
-    );
-  }
-  return <ContasEAcessos />;
+        {!usuario.temNome && (
+          <p className="text-xs text-muted-foreground">
+            Informe seu nome completo para ser chamado por ele na tela inicial.
+          </p>
+        )}
+      </div>
+      <dl className="grid gap-3 text-sm sm:grid-cols-2">
+        <div className="min-w-0">
+          <dt className="text-muted-foreground">E-mail</dt>
+          <dd className="truncate font-medium">{usuario.email}</dd>
+        </div>
+        <div>
+          <dt className="text-muted-foreground">Papel</dt>
+          <dd className="font-medium">
+            {ROTULO_PAPEL[usuario.papel]}
+            {usuario.dono ? " · dono do Nexus" : ""}
+          </dd>
+        </div>
+      </dl>
+      <ErroApi erro={m.error} />
+      <Button type="submit" disabled={m.isPending || !nome.trim()}>
+        {m.isPending && <Loader2 className="animate-spin" aria-hidden />}Salvar nome
+      </Button>
+    </Cartao>
+  );
+}
+
+function TrocarSenha() {
+  const [atual, setAtual] = useState("");
+  const [nova, setNova] = useState("");
+  const [repetir, setRepetir] = useState("");
+  const m = useMutation({
+    mutationFn: () => trocarSenha(atual, nova),
+    onSuccess: () => {
+      setAtual("");
+      setNova("");
+      setRepetir("");
+      toast.success("Senha trocada. Nos outros aparelhos, entre de novo com a senha nova.");
+    },
+  });
+  const curta = nova.length > 0 && nova.length < 8;
+  const diferente = repetir.length > 0 && repetir !== nova;
+  const igual = nova.length > 0 && nova === atual;
+  return (
+    <Cartao
+      titulo="Senha"
+      descricao="Confirme a senha atual e escolha uma nova. Os outros aparelhos saem da conta."
+      onSubmit={() => m.mutate()}
+    >
+      <div className="space-y-1.5">
+        <Label htmlFor="senha-atual">Senha atual</Label>
+        <Input
+          id="senha-atual"
+          type="password"
+          value={atual}
+          autoComplete="current-password"
+          required
+          onChange={(e) => setAtual(e.target.value)}
+        />
+      </div>
+      <div className="grid items-start gap-3 sm:grid-cols-2">
+        <div className="space-y-1.5">
+          <Label htmlFor="senha-nova">Nova senha</Label>
+          <Input
+            id="senha-nova"
+            type="password"
+            value={nova}
+            minLength={8}
+            maxLength={128}
+            autoComplete="new-password"
+            required
+            aria-describedby="senha-nova-dica"
+            aria-invalid={curta || igual}
+            onChange={(e) => setNova(e.target.value)}
+          />
+          <p
+            id="senha-nova-dica"
+            className={cn("text-xs", curta || igual ? "text-destructive" : "text-muted-foreground")}
+          >
+            {igual ? "A nova senha é igual à atual." : "Pelo menos 8 caracteres."}
+          </p>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="senha-repetir">Repita a nova senha</Label>
+          <Input
+            id="senha-repetir"
+            type="password"
+            value={repetir}
+            autoComplete="new-password"
+            required
+            aria-describedby="senha-repetir-dica"
+            aria-invalid={diferente}
+            onChange={(e) => setRepetir(e.target.value)}
+          />
+          <p
+            id="senha-repetir-dica"
+            className={cn("text-xs", diferente ? "text-destructive" : "text-muted-foreground")}
+            aria-live="polite"
+          >
+            {diferente ? "As duas senhas não são iguais." : "Para evitar erro de digitação."}
+          </p>
+        </div>
+      </div>
+      <ErroApi erro={m.error} />
+      <Button
+        type="submit"
+        disabled={m.isPending || !atual || nova.length < 8 || repetir !== nova || igual}
+      >
+        {m.isPending && <Loader2 className="animate-spin" aria-hidden />}Trocar senha
+      </Button>
+    </Cartao>
+  );
 }
 
 function ContasEAcessos() {
@@ -82,15 +263,18 @@ function ContasEAcessos() {
 
   return (
     <>
-      <PageHeader
-        titulo="Contas e acessos"
-        descricao="Contas secundárias operam só os sistemas marcados. Correção de saldo e configuração continuam só com você."
-        acoes={
-          <Button onClick={() => setConvidando(true)}>
-            <UserPlus aria-hidden /> Nova conta
-          </Button>
-        }
-      />
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h2 className="text-lg font-semibold tracking-tight">Contas e acessos</h2>
+          <p className="text-sm text-muted-foreground">
+            Contas secundárias operam só os sistemas marcados. Correção de saldo e configuração
+            continuam só com você.
+          </p>
+        </div>
+        <Button onClick={() => setConvidando(true)}>
+          <UserPlus aria-hidden /> Nova conta
+        </Button>
+      </div>
       {q.isPending ? (
         <Skeleton className="h-40 w-full rounded-xl" />
       ) : q.isError ? (

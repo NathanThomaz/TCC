@@ -14,7 +14,8 @@ import {
   listarProdutos,
   type NovaCompra,
 } from "@/api/operacao";
-import { ErroApi, Tabela, useChavePorConteudo } from "@/components/app/Comum";
+import { AvisoRascunho, ErroApi, Tabela, useChavePorConteudo } from "@/components/app/Comum";
+import { type Rascunho, useRascunho, useRascunhoDaBusca } from "@/lib/rascunhos";
 import { EmptyState, ErrorState, PageHeader } from "@/components/nexus/Estados";
 import { Button } from "@/components/ui/button";
 import {
@@ -53,7 +54,10 @@ export function Compras() {
     queryKey: ["app", app.id, "compras", de, ate],
     queryFn: () => listarCompras(app.id, { de, ate }),
   });
-  const [nova, setNova] = useState(false);
+  // Aberto pela aba Rascunhos: a compra volta como a pessoa deixou.
+  const retomado = useRascunhoDaBusca<DadosCompra>(app.id, "compra");
+  const [rascunho, setRascunho] = useState(retomado);
+  const [nova, setNova] = useState(retomado !== null);
   const [cancelando, setCancelando] = useState<CompraDto | null>(null);
   const financeiro = app.config.modulos.includes("financeiro");
 
@@ -163,7 +167,11 @@ export function Compras() {
       )}
       {nova && (
         <NovaCompraDialog
-          onFechar={() => setNova(false)}
+          rascunho={rascunho}
+          onFechar={() => {
+            setNova(false);
+            setRascunho(null);
+          }}
           onCriada={() => {
             void qc.invalidateQueries({ queryKey: ["app", app.id] });
             void qc.invalidateQueries({ queryKey: ["painel", app.id] });
@@ -196,8 +204,24 @@ const linhaVazia = (): Linha => ({
 /** Hoje no fuso do Nexus (AAAA-MM-DD), para o vencimento padrão; não o fuso do navegador. */
 export const hojeIso = (agora = Date.now()) => paraCampoLocal(agora).slice(0, 10);
 
-function NovaCompraDialog({ onFechar, onCriada }: { onFechar: () => void; onCriada: () => void }) {
+interface DadosCompra {
+  fornecedor: string;
+  linhas: Linha[];
+  vencimento: string;
+  observacao: string;
+}
+
+function NovaCompraDialog({
+  rascunho,
+  onFechar,
+  onCriada,
+}: {
+  rascunho: Rascunho<DadosCompra> | null;
+  onFechar: () => void;
+  onCriada: () => void;
+}) {
   const app = useApp();
+  const r = rascunho?.dados;
   const financeiro = app.config.modulos.includes("financeiro");
   const fornecedores = useQuery({
     queryKey: ["app", app.id, "fornecedores"],
@@ -207,8 +231,8 @@ function NovaCompraDialog({ onFechar, onCriada }: { onFechar: () => void; onCria
     queryKey: ["app", app.id, "produtos"],
     queryFn: () => listarProdutos(app.id),
   });
-  const [fornecedor, setFornecedor] = useState("");
-  const [linhas, setLinhas] = useState<Linha[]>([linhaVazia()]);
+  const [fornecedor, setFornecedor] = useState(r?.fornecedor ?? "");
+  const [linhas, setLinhas] = useState<Linha[]>(r?.linhas.length ? r.linhas : [linhaVazia()]);
   const reposicao = sugestaoDeReposicao(produtos.data ?? []);
   // Produtos abaixo do mínimo entram com a quantidade que leva ao dobro dele e o último custo.
   const sugerirReposicao = () => {
@@ -226,9 +250,24 @@ function NovaCompraDialog({ onFechar, onCriada }: { onFechar: () => void; onCria
         : `${reposicao.length} ${reposicao.length === 1 ? "produto" : "produtos"} abaixo do mínimo na lista.`,
     );
   };
-  const [vencimento, setVencimento] = useState(hojeIso());
-  const [observacao, setObservacao] = useState("");
+  const [vencimento, setVencimento] = useState(r?.vencimento ?? hojeIso());
+  const [observacao, setObservacao] = useState(r?.observacao ?? "");
   const chave = useChavePorConteudo();
+  const comItem = linhas.filter((l) => l.produto).length;
+  const guardado = useRascunho<DadosCompra>({
+    sistema: app.id,
+    tipo: "compra",
+    ativo: true,
+    inicial: rascunho,
+    dados: { fornecedor, linhas, vencimento, observacao },
+    vazio:
+      !fornecedor &&
+      !observacao.trim() &&
+      linhas.every((l) => !l.produto && !l.caixas && !l.unidades && !l.custo),
+    titulo:
+      (fornecedores.data ?? []).find((f) => f.id === fornecedor)?.nome ?? "Compra sem fornecedor",
+    resumo: `${comItem} ${comItem === 1 ? "item" : "itens"}`,
+  });
   const ativos = (fornecedores.data ?? []).filter((f) => f.status === "active");
   const produtosAtivos = (produtos.data ?? []).filter((p) => p.status === "active");
 
@@ -269,6 +308,7 @@ function NovaCompraDialog({ onFechar, onCriada }: { onFechar: () => void; onCria
       return criarCompra(app.id, dados, chave(dados));
     },
     onSuccess: () => {
+      guardado.descartar();
       toast.success("Compra registrada e estoque atualizado.");
       onCriada();
       onFechar();
@@ -442,6 +482,7 @@ function NovaCompraDialog({ onFechar, onCriada }: { onFechar: () => void; onCria
             Total previsto: <strong className="tabular-nums">{formatarCentavos(total)}</strong>
           </p>
           <ErroApi erro={m.error} />
+          <AvisoRascunho salvoEm={guardado.salvoEm} />
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onFechar}>
               Cancelar

@@ -1,4 +1,10 @@
-import type { PedidoDto, PedidosApiBody } from "../../shared/api";
+import type {
+  EstadoPedidoDto,
+  PedidoDto,
+  PedidoGeralDto,
+  PedidosApiBody,
+  PedidosGeraisApiBody,
+} from "../../shared/api";
 import { chamar, novaChave } from "./cliente";
 
 // Pedidos ao desenvolvedor (/api/v1/systems/:id/pedidos), ADR-004.
@@ -47,6 +53,39 @@ export async function cancelarPedido(
   const r = await chamar<PedidosApiBody>(`${base(sistema)}/${encodeURIComponent(id)}/cancelar`, {
     method: "POST",
     body: {},
+    chave,
+  });
+  return r.pedido!;
+}
+
+// ---- Desenvolvedor (/api/v1/pedidos): só o dono do Nexus ----
+
+export async function listarTodosPedidos(): Promise<PedidoGeralDto[]> {
+  return (await chamar<PedidosGeraisApiBody>("/pedidos")).pedidos ?? [];
+}
+
+export async function mudarEstadoPedido(
+  id: string,
+  estado: Exclude<EstadoPedidoDto, "aberto" | "cancelado">,
+  nota: string | undefined,
+  chave = novaChave(),
+): Promise<PedidoGeralDto> {
+  const r = await chamar<PedidosGeraisApiBody>(`/pedidos/${encodeURIComponent(id)}/estado`, {
+    method: "POST",
+    body: { estado, ...(nota ? { nota } : {}) },
+    chave,
+  });
+  return r.pedido!;
+}
+
+export async function responderPedido(
+  id: string,
+  texto: string,
+  chave = novaChave(),
+): Promise<PedidoGeralDto> {
+  const r = await chamar<PedidosGeraisApiBody>(`/pedidos/${encodeURIComponent(id)}/comentarios`, {
+    method: "POST",
+    body: { texto },
     chave,
   });
   return r.pedido!;

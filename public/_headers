@@ -1,9 +1,11 @@
 # Cabeçalhos de segurança dos Static Assets (telas). As respostas de /api/* recebem os
 # seus no próprio Worker (src/worker/http/responses.ts).
 # style-src aceita estilos inline: Radix (bloqueio de rolagem dos modais) e Sonner (avisos)
-# injetam <style> em tempo de execução. Scripts continuam só do próprio domínio.
+# injetam <style> em tempo de execução. Scripts continuam só do próprio domínio;
+# 'wasm-unsafe-eval' deixa compilar o WebAssembly do leitor de código de barras (servido pelo
+# próprio Nexus), sem liberar eval de JavaScript.
 /*
   X-Frame-Options: DENY
   X-Content-Type-Options: nosniff
   Referrer-Policy: no-referrer
-  Content-Security-Policy: default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'
+  Content-Security-Policy: default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'

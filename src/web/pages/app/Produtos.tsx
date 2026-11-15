@@ -12,7 +12,15 @@ import {
   mudarStatus,
   registrarEntrada,
 } from "@/api/operacao";
-import { CamposForm, ErroApi, Tabela, useChavePorConteudo } from "@/components/app/Comum";
+import {
+  AvisoRascunho,
+  CamposForm,
+  ErroApi,
+  Tabela,
+  useChavePorConteudo,
+} from "@/components/app/Comum";
+import { BotaoCamera } from "@/components/app/VendaRapida";
+import { type Rascunho, useRascunho, useRascunhoDaBusca } from "@/lib/rascunhos";
 import { ColunaEditavel, NovaColuna } from "@/components/app/Colunas";
 import { ImportarPlanilha } from "@/components/app/ImportarPlanilha";
 import { CampoDinheiro } from "@/components/nexus/CampoDinheiro";
@@ -37,7 +45,7 @@ import { rotuloModulo, useApp } from "./Aplicacao";
 // no instante da consulta (EST-05). Correção de saldo é só do administrador (EST-03).
 
 type Dialogo =
-  | { tipo: "produto"; atual: ProdutoDto | null }
+  | { tipo: "produto"; atual: ProdutoDto | null; rascunho?: Rascunho<DadosProduto> }
   | { tipo: "entrada"; produto: ProdutoDto }
   | { tipo: "correcao"; produto: ProdutoDto };
 
@@ -65,7 +73,11 @@ export function Produtos() {
     queryKey: ["app", app.id, "produtos"],
     queryFn: () => listarProdutos(app.id),
   });
-  const [dialogo, setDialogo] = useState<Dialogo | null>(null);
+  // Aberto pela aba Rascunhos: o formulário volta como a pessoa deixou.
+  const retomado = useRascunhoDaBusca<DadosProduto>(app.id, "produto");
+  const [dialogo, setDialogo] = useState<Dialogo | null>(
+    retomado ? { tipo: "produto", atual: null, rascunho: retomado } : null,
+  );
   const temEstoque = app.config.modulos.includes("estoque");
   const temAtacado = app.config.regras.some((r) => r.tipo === "limite_atacado");
   const temCaixa = app.config.regras.some((r) => r.tipo === "unidades_por_caixa");
@@ -219,7 +231,11 @@ export function Produtos() {
         </Tabela>
       )}
       {dialogo?.tipo === "produto" && (
-        <ProdutoDialog atual={dialogo.atual} onFechar={() => setDialogo(null)} />
+        <ProdutoDialog
+          atual={dialogo.atual}
+          rascunho={dialogo.rascunho ?? null}
+          onFechar={() => setDialogo(null)}
+        />
       )}
       {dialogo?.tipo === "entrada" && (
         <EntradaDialog produto={dialogo.produto} onFechar={() => setDialogo(null)} />
@@ -240,31 +256,74 @@ function useInvalidarProdutos() {
   };
 }
 
-function ProdutoDialog({ atual, onFechar }: { atual: ProdutoDto | null; onFechar: () => void }) {
+/** Campos do formulário de produto como a pessoa digitou (o que o rascunho guarda). */
+interface DadosProduto {
+  nome: string;
+  varejo: string;
+  atacado: string;
+  caixa: string;
+  campos: CamposInformativos;
+  inicial: string;
+  minimo: string;
+  codigo: string;
+  custo: string;
+}
+
+function ProdutoDialog({
+  atual,
+  rascunho,
+  onFechar,
+}: {
+  atual: ProdutoDto | null;
+  rascunho: Rascunho<DadosProduto> | null;
+  onFechar: () => void;
+}) {
   const app = useApp();
   const invalidar = useInvalidarProdutos();
   const chave = useChavePorConteudo();
   const regraCaixa = app.config.regras.find((r) => r.tipo === "unidades_por_caixa");
   const temAtacado = app.config.regras.some((r) => r.tipo === "limite_atacado");
-  const [nome, setNome] = useState(atual?.nome ?? "");
-  const [varejo, setVarejo] = useState(atual ? centavosParaReais(atual.varejoCentavos) : "");
+  const r = rascunho?.dados;
+  const [nome, setNome] = useState(atual?.nome ?? r?.nome ?? "");
+  const [varejo, setVarejo] = useState(
+    atual ? centavosParaReais(atual.varejoCentavos) : (r?.varejo ?? ""),
+  );
   const [atacado, setAtacado] = useState(
-    atual?.atacadoCentavos ? centavosParaReais(atual.atacadoCentavos) : "",
+    atual?.atacadoCentavos ? centavosParaReais(atual.atacadoCentavos) : (r?.atacado ?? ""),
   );
   // PRE-05: a regra sugere o fator; cada produto guarda o seu (vazio = só unidades).
+  const caixaSugerida = regraCaixa ? String(regraCaixa.unidades) : "";
   const [caixa, setCaixa] = useState(
-    atual ? String(atual.unidadesPorCaixa ?? "") : regraCaixa ? String(regraCaixa.unidades) : "",
+    atual ? String(atual.unidadesPorCaixa ?? "") : (r?.caixa ?? caixaSugerida),
   );
-  const [campos, setCampos] = useState<CamposInformativos>(atual?.campos ?? {});
+  const [campos, setCampos] = useState<CamposInformativos>(atual?.campos ?? r?.campos ?? {});
   const temEstoque = app.config.modulos.includes("estoque");
-  const [inicial, setInicial] = useState("");
-  const [minimo, setMinimo] = useState(atual?.estoqueMinimo ? String(atual.estoqueMinimo) : "");
-  const [codigo, setCodigo] = useState(atual?.codigoBarras ?? "");
+  const [inicial, setInicial] = useState(r?.inicial ?? "");
+  const [minimo, setMinimo] = useState(
+    atual?.estoqueMinimo ? String(atual.estoqueMinimo) : (r?.minimo ?? ""),
+  );
+  const [codigo, setCodigo] = useState(atual?.codigoBarras ?? r?.codigo ?? "");
   const [custo, setCusto] = useState(
-    atual && atual.custoCentavos !== null ? centavosParaReais(atual.custoCentavos) : "",
+    atual && atual.custoCentavos !== null
+      ? centavosParaReais(atual.custoCentavos)
+      : (r?.custo ?? ""),
   );
   const [erroLocal, setErroLocal] = useState<string | null>(null);
   const item = rotuloCampo(app.config, "produtos.item").toLowerCase();
+  const guardado = useRascunho<DadosProduto>({
+    sistema: app.id,
+    tipo: "produto",
+    ativo: !atual,
+    inicial: rascunho,
+    dados: { nome, varejo, atacado, caixa, campos, inicial, minimo, codigo, custo },
+    // A caixa já vem sugerida pela regra: sozinha, não é começo de cadastro.
+    vazio:
+      [nome, varejo, atacado, inicial, minimo, codigo, custo].every((t) => t.trim() === "") &&
+      caixa === caixaSugerida &&
+      Object.keys(campos).length === 0,
+    titulo: nome.trim() || `${rotuloCampo(app.config, "produtos.item")} sem nome`,
+    resumo: varejo.trim() ? `Preço R$ ${varejo.trim()}` : "Sem preço ainda",
+  });
 
   const m = useMutation({
     mutationFn: () => {
@@ -303,6 +362,7 @@ function ProdutoDialog({ atual, onFechar }: { atual: ProdutoDto | null; onFechar
     },
     onMutate: () => setErroLocal(null),
     onSuccess: () => {
+      guardado.descartar();
       invalidar();
       toast.success(
         atual
@@ -440,20 +500,26 @@ function ProdutoDialog({ atual, onFechar }: { atual: ProdutoDto | null; onFechar
             )}
             <div className="space-y-1.5">
               <Label htmlFor="produto-codigo">Código de barras</Label>
-              <Input
-                id="produto-codigo"
-                value={codigo}
-                maxLength={64}
-                inputMode="numeric"
-                autoComplete="off"
-                placeholder="Leitor ou digite"
-                onChange={(e) => setCodigo(e.target.value)}
-                // O leitor USB termina com Enter: não envia o formulário antes da hora.
-                onKeyDown={(e) => e.key === "Enter" && e.preventDefault()}
-                aria-describedby="dica-codigo"
-              />
+              <div className="flex gap-2">
+                <Input
+                  id="produto-codigo"
+                  value={codigo}
+                  maxLength={64}
+                  inputMode="numeric"
+                  autoComplete="off"
+                  placeholder="Leitor ou digite"
+                  onChange={(e) => setCodigo(e.target.value)}
+                  // O leitor USB termina com Enter: não envia o formulário antes da hora.
+                  onKeyDown={(e) => e.key === "Enter" && e.preventDefault()}
+                  aria-describedby="dica-codigo"
+                />
+                <BotaoCamera
+                  descricao="O código lido entra no cadastro deste produto."
+                  onLido={setCodigo}
+                />
+              </div>
               <p id="dica-codigo" className="text-xs text-muted-foreground">
-                Opcional. A venda aceita o leitor ou a câmera.
+                Opcional. Com o código, a venda aceita o leitor ou a câmera.
               </p>
             </div>
           </div>
@@ -469,6 +535,7 @@ function ProdutoDialog({ atual, onFechar }: { atual: ProdutoDto | null; onFechar
               {erroLocal}
             </p>
           )}
+          <AvisoRascunho salvoEm={guardado.salvoEm} />
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onFechar}>
               Cancelar

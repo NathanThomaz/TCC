@@ -738,7 +738,9 @@ describe("pedidos ao desenvolvedor", () => {
     expect((await chamarPedidos("GET", "")).body.pedidos!.map((x) => x.id)).toEqual([p.id]);
     const com = await chamarPedidos("POST", `/${p.id}/comentarios`, { texto: "Urgente" });
     expect(com.status).toBe(201);
-    expect(com.body.pedido!.comentarios).toEqual([{ texto: "Urgente", em: NOW }]);
+    expect(com.body.pedido!.comentarios).toEqual([
+      { texto: "Urgente", em: NOW, doDesenvolvedor: false },
+    ]);
     const can = await chamarPedidos("POST", `/${p.id}/cancelar`, {});
     expect(can.status).toBe(200);
     expect(can.body.pedido!.estado).toBe("cancelado");

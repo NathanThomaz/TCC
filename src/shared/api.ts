@@ -533,8 +533,21 @@ export interface PedidoDto {
   criteriosAceite: string[];
   estado: EstadoPedidoDto;
   historico: { estado: EstadoPedidoDto; em: number; nota: string | null }[];
-  comentarios: { texto: string; em: number }[];
+  /** doDesenvolvedor: resposta do dono do Nexus (quem implementa) a um pedido de outra conta. */
+  comentarios: { texto: string; em: number; doDesenvolvedor: boolean }[];
   criadoEm: number;
+}
+
+/** Pedido na página do desenvolvedor: de qual sistema e de quem. */
+export interface PedidoGeralDto extends PedidoDto {
+  sistema: { id: string; nome: string };
+  pedidoPor: { nome: string | null; email: string };
+}
+
+export interface PedidosGeraisApiBody {
+  pedidos?: PedidoGeralDto[];
+  pedido?: PedidoGeralDto;
+  error?: ApiErrorBody["error"];
 }
 
 export interface PedidosApiBody {
