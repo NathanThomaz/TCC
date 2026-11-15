@@ -135,7 +135,13 @@ export async function trocarSenha(atual: string, nova: string): Promise<void> {
   } catch (error) {
     traduzir(error);
   }
-  await signInWithEmailAndPassword(auth, user.email, nova).catch(() => undefined);
+  try {
+    await signInWithEmailAndPassword(auth, user.email, nova);
+  } catch {
+    // A senha já mudou; a sessão antiga logo seria recusada. Melhor sair agora e avisar.
+    await signOut(auth).catch(() => undefined);
+    throw new ApiError("sessao_expirada", "Senha trocada. Entre de novo com a senha nova.");
+  }
 }
 
 /** Link de definir/redefinir senha (também confirma o e-mail; provas/firebase-convite). */

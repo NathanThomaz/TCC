@@ -31,22 +31,37 @@ async function detectorNativo(): Promise<Detector | null> {
   }
 }
 
+/** A biblioteca de leitura não carregou (sem internet, bloqueio do navegador). */
+export class LeitorIndisponivel extends Error {}
+
 export async function criarDetector(): Promise<Detector> {
   const nativo = await detectorNativo();
   if (nativo) return nativo;
-  const [{ BarcodeDetector, setZXingModuleOverrides }, { default: wasm }] = await Promise.all([
-    import("barcode-detector/ponyfill"),
-    import("zxing-wasm/reader/zxing_reader.wasm?url"),
-  ]);
-  setZXingModuleOverrides({
-    locateFile: (caminho: string, prefixo: string) =>
-      caminho.endsWith(".wasm") ? new URL(wasm, window.location.href).href : prefixo + caminho,
-  });
-  return new BarcodeDetector({ formats: FORMATOS as never });
+  try {
+    const [{ BarcodeDetector, prepareZXingModule }, { default: wasm }] = await Promise.all([
+      import("barcode-detector/ponyfill"),
+      import("zxing-wasm/reader/zxing_reader.wasm?url"),
+    ]);
+    // Carrega e compila agora: se falhar (rede, bloqueio), a câmera fecha com aviso, em vez de
+    // ficar ligada tentando ler sem leitor.
+    await prepareZXingModule({
+      overrides: {
+        locateFile: (caminho: string, prefixo: string) =>
+          caminho.endsWith(".wasm") ? new URL(wasm, window.location.href).href : prefixo + caminho,
+      },
+      fireImmediately: true,
+    });
+    return new BarcodeDetector({ formats: FORMATOS as never });
+  } catch {
+    throw new LeitorIndisponivel();
+  }
 }
 
 /** Mensagem para a pessoa quando a câmera não abre. */
 export function motivoCamera(erro: unknown): string {
+  if (erro instanceof LeitorIndisponivel) {
+    return "Não foi possível carregar o leitor de códigos. Confira a internet e tente de novo, ou use o leitor USB.";
+  }
   const nome = erro instanceof DOMException ? erro.name : "";
   if (nome === "NotAllowedError" || nome === "SecurityError") {
     return "A câmera foi bloqueada. Libere em Permissões do site (cadeado ao lado do endereço) e tente de novo.";

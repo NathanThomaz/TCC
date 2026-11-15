@@ -434,8 +434,9 @@ export const mudarEstadoPedido: Handler = async (ctx) => {
   if (!PROXIMOS[atual.status]?.includes(body.estado)) throw invalida();
   const now = ctx.clock.now();
   const db = ctx.env.DB;
+  let mudou: boolean;
   try {
-    await db.batch([
+    const [update] = await db.batch([
       db
         .prepare(
           `UPDATE dev_requests SET status = ?, updated_at = max(updated_at, ?)
@@ -450,15 +451,20 @@ export const mudarEstadoPedido: Handler = async (ctx) => {
         .bind(crypto.randomUUID(), id, user.id, body.estado, body.nota ?? null, now),
       recordIfChanged(ctx, cmd, started, id, 200, now),
     ]);
+    mudou = (update?.meta.changes ?? 0) === 1;
   } catch (error) {
     const replay = isUnique(error) ? await replayAfterRace(ctx, cmd, started) : null;
     if (replay?.kind !== "replay") throw error;
     return responderGeral(ctx, id, replay.statusCode);
   }
-  // Entre a leitura e o lote o estado pode ter mudado (ex.: o dono cancelou): nada foi gravado.
-  const pedido = (await todosOsPedidos(db)).find((p) => p.id === id)!;
-  if (pedido.estado !== body.estado) throw invalida();
-  return json({ pedido });
+  // Entre a leitura e o lote o estado mudou (outra mudança ou o cancelamento de quem pediu): nada
+  // desta requisição foi gravado. Se foi a mesma chave repetida em paralelo, responde como ela.
+  if (!mudou) {
+    const replay = await replayAfterRace(ctx, cmd, started);
+    if (replay?.kind === "replay") return responderGeral(ctx, id, replay.statusCode);
+    throw invalida();
+  }
+  return responderGeral(ctx, id);
 };
 
 export const comentarComoDesenvolvedor: Handler = async (ctx) => {

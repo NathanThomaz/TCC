@@ -243,6 +243,9 @@ export function LeitorCodigo({
   );
 }
 
+/** Leituras com erro em sequência (cerca de 6 s) até desistir e soltar a câmera. */
+const FALHAS_SEGUIDAS = 20;
+
 function CameraCodigo({
   descricao,
   onLido,
@@ -280,13 +283,20 @@ function CameraCodigo({
         await video.current.play();
         const detector = await pronto;
         setLendo(true);
+        let falhas = 0;
         const procurar = async () => {
           if (parado || !video.current) return;
           try {
             const achados = await detector.detect(video.current);
+            falhas = 0;
             if (achados[0]?.rawValue) return aoLer.current(achados[0].rawValue);
-          } catch {
-            // quadro ainda sem imagem: tenta de novo
+          } catch (e) {
+            // Um quadro sem imagem falha às vezes; falhar seguidamente é o leitor que não funciona.
+            if (++falhas >= FALHAS_SEGUIDAS) {
+              fluxo?.getTracks().forEach((t) => t.stop());
+              setErro(motivoCamera(e));
+              return;
+            }
           }
           timer = setTimeout(() => void procurar(), 300);
         };

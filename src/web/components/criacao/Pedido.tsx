@@ -215,7 +215,12 @@ function Ficha({
         </Secao>
       )}
       {desenvolvedor && PROXIMOS[pedido.estado] && (
-        <Andamento pedido={pedido} proximos={PROXIMOS[pedido.estado]!} onFeito={atualizar} />
+        <Andamento
+          key={pedido.estado}
+          pedido={pedido}
+          proximos={PROXIMOS[pedido.estado]!}
+          onFeito={atualizar}
+        />
       )}
       <Secao titulo="Histórico">
         <ol className="space-y-3 border-l pl-4">

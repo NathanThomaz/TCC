@@ -165,8 +165,18 @@ export function useRascunho<T>(o: {
     return () => clearTimeout(t);
   }, [ativo, chave, texto, vazio, tipo, titulo, resumo]);
 
-  // Fechou o formulário antes da espera: grava o que faltava.
-  useEffect(() => () => pendente.current?.(), []);
+  // Fechou o formulário, a aba ou recarregou antes da espera: grava o que faltava.
+  useEffect(() => {
+    const gravarPendente = () => pendente.current?.();
+    const aoEsconder = () => document.visibilityState === "hidden" && gravarPendente();
+    window.addEventListener("pagehide", gravarPendente);
+    document.addEventListener("visibilitychange", aoEsconder);
+    return () => {
+      window.removeEventListener("pagehide", gravarPendente);
+      document.removeEventListener("visibilitychange", aoEsconder);
+      gravarPendente();
+    };
+  }, []);
 
   return {
     salvoEm,
