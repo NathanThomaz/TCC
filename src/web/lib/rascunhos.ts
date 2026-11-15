@@ -52,14 +52,18 @@ function ler(chave: string): Rascunho[] {
   }
 }
 
-function gravar(chave: string, lista: Rascunho[]) {
+/** Grava a lista; falso quando o navegador não guardou (sem armazenamento ou cheio). */
+function gravar(chave: string, lista: Rascunho[]): boolean {
+  let ok = true;
   try {
     if (lista.length) localStorage.setItem(chave, JSON.stringify(lista.slice(-LIMITE)));
     else localStorage.removeItem(chave);
   } catch {
-    // Sem armazenamento ou cheio: o formulário segue funcionando, só sem rascunho.
+    // O formulário segue funcionando, só sem rascunho; o aviso de "guardado" não aparece.
+    ok = false;
   }
   window.dispatchEvent(new Event(EVENTO));
+  return ok;
 }
 
 // O useSyncExternalStore exige o mesmo objeto enquanto nada mudou.
@@ -150,20 +154,25 @@ export function useRascunho<T>(o: {
     const escrever = () => {
       pendente.current = null;
       if (encerrado.current) return;
-      ultimo.current = texto;
       const outros = ler(chave).filter((r) => r.id !== id.current);
-      if (vazio) {
-        gravar(chave, outros);
-        setSalvoEm(null);
-        return;
-      }
       const agora = Date.now();
-      const dados = JSON.parse(texto) as T;
-      gravar(chave, [
-        ...outros,
-        { id: id.current, tipo, titulo, resumo, dados, atualizadoEm: agora },
-      ]);
-      setSalvoEm(agora);
+      const ok = vazio
+        ? gravar(chave, outros)
+        : gravar(chave, [
+            ...outros,
+            {
+              id: id.current,
+              tipo,
+              titulo,
+              resumo,
+              dados: JSON.parse(texto) as T,
+              atualizadoEm: agora,
+            },
+          ]);
+      // Só marca como guardado o que o navegador guardou; se falhou, tenta de novo na próxima
+      // alteração (o texto não vira o "último guardado").
+      if (ok) ultimo.current = texto;
+      setSalvoEm(ok && !vazio ? agora : null);
     };
     pendente.current = escrever;
     const t = setTimeout(escrever, ESPERA_MS);

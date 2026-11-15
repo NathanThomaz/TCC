@@ -97,6 +97,21 @@ describe("rascunhos", () => {
     expect(guardados()).toMatchObject([{ titulo: "Cerveja" }]);
   });
 
+  it("sem armazenamento, não diz que guardou", () => {
+    const gravarItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("cheio", "QuotaExceededError");
+    });
+    try {
+      const { result } = renderHook(() => useRascunho(props("Vinho")), { wrapper: com() });
+      act(() => {
+        vi.advanceTimersByTime(700);
+      });
+      expect(result.current.salvoEm).toBeNull();
+    } finally {
+      gravarItem.mockRestore();
+    }
+  });
+
   it("edição de registro existente não vira rascunho", () => {
     renderHook(() => useRascunho(props("Refrigerante", { ativo: false })), { wrapper: com() });
     act(() => {
@@ -128,7 +143,9 @@ describe("rascunhos", () => {
     });
     expect(venda.result.current).toBeNull();
 
-    act(() => lista.result.current.remover(id));
+    act(() => {
+      lista.result.current.remover(id);
+    });
     expect(lista.result.current.lista).toEqual([]);
   });
 });
