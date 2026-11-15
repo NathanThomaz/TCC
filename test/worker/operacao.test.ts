@@ -1530,6 +1530,48 @@ describe("módulos opcionais (ADR-006)", () => {
     expect((await lerProduto()).custoCentavos).toBeNull();
   });
 
+  it("custo informado e compras: vale o mais recente, mesmo cancelando compra antiga (revisão do Codex)", async () => {
+    await ativarModulos(["fornecedores"]);
+    const f = await fornecedor();
+    const prod = await produto({ custoCentavos: 300 });
+    const lerCusto = async () =>
+      ((await call("GET", p("/produtos"), ADMIN)).body.produtos ?? []).find((x) => x.id === prod)!
+        .custoCentavos;
+    const compra = async (custo: number) => {
+      agora += MIN;
+      return (
+        await comprar({
+          fornecedor: f,
+          itens: [{ produto: prod, unidades: 5, custoUnitarioCentavos: custo }],
+        })
+      ).body.compra!;
+    };
+    const cancelar = (id: string) =>
+      call("POST", p(`/compras/${id}/cancelar`), ADMIN, { motivo: "Errada" });
+    const base = { nome: "Cerveja lata", varejoCentavos: 500, atacadoCentavos: 400 };
+
+    // Editar só o nome (sem o campo) não transforma o custo da compra em "informado".
+    const unica = await compra(350);
+    agora += MIN;
+    await call("PATCH", p(`/produtos/${prod}`), ADMIN, { ...base, nome: "Cerveja" });
+    await cancelar(unica.id);
+    expect(await lerCusto()).toBe(300);
+
+    // Informado depois de duas compras: cancelar a mais antiga não volta para a outra.
+    const a = await compra(350);
+    await compra(400);
+    agora += MIN;
+    await call("PATCH", p(`/produtos/${prod}`), ADMIN, { ...base, custoCentavos: 250 });
+    await cancelar(a.id);
+    expect(await lerCusto()).toBe(250);
+
+    // Compra nova depois do informado passa a valer; cancelada, volta o informado.
+    const nova = await compra(420);
+    expect(await lerCusto()).toBe(420);
+    await cancelar(nova.id);
+    expect(await lerCusto()).toBe(250);
+  });
+
   it("compras: filtro por período da compra (para chegar às além das 200 últimas)", async () => {
     await ativarModulos(["fornecedores"]);
     const f = await fornecedor();

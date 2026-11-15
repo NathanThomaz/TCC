@@ -395,8 +395,8 @@ export const importarProdutos: Handler = async (ctx) => {
     instrucoes.push(
       db
         .prepare(
-          `INSERT INTO products (id, system_id, name, retail_cents, wholesale_cents, units_per_box, min_units, barcode, cost_cents, last_cost_cents, created_by, created_at, updated_at)
-           SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? ${SEM_NOME_IGUAL("products")}`,
+          `INSERT INTO products (id, system_id, name, retail_cents, wholesale_cents, units_per_box, min_units, barcode, cost_cents, last_cost_cents, cost_set_at, created_by, created_at, updated_at)
+           SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? ${SEM_NOME_IGUAL("products")}`,
         )
         .bind(
           id,
@@ -409,6 +409,7 @@ export const importarProdutos: Handler = async (ctx) => {
           l.codigoBarras || null,
           l.custoCentavos ?? null,
           l.custoCentavos ?? null,
+          (l.custoCentavos ?? null) === null ? null : now,
           op.user.id,
           now,
           now,

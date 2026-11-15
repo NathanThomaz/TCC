@@ -447,8 +447,8 @@ export const criarProduto: Handler = async (ctx) => {
       // EST-01: o físico começa em zero (default da coluna); só entradas o aumentam.
       db
         .prepare(
-          `INSERT INTO products (id, system_id, name, retail_cents, wholesale_cents, units_per_box, extra_json, min_units, barcode, cost_cents, last_cost_cents, created_by, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO products (id, system_id, name, retail_cents, wholesale_cents, units_per_box, extra_json, min_units, barcode, cost_cents, last_cost_cents, cost_set_at, created_by, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .bind(
           id,
@@ -462,6 +462,7 @@ export const criarProduto: Handler = async (ctx) => {
           body.codigoBarras || null,
           body.custoCentavos ?? null,
           body.custoCentavos ?? null,
+          (body.custoCentavos ?? null) === null ? null : now,
           op.user.id,
           now,
           now,
@@ -522,6 +523,7 @@ export const editarProduto: Handler = async (ctx) => {
            -- Valor de compra informado agora vira também o último custo conhecido.
            cost_cents = CASE WHEN ?13 THEN ?14 ELSE cost_cents END,
            last_cost_cents = CASE WHEN ?13 THEN ?14 ELSE last_cost_cents END,
+           cost_set_at = CASE WHEN ?13 THEN ?10 ELSE cost_set_at END,
            updated_at = max(updated_at, ?10) WHERE id = ?11 AND system_id = ?12`,
         )
         .bind(

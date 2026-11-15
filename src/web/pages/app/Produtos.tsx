@@ -292,7 +292,9 @@ function ProdutoDialog({ atual, onFechar }: { atual: ProdutoDto | null; onFechar
         campos,
         estoqueMinimo: temEstoque ? estoqueMinimo : null,
         codigoBarras: codigo.trim() || null,
-        custoCentavos: c,
+        // Na edição, só manda o custo se a pessoa mudou: o campo vem com o custo em uso (talvez
+        // o da última compra), que não deve virar "valor informado" só por salvar o nome.
+        ...(!atual || c !== atual.custoCentavos ? { custoCentavos: c } : {}),
         ...(!atual && temEstoque && estoqueInicial !== null ? { estoqueInicial } : {}),
       };
       return atual
