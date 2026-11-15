@@ -1570,6 +1570,19 @@ describe("módulos opcionais (ADR-006)", () => {
     expect(await lerCusto()).toBe(420);
     await cancelar(nova.id);
     expect(await lerCusto()).toBe(250);
+
+    // Mesmo milissegundo: informado e compra no mesmo instante — a compra vale (o trigger de
+    // entrada grava o custo dela por último), e cancelar uma compra antiga não muda isso.
+    const antiga = await compra(310);
+    agora += MIN;
+    await call("PATCH", p(`/produtos/${prod}`), ADMIN, { ...base, custoCentavos: 260 });
+    await comprar({
+      fornecedor: f,
+      itens: [{ produto: prod, unidades: 5, custoUnitarioCentavos: 430 }],
+    });
+    expect(await lerCusto()).toBe(430);
+    await cancelar(antiga.id);
+    expect(await lerCusto()).toBe(430);
   });
 
   it("compras: filtro por período da compra (para chegar às além das 200 últimas)", async () => {
