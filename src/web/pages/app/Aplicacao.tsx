@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect } from "react";
+import { Fragment, createContext, useContext, useEffect } from "react";
 import { Outlet, useParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useTema } from "@/lib/tema";
@@ -25,18 +25,21 @@ export function useApp() {
   return app;
 }
 
-/** Ordem do menu; estoque fica junto de produtos (mesma tela, com saldos e movimentos). */
-const MENU: { modulo: ModuleId; caminho: string; rotulo?: string }[] = [
-  { modulo: "vendas", caminho: "vendas" },
-  { modulo: "produtos", caminho: "produtos" },
-  { modulo: "estoque", caminho: "estoque" },
-  { modulo: "agenda", caminho: "agenda" },
-  { modulo: "clientes", caminho: "clientes" },
-  { modulo: "profissionais", caminho: "profissionais" },
-  // Opcionais (ADR-006); formas de pagamento ficam dentro de vendas.
-  { modulo: "fornecedores", caminho: "fornecedores" },
-  { modulo: "fornecedores", caminho: "compras", rotulo: "Compras" },
-  { modulo: "financeiro", caminho: "financeiro" },
+/**
+ * Ordem do menu (pedido do dono, 2026-11-14), na sequência de uso: primeiro os cadastros (quem
+ * compra, o que vende, de quem compra), depois o dia a dia (vender, agendar, repor) e por fim o
+ * controle do dinheiro. Formas de pagamento ficam dentro de vendas.
+ */
+export const MENU: { modulo: ModuleId; caminho: string; rotulo?: string; grupo: number }[] = [
+  { modulo: "clientes", caminho: "clientes", grupo: 1 },
+  { modulo: "profissionais", caminho: "profissionais", grupo: 1 },
+  { modulo: "produtos", caminho: "produtos", grupo: 1 },
+  { modulo: "fornecedores", caminho: "fornecedores", grupo: 1 },
+  { modulo: "vendas", caminho: "vendas", grupo: 2 },
+  { modulo: "agenda", caminho: "agenda", grupo: 2 },
+  { modulo: "fornecedores", caminho: "compras", rotulo: "Compras", grupo: 2 },
+  { modulo: "estoque", caminho: "estoque", grupo: 2 },
+  { modulo: "financeiro", caminho: "financeiro", grupo: 3 },
 ];
 
 export function rotuloModulo(app: App, modulo: ModuleId): string {
@@ -108,15 +111,19 @@ export function Aplicacao() {
           className="flex gap-1 overflow-x-auto bg-card px-2 py-2"
         >
           <MenuLink id={id} caminho="" rotulo="Painel" exato destaque={aparencia.cor_destaque} />
-          {MENU.filter((m) => modulos.includes(m.modulo)).map((m) => (
-            <MenuLink
-              key={m.caminho}
-              id={id}
-              caminho={m.caminho}
-              rotulo={m.rotulo ?? rotuloModulo(app, m.modulo)}
-              destaque={aparencia.cor_destaque}
-            />
+          {MENU.filter((m) => modulos.includes(m.modulo)).map((m, i, lista) => (
+            <Fragment key={m.caminho}>
+              {/* Divisória entre cadastros, dia a dia e dinheiro. */}
+              {(i === 0 || lista[i - 1]!.grupo !== m.grupo) && <Divisoria />}
+              <MenuLink
+                id={id}
+                caminho={m.caminho}
+                rotulo={m.rotulo ?? rotuloModulo(app, m.modulo)}
+                destaque={aparencia.cor_destaque}
+              />
+            </Fragment>
           ))}
+          <Divisoria />
           <MenuLink
             id={id}
             caminho="perguntar"
@@ -129,6 +136,10 @@ export function Aplicacao() {
     </AppContext.Provider>
   );
 }
+
+const Divisoria = () => (
+  <span aria-hidden className="mx-1 my-1.5 w-px shrink-0 self-stretch bg-border" />
+);
 
 function MenuLink({
   id,

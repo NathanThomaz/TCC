@@ -188,14 +188,29 @@ export function indicadores(p: PainelDto): IndicadorDados[] {
       valor: String(critico),
       detalhe: `de ${plural(e.produtosAtivos, "produto ativo", "produtos ativos")}${e.abaixoDoMinimo === null ? "" : e.minimo !== null ? ` (mínimo de ${e.minimo})` : " (mínimo de cada produto)"}`,
     });
-    add({
-      id: "valor-estoque",
-      prioridade: 8,
-      rotulo: "Valor em estoque",
-      icone: Warehouse,
-      valor: formatarCentavos(e.valorVarejoCentavos),
-      detalhe: `${plural(e.unidades, "unidade", "unidades")} a preço de varejo`,
-    });
+    // Com valor de compra nos produtos, o balanço ocupa o lugar do valor em estoque (os
+    // indicadores são limitados e o lucro previsto já diz por quanto o estoque vende).
+    if (!e.custo) {
+      add({
+        id: "valor-estoque",
+        prioridade: 8,
+        rotulo: "Valor em estoque",
+        icone: Warehouse,
+        valor: formatarCentavos(e.valorVarejoCentavos),
+        detalhe: `${plural(e.unidades, "unidade", "unidades")} a preço de varejo`,
+      });
+    } else {
+      add({
+        id: "lucro-estoque",
+        // Pedido do dono (balanço): logo depois de clientes, antes de vendas abertas.
+        prioridade: 6.2,
+        rotulo: "Lucro previsto no estoque",
+        icone: TrendingUp,
+        alerta: e.custo.lucroPrevistoCentavos < 0,
+        valor: formatarCentavos(e.custo.lucroPrevistoCentavos),
+        detalhe: `Custa ${formatarCentavos(e.custo.valorCustoCentavos)} e vende por ${formatarCentavos(e.custo.valorVendaCentavos)}${e.custo.semCusto ? ` · ${plural(e.custo.semCusto, "produto sem valor de compra", "produtos sem valor de compra")}` : ""}`,
+      });
+    }
   }
   if (p.agenda) {
     const a = p.agenda;
@@ -299,6 +314,7 @@ export function indicadores(p: PainelDto): IndicadorDados[] {
   }
   if (p.compras) {
     const c = p.compras;
+    const balancoNoEstoque = !!p.estoque?.custo;
     add({
       id: "compras-mes",
       prioridade: 11.5,
@@ -307,14 +323,16 @@ export function indicadores(p: PainelDto): IndicadorDados[] {
       valor: formatarCentavos(c.noMes.totalCentavos),
       detalhe: `${plural(c.noMes.quantidade, "compra", "compras")} · ${plural(c.fornecedoresAtivos, "fornecedor ativo", "fornecedores ativos")}`,
     });
-    add({
-      id: "estoque-custo",
-      prioridade: 12.5,
-      rotulo: "Estoque a preço de custo",
-      icone: Warehouse,
-      valor: formatarCentavos(c.valorCustoCentavos),
-      detalhe: "Pelo último custo de compra de cada produto",
-    });
+    // Com o balanço do estoque, o valor a custo já aparece no "Lucro previsto".
+    if (!balancoNoEstoque)
+      add({
+        id: "estoque-custo",
+        prioridade: 12.5,
+        rotulo: "Estoque a preço de custo",
+        icone: Warehouse,
+        valor: formatarCentavos(c.valorCustoCentavos),
+        detalhe: "Pelo último custo de compra de cada produto",
+      });
   }
   // Os mais importantes, mostrados na ordem dos módulos (vendas, clientes, estoque, agenda).
   const escolhidos = new Set(

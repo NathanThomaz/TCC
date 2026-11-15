@@ -226,6 +226,7 @@ const LinhaProduto = z.object({
   estoque: z.number().int().min(0).max(1_000_000).nullable().optional(),
   estoqueMinimo: z.number().int().min(1).max(1_000_000).nullable().optional(),
   codigoBarras: codigoBarras.nullable().optional(),
+  custoCentavos: z.number().int().min(0).max(100_000_000).nullable().optional(),
 });
 const ImportarProdutosBody = z.object({ linhas: z.array(LinhaProduto).min(1).max(MAX_IMPORTACAO) });
 const ImportarClientesBody = z.object({
@@ -394,8 +395,8 @@ export const importarProdutos: Handler = async (ctx) => {
     instrucoes.push(
       db
         .prepare(
-          `INSERT INTO products (id, system_id, name, retail_cents, wholesale_cents, units_per_box, min_units, barcode, created_by, created_at, updated_at)
-           SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? ${SEM_NOME_IGUAL("products")}`,
+          `INSERT INTO products (id, system_id, name, retail_cents, wholesale_cents, units_per_box, min_units, barcode, cost_cents, last_cost_cents, created_by, created_at, updated_at)
+           SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? ${SEM_NOME_IGUAL("products")}`,
         )
         .bind(
           id,
@@ -406,6 +407,8 @@ export const importarProdutos: Handler = async (ctx) => {
           l.unidadesPorCaixa ?? null,
           l.estoqueMinimo ?? null,
           l.codigoBarras || null,
+          l.custoCentavos ?? null,
+          l.custoCentavos ?? null,
           op.user.id,
           now,
           now,

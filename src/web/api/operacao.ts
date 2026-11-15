@@ -120,6 +120,8 @@ export interface DadosProduto {
   estoqueInicial?: number;
   /** Código de barras (leitor ou câmera na venda); null sem código. */
   codigoBarras: string | null;
+  /** Valor de compra da unidade (opcional, para o balanço); null sem valor. */
+  custoCentavos: number | null;
 }
 
 /** Ajuste de coluna num sistema ativo: renomear (só visual) ou incluir. */

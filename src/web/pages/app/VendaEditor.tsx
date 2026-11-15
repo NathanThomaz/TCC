@@ -212,6 +212,14 @@ function Rascunho({ venda, servicos }: { venda: VendaDto | null; servicos: Atend
     [];
   const [forma, setForma] = useState<PaymentMethod | "">("");
   const [linhas, setLinhas] = useState<Linha[]>(venda ? deVenda(venda) : [linhaVazia()]);
+  // Item novo (botão, leitor ou venda ditada) aparece no fim da lista com rolagem: leva até ele.
+  const listaItens = useRef<HTMLDivElement>(null);
+  const qtdLinhas = useRef(linhas.length);
+  useEffect(() => {
+    const el = listaItens.current;
+    if (el && linhas.length > qtdLinhas.current) el.scrollTop = el.scrollHeight;
+    qtdLinhas.current = linhas.length;
+  }, [linhas.length]);
   // Revisão de onde partem as edições locais. Se a venda mudar em outra tela (revisão nova vinda
   // do servidor), nada é salvo nem concluído até o usuário carregar a versão atual.
   const [base, setBase] = useState<VendaDto | null>(venda);
@@ -521,71 +529,89 @@ function Rascunho({ venda, servicos }: { venda: VendaDto | null; servicos: Atend
         )}
 
         <fieldset className="space-y-3">
-          <legend className="mb-1 text-sm font-medium">Itens</legend>
+          <legend className="mb-1 text-sm font-medium">
+            Itens{" "}
+            <span className="font-normal text-muted-foreground">
+              ({linhas.filter((l) => l.produto).length})
+            </span>
+          </legend>
           <LeitorCodigo onCodigo={(c) => void lerCodigo(c)} />
-          {linhas.map((l, i) => {
-            const p = produtoDe(l.produto);
-            // Item já no rascunho usa o fator dele, mesmo nulo; produto novo, o do cadastro.
-            const salvo = base?.itens.find((x) => x.produto === l.produto);
-            const fator = salvo ? salvo.unidadesPorCaixa : (p?.unidadesPorCaixa ?? null);
-            return (
-              <div key={i} className="flex flex-wrap items-end gap-2 rounded-lg border bg-card p-3">
-                <div className="min-w-48 flex-1 space-y-1.5">
-                  <Label htmlFor={`item-${i}-produto`}>
-                    {rotuloCampo(app.config, "produtos.item")}
-                  </Label>
-                  <Select value={l.produto} onValueChange={(v) => mudarLinha(i, "produto", v)}>
-                    <SelectTrigger id={`item-${i}-produto`}>
-                      <SelectValue placeholder="Escolha" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {ativos.map((x) => (
-                        <SelectItem
-                          key={x.id}
-                          value={x.id}
-                          disabled={linhas.some((o, j) => j !== i && o.produto === x.id)}
-                        >
-                          {x.nome} · disp. {disponivelParaEsta(x)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                {fator !== null && (
-                  <div className="w-28 space-y-1.5">
-                    <Label htmlFor={`item-${i}-caixas`}>Caixas de {fator}</Label>
+          {/* Altura limitada: uma venda com muitos itens rola aqui dentro, sem esticar a tela. */}
+          <div
+            ref={listaItens}
+            className="max-h-[26rem] space-y-2 overflow-y-auto rounded-lg border bg-muted/30 p-2"
+          >
+            {linhas.map((l, i) => {
+              const p = produtoDe(l.produto);
+              // Item já no rascunho usa o fator dele, mesmo nulo; produto novo, o do cadastro.
+              const salvo = base?.itens.find((x) => x.produto === l.produto);
+              const fator = salvo ? salvo.unidadesPorCaixa : (p?.unidadesPorCaixa ?? null);
+              return (
+                <div
+                  key={i}
+                  className="flex flex-wrap items-end gap-2 rounded-md border bg-card p-2"
+                >
+                  <div className="min-w-48 flex-1 space-y-1">
+                    <Label htmlFor={`item-${i}-produto`} className={i > 0 ? "sr-only" : undefined}>
+                      {rotuloCampo(app.config, "produtos.item")}
+                    </Label>
+                    <Select value={l.produto} onValueChange={(v) => mudarLinha(i, "produto", v)}>
+                      <SelectTrigger id={`item-${i}-produto`}>
+                        <SelectValue placeholder="Escolha" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {ativos.map((x) => (
+                          <SelectItem
+                            key={x.id}
+                            value={x.id}
+                            disabled={linhas.some((o, j) => j !== i && o.produto === x.id)}
+                          >
+                            {x.nome} · disp. {disponivelParaEsta(x)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {fator !== null && (
+                    <div className="w-28 space-y-1">
+                      <Label htmlFor={`item-${i}-caixas`} className="text-xs">
+                        Caixas de {fator}
+                      </Label>
+                      <Input
+                        id={`item-${i}-caixas`}
+                        type="number"
+                        min={0}
+                        value={l.caixas}
+                        onChange={(e) => mudarLinha(i, "caixas", e.target.value)}
+                      />
+                    </div>
+                  )}
+                  <div className="w-28 space-y-1">
+                    <Label htmlFor={`item-${i}-unidades`} className={i > 0 ? "sr-only" : undefined}>
+                      Unidades
+                    </Label>
                     <Input
-                      id={`item-${i}-caixas`}
+                      id={`item-${i}-unidades`}
                       type="number"
                       min={0}
-                      value={l.caixas}
-                      onChange={(e) => mudarLinha(i, "caixas", e.target.value)}
+                      value={l.unidades}
+                      onChange={(e) => mudarLinha(i, "unidades", e.target.value)}
                     />
                   </div>
-                )}
-                <div className="w-28 space-y-1.5">
-                  <Label htmlFor={`item-${i}-unidades`}>Unidades</Label>
-                  <Input
-                    id={`item-${i}-unidades`}
-                    type="number"
-                    min={0}
-                    value={l.unidades}
-                    onChange={(e) => mudarLinha(i, "unidades", e.target.value)}
-                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    aria-label="Remover item"
+                    disabled={linhas.length === 1}
+                    onClick={() => setLinhas((ls) => ls.filter((_, j) => j !== i))}
+                  >
+                    <Trash2 aria-hidden />
+                  </Button>
                 </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  aria-label="Remover item"
-                  disabled={linhas.length === 1}
-                  onClick={() => setLinhas((ls) => ls.filter((_, j) => j !== i))}
-                >
-                  <Trash2 aria-hidden />
-                </Button>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
           <Button
             type="button"
             variant="outline"

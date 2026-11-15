@@ -379,6 +379,14 @@ export interface PainelDto {
     /** Unidades físicas e valor delas a preço de varejo (produtos ativos). */
     unidades: number;
     valorVarejoCentavos: number;
+    /** Balanço pelos produtos com valor de compra; null quando nenhum tem. */
+    custo: {
+      produtos: number;
+      semCusto: number;
+      valorCustoCentavos: number;
+      valorVendaCentavos: number;
+      lucroPrevistoCentavos: number;
+    } | null;
   };
   clientes?: { ativos: number; inativos: number; novosNoMes: number };
   /** Vendas concluídas no mês por forma de pagamento (módulo de pagamentos). */

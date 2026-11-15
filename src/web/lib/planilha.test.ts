@@ -95,6 +95,19 @@ describe("ler planilha", () => {
     expect(lerClientes(csv).linhas).toEqual([{ nome: "Bar do Zé" }, { nome: "Mercado" }]);
   });
 
+  it("valor de compra opcional: pelo título ou na última coluna sem títulos", () => {
+    const r = lerProdutos(
+      "Produto;Preço;Valor de compra\nArroz;28,90;20,50\nFeijão;8,99;",
+      SEM_REGRAS,
+    );
+    expect(r.linhas.map((l) => l.custoCentavos)).toEqual([2050, undefined]);
+    const s = lerProdutos("Arroz;28,90;10;5;789;19,90", SEM_REGRAS);
+    expect(s.linhas[0]).toMatchObject({ estoque: 10, codigoBarras: "789", custoCentavos: 1990 });
+    expect(lerProdutos("Arroz;28,90;;;;abc", SEM_REGRAS).erros).toEqual([
+      "Linha 1 (Arroz): valor de compra inválido.",
+    ]);
+  });
+
   it("clientes: a primeira coluna, pulando o título", () => {
     expect(lerClientes("Cliente\tTelefone\nBar do Zé\t5199\n\nMercado Bom").linhas).toEqual([
       { nome: "Bar do Zé" },

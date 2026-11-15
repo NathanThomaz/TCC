@@ -1486,6 +1486,50 @@ describe("módulos opcionais (ADR-006)", () => {
     expect(await custo()).toBe(100);
   });
 
+  it("valor de compra informado no cadastro: vira o custo, sobrevive ao cancelamento da única compra e entra no balanço", async () => {
+    await ativarModulos(["fornecedores"]);
+    const f = await fornecedor();
+    const prod = await produto({ custoCentavos: 300 });
+    await entrada(prod, 10);
+    const lerProduto = async () =>
+      ((await call("GET", p("/produtos"), ADMIN)).body.produtos ?? []).find((x) => x.id === prod)!;
+    expect((await lerProduto()).custoCentavos).toBe(300);
+
+    // Compra atualiza o custo; cancelada a única compra, volta o informado (não some).
+    const compra = (
+      await comprar({
+        fornecedor: f,
+        itens: [{ produto: prod, unidades: 10, custoUnitarioCentavos: 350 }],
+      })
+    ).body.compra!;
+    expect((await lerProduto()).custoCentavos).toBe(350);
+    await call("POST", p(`/compras/${compra.id}/cancelar`), ADMIN, { motivo: "Errada" });
+    expect((await lerProduto()).custoCentavos).toBe(300);
+
+    // Edição sem o campo mantém; com o campo, troca; null limpa.
+    const base = { nome: "Cerveja lata", varejoCentavos: 500, atacadoCentavos: 400 };
+    await call("PATCH", p(`/produtos/${prod}`), ADMIN, base);
+    expect((await lerProduto()).custoCentavos).toBe(300);
+    await call("PATCH", p(`/produtos/${prod}`), ADMIN, { ...base, custoCentavos: 250 });
+    expect((await lerProduto()).custoCentavos).toBe(250);
+
+    // Balanço: 10 un. a R$ 2,50 de custo e R$ 5,00 de venda; o produto sem custo fica de fora.
+    await produto({ nome: "Sem custo" });
+    const painel = (await call("GET", p("/painel"), ADMIN)).body as unknown as {
+      painel: { estoque: { custo: unknown } };
+    };
+    expect(painel.painel.estoque.custo).toEqual({
+      produtos: 1,
+      semCusto: 1,
+      valorCustoCentavos: 2500,
+      valorVendaCentavos: 5000,
+      lucroPrevistoCentavos: 2500,
+    });
+
+    await call("PATCH", p(`/produtos/${prod}`), ADMIN, { ...base, custoCentavos: null });
+    expect((await lerProduto()).custoCentavos).toBeNull();
+  });
+
   it("compras: filtro por período da compra (para chegar às além das 200 últimas)", async () => {
     await ativarModulos(["fornecedores"]);
     const f = await fornecedor();
