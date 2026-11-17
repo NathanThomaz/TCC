@@ -112,7 +112,7 @@ export function Produtos() {
   const regraValidade = regraDo(app.config, "validade_produto");
   const regraSaida = regraDo(app.config, "saida_manual");
   // Dia de hoje no fuso do Nexus, o mesmo do painel (não o do navegador).
-  const hoje = diaLocal(Date.now());
+  const [hoje] = useState(() => diaLocal(Date.now()));
 
   const status = useMutation({
     mutationFn: (p: ProdutoDto) =>
