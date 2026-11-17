@@ -152,7 +152,7 @@ export function Configurar() {
   // Trocar o modelo tira regras de módulos que saíram (com as sugestões delas) e, se entrar
   // vendas, traz o prazo de reserva como sugestão.
   const trocarModelo = (fn: (d: ConfigDraft) => ConfigDraft) => {
-    const r = comPadroes(reconciliarModelo(fn(draft)));
+    const r = comPadroes(reconciliarModelo(fn(draft), draft.modelo));
     const ficam = sugestoes.filter((s) => r.draft.regras.some((x) => x.tipo === s));
     set(() => r.draft);
     setSugestoes([...new Set([...ficam, ...r.sugestoes])]);

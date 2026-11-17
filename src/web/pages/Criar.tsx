@@ -170,7 +170,11 @@ export function Criar() {
         descricao="Responda uma pergunta de cada vez. O resumo ao lado mostra o seu sistema tomando forma; você confere tudo antes de criar."
         acoes={
           <Button asChild variant="outline">
-            <Link to="/sistemas/$id/configurar" params={{ id }}>
+            <Link
+              to="/sistemas/$id/configurar"
+              params={{ id }}
+              search={ehModelo(modeloEscolhido) ? { modelo: modeloEscolhido } : undefined}
+            >
               <SlidersHorizontal aria-hidden /> Configurar sozinho
             </Link>
           </Button>
@@ -191,7 +195,11 @@ export function Criar() {
             O assistente está indisponível agora. Você pode configurar o sistema sozinho.
           </span>
           <Button asChild variant="outline" size="sm">
-            <Link to="/sistemas/$id/configurar" params={{ id }}>
+            <Link
+              to="/sistemas/$id/configurar"
+              params={{ id }}
+              search={ehModelo(modeloEscolhido) ? { modelo: modeloEscolhido } : undefined}
+            >
               Configurar sozinho
             </Link>
           </Button>

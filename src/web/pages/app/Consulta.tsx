@@ -10,21 +10,25 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAlturaRestante } from "@/lib/alturaRestante";
 import { cn } from "@/lib/utils";
+import type { ModuleId } from "../../../shared/contract/catalog";
 import { useApp } from "./Aplicacao";
 
 // Assistente do negócio (seção 15): somente leitura, sobre todos os módulos do sistema (vendas,
 // estoque, clientes, agenda, compras, financeiro, regras e como usar). Os números vêm do sistema,
 // com os filtros e a origem de cada resposta; a conversa é só sua e só deste sistema.
 
-const SUGESTOES = [
-  "Como está o meu negócio?",
-  "Quanto vendi hoje?",
-  "Quais produtos mais venderam este mês?",
-  "Quem são os clientes que mais compram?",
-  "O que está acabando no estoque?",
-  "Tenho contas vencidas?",
-  "O que tem na agenda amanhã?",
-  "Como cadastro um produto?",
+// Cada sugestão aparece só se o sistema tem os módulos dela (ex.: Controle financeiro, ADR-015).
+const SUGESTOES: { texto: string; modulos: ModuleId[] }[] = [
+  { texto: "Como está o meu negócio?", modulos: [] },
+  { texto: "Quanto vendi hoje?", modulos: ["vendas"] },
+  { texto: "Quais produtos mais venderam este mês?", modulos: ["vendas", "produtos"] },
+  { texto: "Quem são os clientes que mais compram?", modulos: ["vendas", "clientes"] },
+  { texto: "O que está acabando no estoque?", modulos: ["estoque"] },
+  { texto: "Tenho contas vencidas?", modulos: ["financeiro"] },
+  { texto: "Quanto tenho a receber este mês?", modulos: ["financeiro"] },
+  { texto: "O que tem na agenda amanhã?", modulos: ["agenda"] },
+  { texto: "Como cadastro um produto?", modulos: ["produtos"] },
+  { texto: "Como cadastro um cliente?", modulos: ["clientes"] },
 ];
 
 export function Consulta() {
@@ -81,17 +85,19 @@ export function Consulta() {
         >
           {q.data.mensagens.length === 0 && (
             <li className="flex flex-wrap gap-2">
-              {SUGESTOES.map((s) => (
-                <Button
-                  key={s}
-                  size="sm"
-                  variant="outline"
-                  disabled={!q.data.iaDisponivel || m.isPending}
-                  onClick={() => enviar(s)}
-                >
-                  {s}
-                </Button>
-              ))}
+              {SUGESTOES.filter((s) => s.modulos.every((x) => app.config.modulos.includes(x))).map(
+                ({ texto }) => (
+                  <Button
+                    key={texto}
+                    size="sm"
+                    variant="outline"
+                    disabled={!q.data.iaDisponivel || m.isPending}
+                    onClick={() => enviar(texto)}
+                  >
+                    {texto}
+                  </Button>
+                ),
+              )}
             </li>
           )}
           {q.data.mensagens.map((msg) => {

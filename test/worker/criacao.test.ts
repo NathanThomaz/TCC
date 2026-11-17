@@ -400,6 +400,14 @@ describe("conversa e requisitos", () => {
       1,
     );
     expect(m.novos).toEqual([]);
+    // Símbolo com sentido muda o pedido: "< 10" e "> 10" não são o mesmo requisito.
+    const aviso = [{ ...vivos[0]!, texto: "Avisar quando estoque < 10 unidades" }];
+    const outro = mesclarRequisitos(
+      aviso,
+      [{ codigo: "REQ-01", texto: "Avisar quando estoque > 10 unidades", ...extra }],
+      1,
+    );
+    expect(outro.reescritos).toHaveLength(1);
   });
 });
 

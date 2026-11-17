@@ -158,8 +158,17 @@ describe("seis modelos (ADR-015)", () => {
   it("saindo da agenda simples, os nomes dela saem; os do dono ficam", () => {
     const d = rascunhoPadrao("Quadras", "agenda_simples");
     d.aparencia.rotulos_menu = { ...d.aparencia.rotulos_menu, clientes: "Alunos" };
-    const servicos = reconciliarModelo(comModelo(d, "servicos"));
+    const servicos = reconciliarModelo(comModelo(d, "servicos"), "agenda_simples");
     expect(servicos.aparencia.rotulos_menu).toEqual({ clientes: "Alunos" });
     expect(servicos.tipos_atendimento).toEqual([]);
+  });
+
+  it("entre outros modelos, nomes iguais aos da agenda simples são do dono e ficam", () => {
+    const d = comModelo(rascunhoPadrao("Salão"), "servicos");
+    d.aparencia.rotulos_menu = { profissionais: "Recursos" };
+    d.tipos_atendimento = [{ id: "reserva", rotulo: "Reserva", duracao_minutos: 120 }];
+    const r = reconciliarModelo(comModelo(d, "comercio_com_servicos"), "servicos");
+    expect(r.aparencia.rotulos_menu).toEqual({ profissionais: "Recursos" });
+    expect(r.tipos_atendimento).toHaveLength(1);
   });
 });

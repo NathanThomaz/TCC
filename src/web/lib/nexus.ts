@@ -160,21 +160,23 @@ export function comRequisitosGerados(d: ConfigDraft): ConfigDraft {
 }
 
 /** Ao trocar o modelo, tira as regras e os atendimentos de módulos que deixaram de existir. */
-export function reconciliarModelo(d: ConfigDraft): ConfigDraft {
+export function reconciliarModelo(d: ConfigDraft, anterior?: Modelo): ConfigDraft {
   // O modelo novo leva só os opcionais que ele aceita (ADR-006).
   const modulos = d.modulos.filter(
     (m) => MODULOS_POR_MODELO[d.modelo].includes(m) || OPCIONAIS_POR_MODELO[d.modelo].includes(m),
   );
   const agenda = modulos.includes("agenda");
-  return comPadraoDoModelo(
-    semPadraoDeOutroModelo({
-      ...d,
-      modulos,
-      regras: d.regras.filter((r) => RULE_MODULES[r.tipo].every((m) => modulos.includes(m))),
-      tipos_atendimento: agenda ? d.tipos_atendimento : [],
-      campos: d.campos.filter((c) => entidadesDosModulos(modulos).includes(c.entidade)),
-    }),
-  );
+  // Os nomes da agenda simples só saem quando se deixa a agenda simples: em outra troca, um nome
+  // igual ("Recursos") pode ser do próprio dono.
+  const saindoDaAgendaSimples = anterior === "agenda_simples" && d.modelo !== "agenda_simples";
+  const ajustado = {
+    ...d,
+    modulos,
+    regras: d.regras.filter((r) => RULE_MODULES[r.tipo].every((m) => modulos.includes(m))),
+    tipos_atendimento: agenda ? d.tipos_atendimento : [],
+    campos: d.campos.filter((c) => entidadesDosModulos(modulos).includes(c.entidade)),
+  };
+  return comPadraoDoModelo(saindoDaAgendaSimples ? semPadraoDaAgendaSimples(ajustado) : ajustado);
 }
 
 const PADRAO_AGENDA_SIMPLES = {
@@ -183,8 +185,7 @@ const PADRAO_AGENDA_SIMPLES = {
 } as const;
 
 /** Saindo da agenda simples, tira os nomes e a "Reserva" que vieram dela (não os do dono). */
-function semPadraoDeOutroModelo(d: ConfigDraft): ConfigDraft {
-  if (d.modelo === "agenda_simples") return d;
+function semPadraoDaAgendaSimples(d: ConfigDraft): ConfigDraft {
   const menu = Object.fromEntries(
     Object.entries(d.aparencia.rotulos_menu ?? {}).filter(
       ([k, v]) => PADRAO_AGENDA_SIMPLES.menu[k as keyof typeof PADRAO_AGENDA_SIMPLES.menu] !== v,
@@ -196,10 +197,12 @@ function semPadraoDeOutroModelo(d: ConfigDraft): ConfigDraft {
         PADRAO_AGENDA_SIMPLES.campos[k as keyof typeof PADRAO_AGENDA_SIMPLES.campos] !== v,
     ),
   );
+  // Só a reserva padrão (1 hora, sem mudança do dono) sai junto.
   const soReserva =
     d.tipos_atendimento.length === 1 &&
     d.tipos_atendimento[0]?.id === "reserva" &&
-    d.tipos_atendimento[0].rotulo === "Reserva";
+    d.tipos_atendimento[0].rotulo === "Reserva" &&
+    d.tipos_atendimento[0].duracao_minutos === 60;
   return {
     ...d,
     aparencia: { ...d.aparencia, rotulos_menu: menu, rotulos_campos: campos },
