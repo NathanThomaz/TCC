@@ -388,7 +388,8 @@ export function Painel() {
       </section>
 
       {p && (
-        <div className="grid gap-6 lg:grid-cols-2">
+        // Cartão sozinho na linha (ex.: Controle financeiro, só "Contas a vencer") ocupa a largura.
+        <div className="grid gap-6 lg:grid-cols-2 lg:[&>*:only-child]:col-span-2">
           {p.estoque && (
             <section
               aria-labelledby="titulo-criticos"

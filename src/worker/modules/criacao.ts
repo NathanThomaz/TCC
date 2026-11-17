@@ -293,7 +293,17 @@ async function maiorCodigo(ctx: RequestContext, systemId: string): Promise<numbe
 }
 
 const codigoDe = (n: number) => `REQ-${String(n).padStart(2, "0")}`;
-const normalizar = (texto: string) => texto.trim().replace(/\s+/g, " ").toLowerCase();
+// Sem acento, caixa, espaços repetidos nem pontuação no fim (ADR-015: "Pix e cartão." e "pix e
+// cartao" são o mesmo pedido). Símbolos com sentido ficam: "< 10" e "> 10" são pedidos diferentes.
+const normalizar = (texto: string) =>
+  texto
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/[.!;,]+$/, "")
+    .trim();
 
 /** Requisito novo ou reescrito, com o que o resumo mostra (assunto, título e se é sugestão). */
 export interface ItemMescla {

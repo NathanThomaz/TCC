@@ -91,10 +91,14 @@ export function TrilhaAssuntos({
   );
 }
 
+// Uma por modelo (ADR-015): a primeira resposta já aponta o caminho da entrevista.
 const PRIMEIRAS_SUGESTOES = [
   "Vendo produtos",
   "Atendo com hora marcada",
   "Vendo produtos e atendo com hora marcada",
+  "Só quero controlar contas a pagar e receber",
+  "Reservo horários de salas ou quadras",
+  "Cobro mensalidades de clientes",
 ];
 
 export function Conversa({

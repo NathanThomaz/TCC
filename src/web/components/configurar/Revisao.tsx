@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { TEMPLATE_LABELS } from "../../../shared/contract/catalog";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@/lib/rotas";
 import { CheckCircle2, Loader2, Power, ShieldCheck } from "lucide-react";
@@ -24,11 +25,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
-const MODELO = {
-  comercio: "Comércio",
-  servicos: "Serviços agendados",
-  comercio_com_servicos: "Comércio com serviços",
-};
+const MODELO = TEMPLATE_LABELS;
 
 export interface Resultado {
   versao: Versao | null;

@@ -1,6 +1,7 @@
 import type { Campo, ConfigDraft, Modelo, Modulo, Regra } from "@/types/nexus";
 import {
   OPTIONAL_MODULES,
+  TEMPLATE_MODULES,
   PAYMENT_LABELS,
   ROTULOS_CAMPOS,
   type RotuloCampo,
@@ -8,11 +9,7 @@ import {
   type PaymentMethod,
 } from "../../shared/contract/catalog";
 
-export const MODULOS_POR_MODELO: Record<Modelo, Modulo[]> = {
-  comercio: ["clientes", "produtos", "vendas", "estoque"],
-  servicos: ["clientes", "profissionais", "agenda"],
-  comercio_com_servicos: ["clientes", "produtos", "vendas", "estoque", "profissionais", "agenda"],
-};
+export const MODULOS_POR_MODELO: Record<Modelo, readonly Modulo[]> = TEMPLATE_MODULES;
 
 export const ROTULO_MODULO: Record<Modulo, string> = {
   clientes: "Clientes",
@@ -163,18 +160,53 @@ export function comRequisitosGerados(d: ConfigDraft): ConfigDraft {
 }
 
 /** Ao trocar o modelo, tira as regras e os atendimentos de módulos que deixaram de existir. */
-export function reconciliarModelo(d: ConfigDraft): ConfigDraft {
+export function reconciliarModelo(d: ConfigDraft, anterior?: Modelo): ConfigDraft {
   // O modelo novo leva só os opcionais que ele aceita (ADR-006).
   const modulos = d.modulos.filter(
     (m) => MODULOS_POR_MODELO[d.modelo].includes(m) || OPCIONAIS_POR_MODELO[d.modelo].includes(m),
   );
   const agenda = modulos.includes("agenda");
-  return {
+  // Os nomes da agenda simples só saem quando se deixa a agenda simples: em outra troca, um nome
+  // igual ("Recursos") pode ser do próprio dono.
+  const saindoDaAgendaSimples = anterior === "agenda_simples" && d.modelo !== "agenda_simples";
+  const ajustado = {
     ...d,
     modulos,
     regras: d.regras.filter((r) => RULE_MODULES[r.tipo].every((m) => modulos.includes(m))),
     tipos_atendimento: agenda ? d.tipos_atendimento : [],
     campos: d.campos.filter((c) => entidadesDosModulos(modulos).includes(c.entidade)),
+  };
+  return comPadraoDoModelo(saindoDaAgendaSimples ? semPadraoDaAgendaSimples(ajustado) : ajustado);
+}
+
+const PADRAO_AGENDA_SIMPLES = {
+  menu: { profissionais: "Recursos", clientes: "Responsáveis", agenda: "Reservas" },
+  campos: { "profissionais.nome": "Recurso" },
+} as const;
+
+/** Saindo da agenda simples, tira os nomes e a "Reserva" que vieram dela (não os do dono). */
+function semPadraoDaAgendaSimples(d: ConfigDraft): ConfigDraft {
+  const menu = Object.fromEntries(
+    Object.entries(d.aparencia.rotulos_menu ?? {}).filter(
+      ([k, v]) => PADRAO_AGENDA_SIMPLES.menu[k as keyof typeof PADRAO_AGENDA_SIMPLES.menu] !== v,
+    ),
+  );
+  const campos = Object.fromEntries(
+    Object.entries(d.aparencia.rotulos_campos ?? {}).filter(
+      ([k, v]) =>
+        PADRAO_AGENDA_SIMPLES.campos[k as keyof typeof PADRAO_AGENDA_SIMPLES.campos] !== v,
+    ),
+  );
+  // Só a reserva padrão (1 hora, sem mudança do dono) sai junto.
+  const soReserva =
+    d.tipos_atendimento.length === 1 &&
+    d.tipos_atendimento[0]?.id === "reserva" &&
+    d.tipos_atendimento[0].rotulo === "Reserva" &&
+    d.tipos_atendimento[0].duracao_minutos === 60;
+  return {
+    ...d,
+    aparencia: { ...d.aparencia, rotulos_menu: menu, rotulos_campos: campos },
+    tipos_atendimento: soReserva ? [] : d.tipos_atendimento,
   };
 }
 
@@ -185,10 +217,29 @@ export function validarNomeSistema(nome: string): string | null {
   return null;
 }
 
-export function rascunhoPadrao(nome: string): ConfigDraft {
+/**
+ * O que um modelo traz pronto além dos módulos (ADR-015). Agenda simples reserva horários de um
+ * recurso: as telas falam de recursos, responsáveis e reservas, com um tipo "Reserva" de 1 hora.
+ */
+export function comPadraoDoModelo(d: ConfigDraft): ConfigDraft {
+  if (d.modelo !== "agenda_simples") return d;
   return {
-    modelo: "comercio",
-    modulos: [...MODULOS_POR_MODELO.comercio],
+    ...d,
+    aparencia: {
+      ...d.aparencia,
+      rotulos_menu: { ...PADRAO_AGENDA_SIMPLES.menu, ...d.aparencia.rotulos_menu },
+      rotulos_campos: { ...PADRAO_AGENDA_SIMPLES.campos, ...d.aparencia.rotulos_campos },
+    },
+    tipos_atendimento: d.tipos_atendimento.length
+      ? d.tipos_atendimento
+      : [{ id: "reserva", rotulo: "Reserva", duracao_minutos: 60 }],
+  };
+}
+
+export function rascunhoPadrao(nome: string, modelo: Modelo = "comercio"): ConfigDraft {
+  return comPadraoDoModelo({
+    modelo,
+    modulos: [...MODULOS_POR_MODELO[modelo]],
     aparencia: {
       nome,
       titulo: nome,
@@ -202,7 +253,7 @@ export function rascunhoPadrao(nome: string): ConfigDraft {
     tipos_atendimento: [],
     regras: [],
     fora_do_catalogo: [],
-  };
+  });
 }
 
 export function novoId(prefixo: string) {

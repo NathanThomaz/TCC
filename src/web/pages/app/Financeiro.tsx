@@ -335,12 +335,15 @@ function NovaContaDialog({
 }) {
   const app = useApp();
   const temFornecedores = app.config.modulos.includes("fornecedores");
+  // Sem o cadastro (ex.: Controle financeiro, ADR-015), a conta fica sem cliente ou fornecedor.
+  const temClientes = app.config.modulos.includes("clientes");
   const r = rascunho?.dados;
   const [tipo, setTipo] = useState<TipoLancamento>(r?.tipo ?? "pagar");
   const [descricao, setDescricao] = useState(r?.descricao ?? "");
   const [valor, setValor] = useState(r?.valor ?? "");
   const [vencimento, setVencimento] = useState(r?.vencimento ?? "");
   const [contraparte, setContraparte] = useState(r?.contraparte ?? NENHUM);
+  const temContraparte = tipo === "receber" ? temClientes : temFornecedores;
   const chave = useChavePorConteudo();
   const guardado = useRascunho<DadosConta>({
     sistema: app.id,
@@ -355,7 +358,7 @@ function NovaContaDialog({
   const pessoas = useQuery({
     queryKey: ["app", app.id, tipo === "receber" ? "clientes" : "fornecedores"],
     queryFn: () => listarPessoas(app.id, tipo === "receber" ? "clientes" : "fornecedores"),
-    enabled: tipo === "receber" || temFornecedores,
+    enabled: temContraparte,
   });
 
   const m = useMutation({
@@ -452,7 +455,7 @@ function NovaContaDialog({
                 onChange={(e) => setVencimento(e.target.value)}
               />
             </div>
-            {(tipo === "receber" || temFornecedores) && (
+            {temContraparte && (
               <div className="space-y-1.5">
                 <Label htmlFor="conta-contraparte">
                   {tipo === "receber" ? "Cliente (opcional)" : "Fornecedor (opcional)"}

@@ -1,3 +1,4 @@
+import { ehModelo } from "@/lib/modelos";
 import { Link, useNavigate, useBusca } from "@/lib/rotas";
 import { useParams } from "react-router";
 import { useEffect, useRef, useState } from "react";
@@ -53,7 +54,10 @@ function comPadroes(d: ConfigDraft): { draft: ConfigDraft; sugestoes: Sugerivel[
 
 export function Configurar() {
   const { id = "" } = useParams();
-  const passo = Math.min(PASSOS.length, Math.max(1, Number(useBusca().passo ?? 1) || 1));
+  const busca = useBusca();
+  const passo = Math.min(PASSOS.length, Math.max(1, Number(busca.passo ?? 1) || 1));
+  // Modelo escolhido na tela inicial (ADR-015): vale só para o rascunho que ainda não existe.
+  const modeloEscolhido = ehModelo(busca.modelo) ? busca.modelo : undefined;
   const navigate = useNavigate();
   const q = useQuery({ queryKey: ["sistema", id], queryFn: () => obterSistema(id) });
   const [draft, setDraft] = useState<ConfigDraft | null>(null);
@@ -84,7 +88,9 @@ export function Configurar() {
       setDraft(salvo);
       setSugestoesEstado(ler<Sugerida[]>(chaveSugestoes) ?? []);
     } else {
-      const inicial = comPadroes(q.data.ultimaConfig ?? rascunhoPadrao(q.data.sistema.nome));
+      const inicial = comPadroes(
+        q.data.ultimaConfig ?? rascunhoPadrao(q.data.sistema.nome, modeloEscolhido),
+      );
       setDraft(inicial.draft);
       setSugestoesEstado(inicial.sugestoes);
       // Grava rascunho e sugestões juntos: recarregar depois de mexer em outro ajuste não pode
@@ -146,7 +152,7 @@ export function Configurar() {
   // Trocar o modelo tira regras de módulos que saíram (com as sugestões delas) e, se entrar
   // vendas, traz o prazo de reserva como sugestão.
   const trocarModelo = (fn: (d: ConfigDraft) => ConfigDraft) => {
-    const r = comPadroes(reconciliarModelo(fn(draft)));
+    const r = comPadroes(reconciliarModelo(fn(draft), draft.modelo));
     const ficam = sugestoes.filter((s) => r.draft.regras.some((x) => x.tipo === s));
     set(() => r.draft);
     setSugestoes([...new Set([...ficam, ...r.sugestoes])]);

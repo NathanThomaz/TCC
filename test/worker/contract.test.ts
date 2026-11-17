@@ -75,6 +75,30 @@ describe("validateDraft — caso válido", () => {
     expect(validateDraft(draft).ok).toBe(true);
   });
 
+  it("aceita os três modelos novos só com os módulos deles (ADR-015)", () => {
+    const base = (modelo: ConfigDraft["modelo"], modulos: ConfigDraft["modulos"]) => ({
+      ...distribuidora(),
+      modelo,
+      modulos,
+      campos: [],
+      tipos_atendimento: modulos.includes("agenda")
+        ? [{ id: "reserva", rotulo: "Reserva", duracao_minutos: 60 }]
+        : [],
+      regras: [],
+    });
+    expect(validateDraft(base("controle_financeiro", ["financeiro"])).issues).toEqual([]);
+    expect(validateDraft(base("clientes_cobrancas", ["clientes", "financeiro"])).issues).toEqual(
+      [],
+    );
+    expect(
+      validateDraft(base("agenda_simples", ["clientes", "profissionais", "agenda"])).issues,
+    ).toEqual([]);
+    // Controle financeiro não leva vendas, nem como opcional.
+    expect(codes(base("controle_financeiro", ["financeiro", "pagamentos"]))).toContain(
+      "modulos_incompativeis_com_modelo",
+    );
+  });
+
   it("registra pedido fora do catálogo como aviso, sem bloquear (seção 5)", () => {
     const draft = distribuidora();
     draft.fora_do_catalogo = [{ texto: "Emitir nota fiscal", requisito: "REQ-01" }];

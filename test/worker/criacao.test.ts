@@ -382,6 +382,33 @@ describe("conversa e requisitos", () => {
     ]);
     expect(m.novos).toEqual([{ codigo: "REQ-06", texto: "Novo", ...extra }]);
   });
+
+  it("não repete requisito que só muda acento, caixa ou pontuação (ADR-015)", () => {
+    const extra = { assunto: "negocio" as const, titulo: "Pagamento", sugestao: false };
+    const vivos = [
+      {
+        codigo: "REQ-01",
+        texto: "Aceita Pix e cartão",
+        status: "confirmado" as const,
+        origem: "ia" as const,
+        ...extra,
+      },
+    ];
+    const m = mesclarRequisitos(
+      vivos,
+      [{ codigo: null, texto: "aceita pix e cartao.", ...extra }],
+      1,
+    );
+    expect(m.novos).toEqual([]);
+    // Símbolo com sentido muda o pedido: "< 10" e "> 10" não são o mesmo requisito.
+    const aviso = [{ ...vivos[0]!, texto: "Avisar quando estoque < 10 unidades" }];
+    const outro = mesclarRequisitos(
+      aviso,
+      [{ codigo: "REQ-01", texto: "Avisar quando estoque > 10 unidades", ...extra }],
+      1,
+    );
+    expect(outro.reescritos).toHaveLength(1);
+  });
 });
 
 describe("geração, correção e ativação", () => {

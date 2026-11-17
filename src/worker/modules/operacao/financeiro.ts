@@ -182,6 +182,10 @@ export const criarLancamento: Handler = async (ctx) => {
   if (body.fornecedor && body.tipo !== "pagar") {
     throw validationFailed("Fornecedor só entra em conta a pagar.");
   }
+  // Controle financeiro (ADR-015) não tem clientes: a conta a receber fica sem contraparte.
+  if (body.cliente && !op.config.modulos.includes("clientes")) {
+    throw validationFailed("Este sistema não tem o cadastro de clientes.");
+  }
   if (body.fornecedor && !op.config.modulos.includes("fornecedores")) {
     throw validationFailed("Este sistema não tem o módulo de fornecedores.");
   }
