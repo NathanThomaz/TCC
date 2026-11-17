@@ -237,6 +237,24 @@ export interface LancamentoDto {
   /** Nome da contraparte (cliente ou fornecedor), quando houver. */
   contraparte: string | null;
   criadoEm: number;
+  /** Categoria (regra categorias_financeiras); null nas contas sem ela e nas automáticas. */
+  categoria: string | null;
+  /** Valor efetivamente pago ou recebido na baixa (com multa e juros, se houve atraso). */
+  valorPagoCentavos: number | null;
+  /** Conta a receber vencida com a regra de multa e juros: quanto cobrar se for paga hoje. */
+  encargosHoje: {
+    totalCentavos: number;
+    multaCentavos: number;
+    jurosCentavos: number;
+    dias: number;
+  } | null;
+}
+
+/** Uso do orçamento do mês numa categoria de despesa (regra orcamento_mensal). */
+export interface OrcamentoCategoriaDto {
+  categoria: string;
+  limiteCentavos: number;
+  gastoCentavos: number;
 }
 
 export type StatusAtendimento = "scheduled" | "in_progress" | "done" | "cancelled";
@@ -298,6 +316,10 @@ export interface OperacaoApiBody {
   lancamento?: LancamentoDto;
   /** Totais de todas as contas pendentes, independentes do filtro e do limite da lista. */
   resumoFinanceiro?: ResumoFinanceiroDto;
+  /** Regra categorias_financeiras: total do mês por tipo e categoria. */
+  porCategoria?: { tipo: TipoLancamento; categoria: string; totalCentavos: number }[];
+  /** Regra orcamento_mensal: uso do mês por categoria de despesa. */
+  orcamento?: OrcamentoCategoriaDto[];
   error?: ApiErrorBody["error"];
 }
 
@@ -412,6 +434,10 @@ export interface PainelDto {
       valorCentavos: number;
       vencimento: string;
     }[];
+    /** Regra aviso_vencimento: pendentes que vencem de hoje até daqui a `dias`. */
+    vencendoEmBreve?: { dias: number; quantidade: number; totalCentavos: number };
+    /** Regra orcamento_mensal: uso do mês por categoria de despesa. */
+    orcamento?: OrcamentoCategoriaDto[];
   };
   agenda?: {
     hoje: { agendados: number; emAtendimento: number; concluidos: number };

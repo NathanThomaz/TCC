@@ -38,12 +38,15 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { reaisParaCentavos } from "@/lib/nexus";
 import { Link } from "@/lib/rotas";
+import { OrcamentoDoMes } from "@/components/app/Orcamento";
 import { cn } from "@/lib/utils";
+import { regraDo } from "../../../shared/dominio/regras";
 import { useApp } from "./Aplicacao";
 
 // Financeiro (ADR-006): contas a receber e a pagar, com vencimento, baixa e cancelamento. Venda a
 // prazo e compra geram a conta sozinhas e só são canceladas pela origem; as manuais, aqui.
 
+const TODAS = "__todas__";
 const NENHUM = "__nenhum";
 type Situacao = NonNullable<FiltroFinanceiro["status"]> | "todas";
 
@@ -89,11 +92,15 @@ export function Financeiro() {
   const [situacao, setSituacao] = useState<Situacao>("pendente");
   const [de, setDe] = useState("");
   const [ate, setAte] = useState("");
+  // Regras do financeiro (ADR-015): categorias (filtro, coluna e totais) e orçamento do mês.
+  const categorias = regraDo(app.config, "categorias_financeiras");
+  const [categoria, setCategoria] = useState(TODAS);
   const filtro: FiltroFinanceiro = {
     ...(tipo !== "todos" ? { tipo } : {}),
     ...(situacao !== "todas" ? { status: situacao } : {}),
     ...(de ? { de } : {}),
     ...(ate ? { ate } : {}),
+    ...(categorias && categoria !== TODAS ? { categoria } : {}),
   };
   const q = useQuery({
     queryKey: ["app", app.id, "financeiro", filtro],
@@ -159,6 +166,49 @@ export function Financeiro() {
           detalhe="A receber menos a pagar (pendentes)"
         />
       </div>
+      {(q.data?.porCategoria?.length || q.data?.orcamento?.length) && (
+        <div className="mb-6 grid gap-6 lg:grid-cols-2 lg:[&>*:only-child]:col-span-2">
+          {q.data.porCategoria && q.data.porCategoria.length > 0 && (
+            <section
+              aria-labelledby="titulo-por-categoria"
+              className="rounded-xl border bg-card p-5 shadow-card"
+            >
+              <h2 id="titulo-por-categoria" className="mb-3 font-semibold">
+                Por categoria neste mês
+              </h2>
+              <ul className="divide-y text-sm">
+                {q.data.porCategoria.map((c) => (
+                  <li
+                    key={`${c.tipo}-${c.categoria}`}
+                    className="flex justify-between gap-3 py-1.5"
+                  >
+                    <span>{c.categoria}</span>
+                    <span
+                      className={cn(
+                        "tabular-nums",
+                        c.tipo === "receber" ? "text-success" : "text-destructive",
+                      )}
+                    >
+                      {c.tipo === "pagar" ? "−" : "+"} {formatarCentavos(c.totalCentavos)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+          {q.data.orcamento && q.data.orcamento.length > 0 && (
+            <section
+              aria-labelledby="titulo-orcamento"
+              className="rounded-xl border bg-card p-5 shadow-card"
+            >
+              <h2 id="titulo-orcamento" className="mb-3 font-semibold">
+                Orçamento do mês
+              </h2>
+              <OrcamentoDoMes itens={q.data.orcamento} />
+            </section>
+          )}
+        </div>
+      )}
       <div className="mb-4 flex flex-wrap gap-3">
         <div className="w-44 space-y-1.5">
           <Label htmlFor="fin-tipo">Tipo</Label>
@@ -188,6 +238,24 @@ export function Financeiro() {
             </SelectContent>
           </Select>
         </div>
+        {categorias && (
+          <div className="w-48 space-y-1.5">
+            <Label htmlFor="fin-categoria">Categoria</Label>
+            <Select value={categoria} onValueChange={setCategoria}>
+              <SelectTrigger id="fin-categoria">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={TODAS}>Todas</SelectItem>
+                {[...new Set([...categorias.despesas, ...categorias.receitas])].map((c) => (
+                  <SelectItem key={c} value={c}>
+                    {c}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
         <div className="w-44 space-y-1.5">
           <Label htmlFor="fin-de">Vencimento de</Label>
           <Input id="fin-de" type="date" value={de} onChange={(e) => setDe(e.target.value)} />
@@ -213,6 +281,7 @@ export function Financeiro() {
             "Vencimento",
             "Descrição",
             "Cliente / fornecedor",
+            ...(categorias ? ["Categoria"] : []),
             "Tipo",
             "Valor",
             "Situação",
@@ -238,6 +307,9 @@ export function Financeiro() {
                 )}
               </td>
               <td className="px-4 py-2 text-muted-foreground">{l.contraparte ?? "—"}</td>
+              {categorias && (
+                <td className="px-4 py-2 text-muted-foreground">{l.categoria ?? "—"}</td>
+              )}
               <td className="px-4 py-2 whitespace-nowrap">
                 {l.tipo === "receber" ? "A receber" : "A pagar"}
               </td>
@@ -248,6 +320,17 @@ export function Financeiro() {
                 )}
               >
                 {l.tipo === "pagar" ? "−" : "+"} {formatarCentavos(l.valorCentavos)}
+                {l.encargosHoje && (
+                  <span className="block text-xs font-normal text-warning">
+                    Hoje: {formatarCentavos(l.encargosHoje.totalCentavos)} com multa e juros (
+                    {l.encargosHoje.dias} {l.encargosHoje.dias === 1 ? "dia" : "dias"})
+                  </span>
+                )}
+                {l.valorPagoCentavos !== null && l.valorPagoCentavos !== l.valorCentavos && (
+                  <span className="block text-xs font-normal">
+                    Recebido: {formatarCentavos(l.valorPagoCentavos)}
+                  </span>
+                )}
               </td>
               <td className="px-4 py-2">
                 <SituacaoConta lancamento={l} />
@@ -256,7 +339,11 @@ export function Financeiro() {
                 {l.status === "pendente" && (
                   <div className="flex justify-end gap-2">
                     <Button size="sm" disabled={baixar.isPending} onClick={() => baixar.mutate(l)}>
-                      {l.tipo === "receber" ? "Receber" : "Pagar"}
+                      {l.tipo === "receber"
+                        ? l.encargosHoje
+                          ? `Receber ${formatarCentavos(l.encargosHoje.totalCentavos)}`
+                          : "Receber"
+                        : "Pagar"}
                     </Button>
                     {!l.venda && !l.compra && (
                       <Button size="sm" variant="outline" onClick={() => setCancelando(l)}>
@@ -322,6 +409,7 @@ interface DadosConta {
   valor: string;
   vencimento: string;
   contraparte: string;
+  categoria?: string;
 }
 
 function NovaContaDialog({
@@ -344,14 +432,23 @@ function NovaContaDialog({
   const [vencimento, setVencimento] = useState(r?.vencimento ?? "");
   const [contraparte, setContraparte] = useState(r?.contraparte ?? NENHUM);
   const temContraparte = tipo === "receber" ? temClientes : temFornecedores;
+  // Com a regra de categorias, toda conta escolhe uma do seu tipo (ADR-015).
+  const regraCategorias = regraDo(app.config, "categorias_financeiras");
+  const opcoesCategoria = regraCategorias
+    ? tipo === "pagar"
+      ? regraCategorias.despesas
+      : regraCategorias.receitas
+    : [];
+  const [categoria, setCategoria] = useState(r?.categoria ?? "");
   const chave = useChavePorConteudo();
   const guardado = useRascunho<DadosConta>({
     sistema: app.id,
     tipo: "conta",
     ativo: true,
     inicial: rascunho,
-    dados: { tipo, descricao, valor, vencimento, contraparte },
-    vazio: !descricao.trim() && !valor.trim() && !vencimento && contraparte === NENHUM,
+    dados: { tipo, descricao, valor, vencimento, contraparte, categoria },
+    vazio:
+      !descricao.trim() && !valor.trim() && !vencimento && contraparte === NENHUM && !categoria,
     titulo: descricao.trim() || "Conta sem descrição",
     resumo: `${tipo === "pagar" ? "A pagar" : "A receber"}${valor.trim() ? ` · R$ ${valor.trim()}` : ""}`,
   });
@@ -366,7 +463,11 @@ function NovaContaDialog({
       const centavos = reaisParaCentavos(valor);
       if (centavos === null || centavos <= 0) throw new Error("Informe o valor.");
       if (!vencimento) throw new Error("Informe o vencimento.");
+      if (regraCategorias && !opcoesCategoria.includes(categoria)) {
+        throw new Error("Escolha a categoria.");
+      }
       const dados: NovoLancamento = {
+        ...(regraCategorias ? { categoria } : {}),
         tipo,
         descricao: descricao.trim(),
         valorCentavos: centavos,
@@ -411,6 +512,7 @@ function NovaContaDialog({
                 onValueChange={(v) => {
                   setTipo(v as TipoLancamento);
                   setContraparte(NENHUM);
+                  setCategoria("");
                 }}
               >
                 <SelectTrigger id="conta-tipo">
@@ -433,6 +535,23 @@ function NovaContaDialog({
               />
             </div>
           </div>
+          {regraCategorias && (
+            <div className="space-y-1.5">
+              <Label htmlFor="conta-categoria">Categoria</Label>
+              <Select value={categoria} onValueChange={setCategoria}>
+                <SelectTrigger id="conta-categoria">
+                  <SelectValue placeholder="Escolha a categoria" />
+                </SelectTrigger>
+                <SelectContent>
+                  {opcoesCategoria.map((c) => (
+                    <SelectItem key={c} value={c}>
+                      {c}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <div className="space-y-1.5">
             <Label htmlFor="conta-descricao">Descrição</Label>
             <Input

@@ -1,6 +1,15 @@
 import { z } from "zod";
-import type { LancamentoDto, StatusLancamento, TipoLancamento } from "../../../shared/api";
+import type {
+  LancamentoDto,
+  OrcamentoCategoriaDto,
+  StatusLancamento,
+  TipoLancamento,
+} from "../../../shared/api";
+import { normalizarRotulo } from "../../../shared/contract/catalog";
+import type { ConfigDraft } from "../../../shared/contract/schema";
 import { paraCampoLocal } from "../../../shared/dominio/agenda";
+import { valorComEncargos } from "../../../shared/dominio/financeiro";
+import { regraDo } from "../../../shared/dominio/regras";
 import { readJson } from "../../http/body";
 import { AppError, conflict, notFound, validationFailed } from "../../http/errors";
 import { beginIdempotent, recordStatement, replayAfterRace } from "../../http/idempotency";
@@ -34,6 +43,7 @@ const LancamentoBody = z.object({
   vencimento: dataLocal,
   cliente: z.string().min(1).max(100).optional(),
   fornecedor: z.string().min(1).max(100).optional(),
+  categoria: z.string().trim().min(2).max(40).optional(),
 });
 const CancelarBody = z.object({ motivo: z.string().trim().min(3).max(300) });
 
@@ -57,6 +67,8 @@ interface LancamentoRow {
   supplier_id: string | null;
   counterpart: string | null;
   created_at: number;
+  category: string | null;
+  paid_amount_cents: number | null;
 }
 
 const SELECT_LANCAMENTO = `
@@ -67,7 +79,10 @@ const SELECT_LANCAMENTO = `
 /** Hoje no fuso do Nexus (AAAA-MM-DD): vencido é pendente com vencimento antes disso. */
 export const hojeLocal = (agora: number) => paraCampoLocal(agora).slice(0, 10);
 
-function publicLancamento(row: LancamentoRow, hoje: string): LancamentoDto {
+function publicLancamento(row: LancamentoRow, hoje: string, config?: ConfigDraft): LancamentoDto {
+  const multa = config ? (regraDo(config, "multa_juros_atraso") ?? null) : null;
+  const vencidaAReceber =
+    row.status === "pendente" && row.kind === "receber" && row.due_date < hoje;
   return {
     id: row.id,
     tipo: row.kind,
@@ -85,7 +100,68 @@ function publicLancamento(row: LancamentoRow, hoje: string): LancamentoDto {
     fornecedor: row.supplier_id,
     contraparte: row.counterpart,
     criadoEm: row.created_at,
+    categoria: row.category,
+    valorPagoCentavos: row.status === "pago" ? (row.paid_amount_cents ?? row.amount_cents) : null,
+    encargosHoje:
+      multa && vencidaAReceber
+        ? valorComEncargos(row.amount_cents, row.due_date, hoje, multa)
+        : null,
   };
+}
+
+/** Categoria aceita para o tipo da conta (sem acento e caixa), no nome cadastrado na regra. */
+function categoriaDaRegra(
+  config: ConfigDraft,
+  tipo: TipoLancamento,
+  informada: string | undefined,
+) {
+  const regra = regraDo(config, "categorias_financeiras");
+  if (!regra) {
+    if (informada) throw validationFailed("Este sistema não usa categorias nas contas.");
+    return null;
+  }
+  const lista = tipo === "pagar" ? regra.despesas : regra.receitas;
+  if (!informada) {
+    throw validationFailed(`Escolha a categoria (${tipo === "pagar" ? "despesa" : "receita"}).`);
+  }
+  const achada = lista.find((c) => normalizarRotulo(c) === normalizarRotulo(informada));
+  if (!achada) {
+    throw validationFailed(
+      `A categoria "${informada}" não está entre as ${tipo === "pagar" ? "despesas" : "receitas"}.`,
+    );
+  }
+  return achada;
+}
+
+/**
+ * Uso do orçamento do mês (regra orcamento_mensal): contas a pagar não canceladas com vencimento
+ * no mês, por categoria; paga conta pelo valor pago.
+ */
+export async function orcamentoDoMes(
+  db: D1Database,
+  systemId: string,
+  config: ConfigDraft,
+  hoje: string,
+): Promise<OrcamentoCategoriaDto[] | undefined> {
+  const regra = regraDo(config, "orcamento_mensal");
+  if (!regra) return undefined;
+  const mes = hoje.slice(0, 7);
+  const { results } = await db
+    .prepare(
+      `SELECT category, COALESCE(SUM(COALESCE(paid_amount_cents, amount_cents)), 0) AS total
+       FROM financial_entries
+       WHERE system_id = ? AND kind = 'pagar' AND status <> 'cancelado' AND category IS NOT NULL
+         AND substr(due_date, 1, 7) = ?
+       GROUP BY category`,
+    )
+    .bind(systemId, mes)
+    .all<{ category: string; total: number }>();
+  const gasto = new Map(results.map((r) => [normalizarRotulo(r.category), r.total]));
+  return regra.limites.map((l) => ({
+    categoria: l.categoria,
+    limiteCentavos: l.valor_centavos,
+    gastoCentavos: gasto.get(normalizarRotulo(l.categoria)) ?? 0,
+  }));
 }
 
 /**
@@ -129,16 +205,33 @@ export const listarLancamentos: Handler = async (ctx) => {
   const status = opcao(situacao, STATUS);
   const de = dataLocal.safeParse(q.get("de")).data ?? null;
   const ate = dataLocal.safeParse(q.get("ate")).data ?? null;
+  const categoria = q.get("categoria")?.trim() || null;
   const hoje = hojeLocal(ctx.clock.now());
   const { results } = await ctx.env.DB.prepare(
     `${SELECT_LANCAMENTO}
      WHERE f.system_id = ?1 AND (?2 IS NULL OR f.kind = ?2) AND (?3 IS NULL OR f.status = ?3)
        AND (?4 = 0 OR (f.status = 'pendente' AND f.due_date < ?5))
        AND (?6 IS NULL OR f.due_date >= ?6) AND (?7 IS NULL OR f.due_date <= ?7)
+       AND (?8 IS NULL OR f.category = ?8)
      ORDER BY f.due_date, f.created_at LIMIT ${LIMITE_LISTA}`,
   )
-    .bind(op.systemId, tipo, status, situacao === "vencido" ? 1 : 0, hoje, de, ate)
+    .bind(op.systemId, tipo, status, situacao === "vencido" ? 1 : 0, hoje, de, ate, categoria)
     .all<LancamentoRow>();
+  // Por categoria no mês (regra categorias_financeiras): quanto foi para cada uma.
+  const porCategoria = regraDo(op.config, "categorias_financeiras")
+    ? (
+        await ctx.env.DB.prepare(
+          `SELECT kind, category, COALESCE(SUM(COALESCE(paid_amount_cents, amount_cents)), 0) AS total
+           FROM financial_entries
+           WHERE system_id = ? AND status <> 'cancelado' AND category IS NOT NULL
+             AND substr(due_date, 1, 7) = ?
+           GROUP BY kind, category ORDER BY total DESC`,
+        )
+          .bind(op.systemId, hoje.slice(0, 7))
+          .all<{ kind: TipoLancamento; category: string; total: number }>()
+      ).results.map((r) => ({ tipo: r.kind, categoria: r.category, totalCentavos: r.total }))
+    : undefined;
+  const orcamento = await orcamentoDoMes(ctx.env.DB, op.systemId, op.config, hoje);
   // Resumo sobre todas as pendentes (a lista tem limite de 500 linhas).
   const r = await ctx.env.DB.prepare(
     `SELECT
@@ -155,7 +248,9 @@ export const listarLancamentos: Handler = async (ctx) => {
     .first<Record<string, number | null>>();
   const n = (k: string) => r?.[k] ?? 0;
   return json({
-    lancamentos: results.map((row) => publicLancamento(row, hoje)),
+    lancamentos: results.map((row) => publicLancamento(row, hoje, op.config)),
+    ...(porCategoria ? { porCategoria } : {}),
+    ...(orcamento ? { orcamento } : {}),
     resumoFinanceiro: {
       aReceber: { quantidade: n("rn"), totalCentavos: n("rt") },
       aPagar: { quantidade: n("pn"), totalCentavos: n("pt") },
@@ -174,7 +269,10 @@ export const criarLancamento: Handler = async (ctx) => {
   const hoje = hojeLocal(ctx.clock.now());
   if (started.kind === "replay") {
     const row = await carregarLancamento(ctx, op.systemId, started.resourceId);
-    return json({ lancamento: publicLancamento(row, hoje) }, { status: started.statusCode });
+    return json(
+      { lancamento: publicLancamento(row, hoje, op.config) },
+      { status: started.statusCode },
+    );
   }
   if (body.cliente && body.tipo !== "receber") {
     throw validationFailed("Cliente só entra em conta a receber.");
@@ -189,6 +287,7 @@ export const criarLancamento: Handler = async (ctx) => {
   if (body.fornecedor && !op.config.modulos.includes("fornecedores")) {
     throw validationFailed("Este sistema não tem o módulo de fornecedores.");
   }
+  const categoria = categoriaDaRegra(op.config, body.tipo, body.categoria);
   const db = ctx.env.DB;
   const contraparte = body.cliente
     ? await db
@@ -209,8 +308,8 @@ export const criarLancamento: Handler = async (ctx) => {
       db
         .prepare(
           `INSERT INTO financial_entries (id, system_id, kind, description, amount_cents, due_date,
-             customer_id, supplier_id, created_by, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             customer_id, supplier_id, category, created_by, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .bind(
           id,
@@ -221,6 +320,7 @@ export const criarLancamento: Handler = async (ctx) => {
           body.vencimento,
           body.cliente ?? null,
           body.fornecedor ?? null,
+          categoria,
           op.user.id,
           now,
           now,
@@ -236,10 +336,13 @@ export const criarLancamento: Handler = async (ctx) => {
     const replay = isUnique(error) ? await replayAfterRace(ctx, cmd, started) : null;
     if (replay?.kind !== "replay") throw error;
     const row = await carregarLancamento(ctx, op.systemId, replay.resourceId);
-    return json({ lancamento: publicLancamento(row, hoje) }, { status: replay.statusCode });
+    return json(
+      { lancamento: publicLancamento(row, hoje, op.config) },
+      { status: replay.statusCode },
+    );
   }
   const row = await carregarLancamento(ctx, op.systemId, id);
-  return json({ lancamento: publicLancamento(row, hoje) }, { status: 201 });
+  return json({ lancamento: publicLancamento(row, hoje, op.config) }, { status: 201 });
 };
 
 /** Baixa: a conta pendente vira paga (recebida, se for a receber), com quem baixou e quando. */
@@ -249,17 +352,23 @@ export const baixarLancamento: Handler = async (ctx) => {
   const atual = await carregarLancamento(ctx, op.systemId, id);
   const now = ctx.clock.now();
   const hoje = hojeLocal(now);
-  if (atual.status === "pago") return json({ lancamento: publicLancamento(atual, hoje) });
+  if (atual.status === "pago")
+    return json({ lancamento: publicLancamento(atual, hoje, op.config) });
   if (atual.status === "cancelado") throw conflict("Conta cancelada não recebe baixa.");
+  // A receber paga depois do vencimento, com a regra: grava o valor com multa e juros.
+  const multa =
+    atual.kind === "receber" ? (regraDo(op.config, "multa_juros_atraso") ?? null) : null;
+  const pago = valorComEncargos(atual.amount_cents, atual.due_date, hoje, multa).totalCentavos;
   const db = ctx.env.DB;
   try {
     await db.batch([
       db
         .prepare(
           `UPDATE financial_entries SET status = 'pago', paid_at = ?, paid_by = ?,
-             updated_at = max(updated_at, ?) WHERE id = ? AND system_id = ? AND status = 'pendente'`,
+             paid_amount_cents = ?, updated_at = max(updated_at, ?)
+           WHERE id = ? AND system_id = ? AND status = 'pendente'`,
         )
-        .bind(now, op.user.id, now, id, op.systemId),
+        .bind(now, op.user.id, pago, now, id, op.systemId),
       db
         .prepare(
           "INSERT INTO audit_events (system_id, actor_id, action, target_type, target_id, created_at) SELECT ?, ?, 'financeiro.paid', 'lancamento', ?, ? WHERE changes() = 1",
@@ -270,7 +379,7 @@ export const baixarLancamento: Handler = async (ctx) => {
     triggerConflict(error, MENSAGENS);
   }
   return json({
-    lancamento: publicLancamento(await estadoFinal(ctx, op.systemId, id, "pago"), hoje),
+    lancamento: publicLancamento(await estadoFinal(ctx, op.systemId, id, "pago"), hoje, op.config),
   });
 };
 
@@ -282,7 +391,8 @@ export const cancelarLancamento: Handler = async (ctx) => {
   const atual = await carregarLancamento(ctx, op.systemId, id);
   const now = ctx.clock.now();
   const hoje = hojeLocal(now);
-  if (atual.status === "cancelado") return json({ lancamento: publicLancamento(atual, hoje) });
+  if (atual.status === "cancelado")
+    return json({ lancamento: publicLancamento(atual, hoje, op.config) });
   if (atual.status === "pago") throw conflict("Conta já paga não é cancelada.");
   if (atual.sale_id || atual.purchase_id) {
     throw new AppError(
@@ -314,6 +424,10 @@ export const cancelarLancamento: Handler = async (ctx) => {
     triggerConflict(error, MENSAGENS);
   }
   return json({
-    lancamento: publicLancamento(await estadoFinal(ctx, op.systemId, id, "cancelado"), hoje),
+    lancamento: publicLancamento(
+      await estadoFinal(ctx, op.systemId, id, "cancelado"),
+      hoje,
+      op.config,
+    ),
   });
 };

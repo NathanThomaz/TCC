@@ -20,7 +20,7 @@ import type { ConfigDraft } from "../../shared/contract/schema";
 // das constantes do contrato, para nunca divergir do que o validador aceita. Prompts versionados:
 // mudar o texto é mudar a configuração congelada do experimento (seção 25).
 
-export const VERSAO_PROMPTS = "2026-11-16.1";
+export const VERSAO_PROMPTS = "2026-11-17.1";
 
 type Json = Parameters<typeof adaptForGemini>[0];
 
@@ -58,6 +58,10 @@ Regras parametrizáveis:
 - antecedencia_minima: minutos; agendar ou remarcar só com essa antecedência.
 - prazo_cancelamento_atendimento: horas; cancelar ou remarcar atendimento só até essas horas antes do início.
 - formas_pagamento: formas aceitas (${PAYMENT_METHODS.join(", ")}) e prazo_dias (vencimento da venda a prazo, obrigatório com a_prazo); obrigatória quando há o módulo pagamentos.
+- categorias_financeiras (financeiro): listas despesas e receitas (nomes curtos, ex.: Moradia, Alimentação; Salário, Vendas); toda conta lançada escolhe uma.
+- aviso_vencimento (financeiro): dias; o painel avisa das contas que vencem nesse prazo.
+- orcamento_mensal (financeiro, exige categorias_financeiras): limites [{categoria de despesa, valor_centavos}] por mês; o painel mostra o uso e avisa ao passar.
+- multa_juros_atraso (financeiro): multa_percentual e juros_mes_percentual (ex.: 2 e 1) sobre conta a receber paga depois do vencimento.
 Nomes de telas e colunas (aparencia.rotulos_menu por módulo e aparencia.rotulos_campos): só o visual muda. Chaves de rotulos_campos e o nome padrão: ${Object.entries(
     ROTULOS_CAMPOS,
   )
@@ -66,7 +70,7 @@ Nomes de telas e colunas (aparencia.rotulos_menu por módulo e aparencia.rotulos
       "; ",
     )}. Adapte ao negócio quando o padrão não combinar (ex.: loja de carros: rotulos_menu.produtos "Veículos", produtos.item "Veículo", produtos.nome "Modelo", produtos.varejo "Preço de venda"; pet shop: profissionais "Tosadoras").
 Módulos opcionais: pagamentos (a venda registra a forma de pagamento), fornecedores (cadastro de fornecedores e compras que dão entrada no estoque com custo) e financeiro (contas a pagar e a receber; venda a prazo e compra geram a conta). Proponha um opcional só quando o dono disser que precisa (ex.: vende fiado ou a prazo, compra de fornecedores, quer controlar contas); se não falou, não inclua.
-Todas as regras são opcionais, exceto prazo_reserva com vendas e formas_pagamento com pagamentos. Ofereça as que fazem sentido para o negócio (ex.: pedido mínimo e estoque mínimo para comércio; horário de funcionamento e antecedência para serviços), uma pergunta por vez, sempre com sugestões; o dono decide se quer.
+Todas as regras são opcionais, exceto prazo_reserva com vendas e formas_pagamento com pagamentos. Ofereça as que fazem sentido para o negócio (ex.: pedido mínimo e estoque mínimo para comércio; horário de funcionamento e antecedência para serviços; com financeiro, categorias, aviso de vencimento e orçamento mensal; para quem cobra clientes, multa e juros por atraso), uma pergunta por vez, sempre com sugestões; o dono decide se quer.
 Fora do catálogo (registrar como pedido ao desenvolvedor, nunca prometer): nota fiscal, maquininha ou pagamento online, parcelamento, conciliação bancária, descontos, taxa de entrega, rotas, app móvel e qualquer módulo ou regra que não esteja acima.`;
 };
 

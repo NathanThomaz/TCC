@@ -363,12 +363,18 @@ export interface FiltroFinanceiro {
   /** Período do vencimento (AAAA-MM-DD), inclusive. */
   de?: string;
   ate?: string;
+  categoria?: string;
 }
 
 export async function listarLancamentos(
   sistema: string,
   filtro: FiltroFinanceiro = {},
-): Promise<{ lancamentos: LancamentoDto[]; resumo: ResumoFinanceiroDto }> {
+): Promise<{
+  lancamentos: LancamentoDto[];
+  resumo: ResumoFinanceiroDto;
+  porCategoria: NonNullable<OperacaoApiBody["porCategoria"]> | null;
+  orcamento: NonNullable<OperacaoApiBody["orcamento"]> | null;
+}> {
   const q = new URLSearchParams(
     Object.entries(filtro).filter((e): e is [string, string] => typeof e[1] === "string"),
   ).toString();
@@ -376,6 +382,8 @@ export async function listarLancamentos(
   return {
     lancamentos: exigir(r.lancamentos, "lançamentos"),
     resumo: exigir(r.resumoFinanceiro, "resumo"),
+    porCategoria: r.porCategoria ?? null,
+    orcamento: r.orcamento ?? null,
   };
 }
 
@@ -386,6 +394,7 @@ export interface NovoLancamento {
   vencimento: string;
   cliente?: string;
   fornecedor?: string;
+  categoria?: string;
 }
 
 export async function criarLancamento(sistema: string, dados: NovoLancamento, chave = novaChave()) {

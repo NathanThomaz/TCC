@@ -1,10 +1,18 @@
 import type { PainelDto } from "../../../shared/api";
 import type { ConfigDraft } from "../../../shared/contract/schema";
 import { deCampoLocal, paraCampoLocal } from "../../../shared/dominio/agenda";
+import { regraDo } from "../../../shared/dominio/regras";
 import { json } from "../../http/responses";
 import type { Handler } from "../../http/router";
 import { abrirOperacao } from "./contexto";
-import { hojeLocal } from "./financeiro";
+import { hojeLocal, orcamentoDoMes } from "./financeiro";
+
+/** Data local AAAA-MM-DD somada de `dias` (sem fuso: é só calendário). */
+function somarDias(data: string, dias: number): string {
+  const d = new Date(`${data}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + dias);
+  return d.toISOString().slice(0, 10);
+}
 
 // Painel do sistema ativo: números calculados no backend (nunca pela IA), no fuso do Nexus, só
 // dos módulos que o sistema tem. Mesma conta que a consulta usa: vendas concluídas pelo dia da
@@ -296,6 +304,7 @@ export async function calcularPainel(
 
   if (tem("financeiro")) {
     const dia = hojeLocal(agora);
+    const aviso = regraDo(config, "aviso_vencimento");
     const [r, proximos] = await Promise.all([
       db
         .prepare(
@@ -308,11 +317,13 @@ export async function calcularPainel(
              COALESCE(SUM(CASE WHEN kind = 'receber' AND status = 'pendente' AND due_date < ?2 THEN amount_cents END), 0) AS vrt,
              SUM(kind = 'pagar' AND status = 'pendente' AND due_date < ?2) AS vpn,
              COALESCE(SUM(CASE WHEN kind = 'pagar' AND status = 'pendente' AND due_date < ?2 THEN amount_cents END), 0) AS vpt,
-             COALESCE(SUM(CASE WHEN kind = 'receber' AND status = 'pago' AND paid_at >= ?3 AND paid_at < ?4 THEN amount_cents END), 0) AS recebido,
-             COALESCE(SUM(CASE WHEN kind = 'pagar' AND status = 'pago' AND paid_at >= ?3 AND paid_at < ?4 THEN amount_cents END), 0) AS pago
+             COALESCE(SUM(CASE WHEN kind = 'receber' AND status = 'pago' AND paid_at >= ?3 AND paid_at < ?4 THEN COALESCE(paid_amount_cents, amount_cents) END), 0) AS recebido,
+             COALESCE(SUM(CASE WHEN kind = 'pagar' AND status = 'pago' AND paid_at >= ?3 AND paid_at < ?4 THEN COALESCE(paid_amount_cents, amount_cents) END), 0) AS pago,
+             SUM(status = 'pendente' AND due_date >= ?2 AND due_date <= ?5) AS bn,
+             COALESCE(SUM(CASE WHEN status = 'pendente' AND due_date >= ?2 AND due_date <= ?5 THEN amount_cents END), 0) AS bt
            FROM financial_entries WHERE system_id = ?1`,
         )
-        .bind(s, dia, inicioMes, inicioProximoMes)
+        .bind(s, dia, inicioMes, inicioProximoMes, somarDias(dia, aviso?.dias ?? 0))
         .first<Record<string, number | null>>(),
       db
         .prepare(
@@ -343,7 +354,12 @@ export async function calcularPainel(
         valorCentavos: l.amount_cents,
         vencimento: l.due_date,
       })),
+      ...(aviso
+        ? { vencendoEmBreve: { dias: aviso.dias, quantidade: n("bn"), totalCentavos: n("bt") } }
+        : {}),
     };
+    const orcamento = await orcamentoDoMes(db, s, config, dia);
+    if (orcamento) painel.financeiro.orcamento = orcamento;
   }
 
   return painel;

@@ -127,8 +127,21 @@ export function textoDaRegra(r: Regra, d: ConfigDraft): string {
           ? ` (a prazo vence em ${r.prazo_dias} ${r.prazo_dias === 1 ? "dia" : "dias"})`
           : ""
       }`;
+    case "categorias_financeiras":
+      return `Contas com categoria. Despesas: ${r.despesas.join(", ")}. Receitas: ${r.receitas.join(", ")}`;
+    case "aviso_vencimento":
+      return `Avisar das contas que vencem nos próximos ${r.dias} ${r.dias === 1 ? "dia" : "dias"}`;
+    case "orcamento_mensal":
+      return `Orçamento do mês: ${r.limites
+        .map((l) => `${l.categoria} até R$ ${centavosParaReais(l.valor_centavos)}`)
+        .join("; ")}`;
+    case "multa_juros_atraso":
+      return `Conta a receber em atraso: multa de ${formatarPercentual(r.multa_percentual)} e juros de ${formatarPercentual(r.juros_mes_percentual)} ao mês`;
   }
 }
+
+const formatarPercentual = (n: number) =>
+  `${n.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%`;
 
 /**
  * No modo avançado o dono ajusta valores, não requisitos: cada regra ganha um requisito gerado
