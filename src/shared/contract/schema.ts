@@ -24,6 +24,9 @@ const slug = z
   .regex(/^[a-z][a-z0-9_]{1,39}$/, "use letras minúsculas, números e _ (2 a 40)");
 const requirementId = z.string().regex(/^REQ-\d{2,3}$/, "formato REQ-01");
 const requirementRefs = z.array(requirementId).min(1).max(10);
+/** Nome de categoria do financeiro (ex.: "Moradia", "Salário"). */
+const categoria = z.string().trim().min(2).max(40);
+const centavos = z.number().int().min(1).max(10_000_000_000);
 
 export const RequirementSchema = z.strictObject({
   id: requirementId,
@@ -121,6 +124,36 @@ export const RuleSchema = z.discriminatedUnion("tipo", [
     formas: z.array(z.enum(PAYMENT_METHODS)).min(1).max(PAYMENT_METHODS.length),
     // Vencimento da conta a receber de uma venda a prazo (obrigatório com "a_prazo").
     prazo_dias: z.number().int().min(1).max(180).optional(),
+    requisitos: requirementRefs,
+  }),
+  // ---- Financeiro (ADR-015, etapa 2a) ----
+  z.strictObject({
+    tipo: z.literal("categorias_financeiras"),
+    // Toda conta lançada à mão escolhe uma categoria do seu tipo.
+    despesas: z.array(categoria).min(1).max(20),
+    receitas: z.array(categoria).min(1).max(20),
+    requisitos: requirementRefs,
+  }),
+  z.strictObject({
+    tipo: z.literal("aviso_vencimento"),
+    // O painel avisa das contas pendentes que vencem nos próximos dias.
+    dias: z.number().int().min(1).max(30),
+    requisitos: requirementRefs,
+  }),
+  z.strictObject({
+    tipo: z.literal("orcamento_mensal"),
+    // Limite de gasto do mês por categoria de despesa; o painel mostra o uso e avisa ao passar.
+    limites: z
+      .array(z.strictObject({ categoria, valor_centavos: centavos }))
+      .min(1)
+      .max(20),
+    requisitos: requirementRefs,
+  }),
+  z.strictObject({
+    tipo: z.literal("multa_juros_atraso"),
+    // Conta a receber paga depois do vencimento: multa única + juros ao mês, pro rata por dia.
+    multa_percentual: z.number().min(0).max(20),
+    juros_mes_percentual: z.number().min(0).max(10),
     requisitos: requirementRefs,
   }),
   z.strictObject({

@@ -1,7 +1,7 @@
 // Catálogo fechado do Nexus (seção 5 da especificação). Tudo o que uma configuração pode usar
 // está aqui; o que não está não é criado silenciosamente — vira necessidade fora do catálogo.
 
-export const CATALOG_VERSION = "2026.11.7";
+export const CATALOG_VERSION = "2026.11.8";
 
 export const MODULES = [
   "clientes",
@@ -274,6 +274,11 @@ export const RULE_TYPES = [
   "antecedencia_minima",
   "prazo_cancelamento_atendimento",
   "formas_pagamento",
+  // Financeiro (ADR-015, etapa 2a).
+  "categorias_financeiras",
+  "aviso_vencimento",
+  "orcamento_mensal",
+  "multa_juros_atraso",
 ] as const;
 export type RuleType = (typeof RULE_TYPES)[number];
 
@@ -291,6 +296,10 @@ export const RULE_MODULES: Record<RuleType, readonly ModuleId[]> = {
   antecedencia_minima: ["agenda"],
   prazo_cancelamento_atendimento: ["agenda"],
   formas_pagamento: ["pagamentos"],
+  categorias_financeiras: ["financeiro"],
+  aviso_vencimento: ["financeiro"],
+  orcamento_mensal: ["financeiro"],
+  multa_juros_atraso: ["financeiro"],
 };
 
 /** Regras que todo sistema com esses módulos precisa ter explicitamente (sem valor inventado). */
