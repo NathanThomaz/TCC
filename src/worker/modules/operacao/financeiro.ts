@@ -214,16 +214,31 @@ export const listarLancamentos: Handler = async (ctx) => {
   const de = dataLocal.safeParse(q.get("de")).data ?? null;
   const ate = dataLocal.safeParse(q.get("ate")).data ?? null;
   const categoria = q.get("categoria")?.trim() || null;
+  // Categorias que já aparecem em contas (renomeadas ou tiradas da regra continuam filtráveis).
+  const categoriasUsadas = (
+    await ctx.env.DB.prepare(
+      `SELECT DISTINCT category FROM financial_entries
+       WHERE system_id = ? AND category IS NOT NULL ORDER BY category LIMIT 100`,
+    )
+      .bind(op.systemId)
+      .all<{ category: string }>()
+  ).results.map((r) => r.category);
+  // A mesma categoria com outra grafia (acento, caixa) vale para o filtro, como no orçamento.
+  const grafias = categoria
+    ? JSON.stringify(
+        categoriasUsadas.filter((c) => normalizarRotulo(c) === normalizarRotulo(categoria)),
+      )
+    : null;
   const hoje = hojeLocal(ctx.clock.now());
   const { results } = await ctx.env.DB.prepare(
     `${SELECT_LANCAMENTO}
      WHERE f.system_id = ?1 AND (?2 IS NULL OR f.kind = ?2) AND (?3 IS NULL OR f.status = ?3)
        AND (?4 = 0 OR (f.status = 'pendente' AND f.due_date < ?5))
        AND (?6 IS NULL OR f.due_date >= ?6) AND (?7 IS NULL OR f.due_date <= ?7)
-       AND (?8 IS NULL OR f.category = ?8 COLLATE NOCASE)
+       AND (?8 IS NULL OR f.category IN (SELECT value FROM json_each(?8)))
      ORDER BY f.due_date, f.created_at LIMIT ${LIMITE_LISTA}`,
   )
-    .bind(op.systemId, tipo, status, situacao === "vencido" ? 1 : 0, hoje, de, ate, categoria)
+    .bind(op.systemId, tipo, status, situacao === "vencido" ? 1 : 0, hoje, de, ate, grafias)
     .all<LancamentoRow>();
   // Por categoria no mês (regra categorias_financeiras): quanto foi para cada uma.
   const porCategoria = regraDo(op.config, "categorias_financeiras")
@@ -240,15 +255,6 @@ export const listarLancamentos: Handler = async (ctx) => {
       ).results.map((r) => ({ tipo: r.kind, categoria: r.category, totalCentavos: r.total }))
     : undefined;
   const orcamento = await orcamentoDoMes(ctx.env.DB, op.systemId, op.config, hoje);
-  // Categorias que já aparecem em contas (renomeadas ou tiradas da regra continuam filtráveis).
-  const categoriasUsadas = (
-    await ctx.env.DB.prepare(
-      `SELECT DISTINCT category FROM financial_entries
-       WHERE system_id = ? AND category IS NOT NULL ORDER BY category LIMIT 100`,
-    )
-      .bind(op.systemId)
-      .all<{ category: string }>()
-  ).results.map((r) => r.category);
   // Resumo sobre todas as pendentes (a lista tem limite de 500 linhas).
   const r = await ctx.env.DB.prepare(
     `SELECT

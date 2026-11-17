@@ -271,7 +271,7 @@ describe("correções da revisão do Codex", () => {
     await env.DB.prepare(
       `INSERT INTO financial_entries (id, system_id, kind, description, amount_cents, due_date,
          category, created_by, created_at, updated_at)
-       SELECT 'antiga', system_id, 'pagar', 'Condomínio', 20000, '2026-11-25', 'moradia', 'a', ?1, ?1
+       SELECT 'antiga', system_id, 'pagar', 'Condomínio', 20000, '2026-11-25', 'MORÁDIA', 'a', ?1, ?1
        FROM financial_entries LIMIT 1`,
     )
       .bind(NOW)
@@ -285,7 +285,7 @@ describe("correções da revisão do Codex", () => {
       "Aluguel",
       "Condomínio",
     ]);
-    expect(filtrada.body.categoriasUsadas).toEqual(expect.arrayContaining(["Moradia", "moradia"]));
+    expect(filtrada.body.categoriasUsadas).toEqual(expect.arrayContaining(["Moradia", "MORÁDIA"]));
   });
 
   it("baixa recusa quando o valor com multa e juros mudou desde a tela", async () => {
