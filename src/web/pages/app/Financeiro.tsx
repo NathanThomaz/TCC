@@ -120,7 +120,15 @@ export function Financeiro() {
   };
   const baixar = useMutation({
     mutationFn: (l: LancamentoDto) =>
-      acaoLancamento(app.id, l.id, "baixar", undefined, l.encargosHoje?.totalCentavos),
+      // Sempre o valor que a tela mostrou: se a conta venceu desde então (virou o dia), o
+      // servidor recusa em vez de cobrar multa que a pessoa não viu.
+      acaoLancamento(
+        app.id,
+        l.id,
+        "baixar",
+        undefined,
+        l.encargosHoje?.totalCentavos ?? l.valorCentavos,
+      ),
     onSuccess: (l) => {
       toast.success(l.tipo === "receber" ? "Recebimento registrado." : "Pagamento registrado.");
       atualizar();

@@ -309,3 +309,22 @@ describe("correções da revisão do Codex", () => {
     expect(certo.body.lancamento!.valorPagoCentavos).toBe(10_250);
   });
 });
+
+describe("baixa no dia em que a conta passa a vencer", () => {
+  it("valor sem multa visto na tela é recusado se a multa já vale", async () => {
+    const p = await ativar([
+      { tipo: "multa_juros_atraso", multa_percentual: 2, juros_mes_percentual: 1, ...REQ },
+    ]);
+    const r = await conta(p, {
+      tipo: "receber",
+      descricao: "Mensalidade",
+      vencimento: "2026-11-16",
+    });
+    // A tela ainda mostrava R$ 100,00 (sem multa); hoje já há 1 dia de atraso.
+    const baixa = await call("POST", p(`/financeiro/${r.body.lancamento!.id}/baixar`), {
+      valorEsperadoCentavos: 10_000,
+    });
+    expect(baixa.status).toBe(409);
+    expect(baixa.body.error!.code).toBe("valor_mudou");
+  });
+});
