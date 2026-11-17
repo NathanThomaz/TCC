@@ -165,8 +165,9 @@ export const RuleSchema = z.discriminatedUnion("tipo", [
   }),
   z.strictObject({
     tipo: z.literal("saida_manual"),
-    // Saída de estoque sem venda (perda, consumo, quebra), sempre com um destes motivos.
-    motivos: z.array(z.string().trim().min(2).max(40)).min(1).max(10),
+    // Saída de estoque sem venda (perda, consumo, quebra), sempre com um destes motivos. Mínimo
+    // de 3 letras: o motivo vai para o histórico do estoque, que exige 3 (stock_movements.reason).
+    motivos: z.array(z.string().trim().min(3).max(40)).min(1).max(10),
     requisitos: requirementRefs,
   }),
   z.strictObject({

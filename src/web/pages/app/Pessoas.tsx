@@ -4,7 +4,11 @@ import { Loader2, Pencil, Plus, Search, Users } from "lucide-react";
 import { toast } from "sonner";
 import type { CamposInformativos, ClienteDto } from "../../../shared/api";
 import type { Campo } from "@/types/nexus";
-import { formatarDataHora } from "../../../shared/dominio/agenda";
+import {
+  diasDeCalendario,
+  formatarDataHora,
+  inicioDoDiaLocal,
+} from "../../../shared/dominio/agenda";
 import { formatarCentavos } from "../../../shared/dominio/precos";
 import {
   criarPessoa,
@@ -152,7 +156,9 @@ export function Pessoas({ tipo }: { tipo: TipoPessoa }) {
   const regraSemComprar =
     tipo === "clientes" && temVendas ? regraDo(app.config, "cliente_sem_comprar") : undefined;
   const [agora] = useState(() => Date.now());
-  const semComprarAntesDe = regraSemComprar ? agora - regraSemComprar.dias * 86_400_000 : undefined;
+  const semComprarAntesDe = regraSemComprar
+    ? inicioDoDiaLocal(agora, regraSemComprar.dias)
+    : undefined;
 
   const linhas = useMemo(
     () => filtrarPessoas(q.data ?? [], campos, busca, filtro, ordem, semComprarAntesDe),
@@ -303,7 +309,7 @@ export function Pessoas({ tipo }: { tipo: TipoPessoa }) {
                           typeof p.resumo?.ultimaCompra === "number" &&
                           p.resumo.ultimaCompra < semComprarAntesDe && (
                             <span className="ml-2 rounded-md bg-warning-soft px-1.5 py-0.5 text-xs text-warning">
-                              {Math.floor((agora - p.resumo.ultimaCompra) / 86_400_000)} dias
+                              {diasDeCalendario(p.resumo.ultimaCompra, agora)} dias
                             </span>
                           )}
                       </td>

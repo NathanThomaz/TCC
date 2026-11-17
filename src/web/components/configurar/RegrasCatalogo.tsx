@@ -492,6 +492,7 @@ function EditorRegra({
           rotulo="Motivos de saída"
           nomes={r.motivos}
           max={10}
+          minLetras={3}
           onChange={(motivos) => onChange({ ...r, motivos })}
         />
       );
@@ -730,23 +731,25 @@ function ListaDeNomes({
   rotulo,
   nomes,
   max = 20,
+  minLetras = 2,
   onChange,
 }: {
   id: string;
   rotulo: string;
   nomes: string[];
   max?: number;
+  minLetras?: number;
   onChange: (nomes: string[]) => void;
 }) {
   const [texto, setTexto] = useState(nomes.join(", "));
   // Nada é descartado em silêncio: o que passar do limite fica na regra e o validador barra,
   // com o aviso aqui embaixo.
-  const curtos = nomes.filter((n) => n.length < 2);
+  const curtos = nomes.filter((n) => n.length < minLetras);
   const erro =
     nomes.length > max
       ? `São ${nomes.length} itens; o limite é ${max}.`
       : curtos.length
-        ? "Cada item precisa de pelo menos 2 letras."
+        ? `Cada item precisa de pelo menos ${minLetras} letras.`
         : nomes.length === 0
           ? "Informe pelo menos um item."
           : null;

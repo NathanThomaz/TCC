@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import type { CamposInformativos, ProdutoDto } from "../../../shared/api";
+import { diaLocal } from "../../../shared/dominio/agenda";
 import { formatarCentavos } from "../../../shared/dominio/precos";
 import { regraDo } from "../../../shared/dominio/regras";
 import {
@@ -110,7 +111,8 @@ export function Produtos() {
   // Regras de estoque (ADR-015): validade com aviso e saída com motivo.
   const regraValidade = regraDo(app.config, "validade_produto");
   const regraSaida = regraDo(app.config, "saida_manual");
-  const hoje = new Date().toLocaleDateString("sv-SE");
+  // Dia de hoje no fuso do Nexus, o mesmo do painel (não o do navegador).
+  const hoje = diaLocal(Date.now());
 
   const status = useMutation({
     mutationFn: (p: ProdutoDto) =>

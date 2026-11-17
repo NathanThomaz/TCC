@@ -137,6 +137,11 @@ describe("validador", () => {
     const d = rascunho([{ tipo: "saida_manual", motivos: ["Perda", "perda"], ...REQ }]);
     expect(validateDraft(d).issues.map((i) => i.code)).toContain("motivo_repetido");
   });
+
+  it("motivo de saída precisa de 3 letras (o histórico do estoque exige 3)", () => {
+    const d = rascunho([{ tipo: "saida_manual", motivos: ["AB"], ...REQ }]);
+    expect(validateDraft(d).issues.length).toBeGreaterThan(0);
+  });
 });
 
 describe("validade dos produtos", () => {
@@ -285,5 +290,15 @@ describe("cliente sem comprar", () => {
       .run();
     const c = (await call("GET", p("/painel"))).body.painel!.clientes!;
     expect(c.semComprar).toEqual({ dias: 30, quantidade: 1 });
+    // Compra em 18/10 às 10h (Brasília): hoje (17/11) faz exatamente 30 dias, ainda não avisa;
+    // em 17/10 às 23h já são 31 dias.
+    const em = (iso: string, cliente: string) =>
+      env.DB.prepare("UPDATE sales SET completed_at = ? WHERE customer_id = ?")
+        .bind(Date.parse(iso), cliente)
+        .run();
+    await em("2026-10-18T13:00:00Z", antigo);
+    expect((await call("GET", p("/painel"))).body.painel!.clientes!.semComprar!.quantidade).toBe(0);
+    await em("2026-10-18T02:00:00Z", antigo);
+    expect((await call("GET", p("/painel"))).body.painel!.clientes!.semComprar!.quantidade).toBe(1);
   });
 });

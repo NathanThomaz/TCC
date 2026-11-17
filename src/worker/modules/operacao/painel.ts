@@ -1,6 +1,6 @@
 import type { PainelDto } from "../../../shared/api";
 import type { ConfigDraft } from "../../../shared/contract/schema";
-import { deCampoLocal, paraCampoLocal } from "../../../shared/dominio/agenda";
+import { deCampoLocal, inicioDoDiaLocal, paraCampoLocal } from "../../../shared/dominio/agenda";
 import { regraDo } from "../../../shared/dominio/regras";
 import { json } from "../../http/responses";
 import type { Handler } from "../../http/router";
@@ -211,10 +211,11 @@ export async function calcularPainel(
       inativos: r?.inativos ?? 0,
       novosNoMes: r?.novos ?? 0,
     };
-    // Cliente sem comprar (ADR-015): ativo que já comprou e cuja última compra é mais antiga.
+    // Cliente sem comprar (ADR-015): ativo que já comprou e cuja última compra foi há mais de N
+    // dias de calendário no fuso do Nexus (a mesma conta da lista de clientes).
     const semComprar = tem("vendas") ? regraDo(config, "cliente_sem_comprar") : undefined;
     if (semComprar) {
-      const desde = agora - semComprar.dias * 86_400_000;
+      const desde = inicioDoDiaLocal(agora, semComprar.dias);
       const q = await db
         .prepare(
           `SELECT COUNT(*) AS n FROM customers c

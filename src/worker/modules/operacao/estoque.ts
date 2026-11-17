@@ -61,7 +61,7 @@ const SaidaBody = z.object({
   produto: z.string().min(1).max(100),
   caixas: quantidade,
   unidades: quantidade,
-  motivo: z.string().trim().min(2).max(40),
+  motivo: z.string().trim().min(3).max(40),
   observacao: z.string().trim().max(200).optional(),
 });
 const CorrecaoBody = z.object({
@@ -295,7 +295,9 @@ export const registrarSaida: Handler = async (ctx) => {
     ]);
     changed = update?.meta.changes ?? 0;
   } catch (error) {
-    const replay = isUnique(error) ? await replayAfterRace(ctx, cmd, started) : null;
+    // A saída desconta do físico atual: a mesma chave em paralelo pode cair no trigger do
+    // reservado (não só no UNIQUE) depois que a outra já gravou. Se gravou, devolve a dela.
+    const replay = await replayAfterRace(ctx, cmd, started);
     if (replay?.kind === "replay") {
       const row = await carregarMovimento(ctx, op.systemId, replay.resourceId);
       return json({ movimento: publicMovimento(row) }, { status: replay.statusCode });
