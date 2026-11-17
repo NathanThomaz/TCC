@@ -35,16 +35,16 @@ O Nexus está **em produção**. A versão usada no experimento do trabalho est�
 
 ### Seis modelos para começar
 
-| Modelo                    | Para quem                                                  | Módulos                                                    |
-| ------------------------- | ---------------------------------------------------------- | ---------------------------------------------------------- |
-| **Comércio**              | Vende produtos e controla estoque                          | Clientes, Produtos, Vendas, Estoque                        |
-| **Serviços agendados**    | Atende clientes com hora marcada                           | Clientes, Profissionais, Agenda                            |
-| **Comércio com serviços** | Vende produtos e faz atendimentos agendados                | Clientes, Produtos, Vendas, Estoque, Profissionais, Agenda |
-| **Controle financeiro**   | Só quer controlar contas a pagar e a receber               | Financeiro                                                 |
-| **Agenda simples**        | Reserva horários de um recurso (sala, quadra, equipamento) | Clientes, Profissionais, Agenda                            |
-| **Clientes e cobranças**  | Cadastra clientes e cobra mensalidades ou serviços         | Clientes, Financeiro                                       |
+| Modelo                    | Para quem                                                       | Módulos                                                    |
+| ------------------------- | --------------------------------------------------------------- | ---------------------------------------------------------- |
+| **Comércio**              | Vende produtos e controla estoque                               | Clientes, Produtos, Vendas, Estoque                        |
+| **Serviços agendados**    | Atende clientes com hora marcada                                | Clientes, Profissionais, Agenda                            |
+| **Comércio com serviços** | Vende produtos e faz atendimentos agendados                     | Clientes, Produtos, Vendas, Estoque, Profissionais, Agenda |
+| **Controle financeiro**   | Só quer controlar contas a pagar e a receber                    | Financeiro                                                 |
+| **Controle de estoque**   | Só controla o que entra e sai (almoxarifado, depósito, insumos) | Produtos, Estoque                                          |
+| **Clientes e cobranças**  | Cadastra clientes e cobra mensalidades ou serviços              | Clientes, Financeiro                                       |
 
-Os modelos de comércio aceitam ainda os módulos opcionais **Formas de pagamento**, **Fornecedores e compras** e **Financeiro**.
+Os modelos de comércio aceitam ainda os módulos opcionais **Formas de pagamento**, **Fornecedores e compras** e **Financeiro**; o controle de estoque aceita **Fornecedores e compras**. Quem reserva salas, quadras ou equipamentos usa Serviços agendados, com os nomes do próprio negócio (recursos e reservas).
 
 ### Vinte regras de negócio para escolher e ajustar
 
@@ -64,6 +64,7 @@ Cada regra é aplicada pela operação do sistema, inclusive no banco quando é 
 - **Vendas** com reserva de estoque no rascunho, leitor de código de barras (USB ou câmera) e venda ditada ou escrita, que a IA transforma num rascunho para conferir.
 - **Rascunhos automáticos** em todos os cadastros, para continuar depois.
 - **Assistente**: perguntas sobre os dados do sistema, só de leitura (a IA não altera nada).
+- **Cadastros que crescem com o negócio**: clientes com nome e sobrenome, telefone e e-mail de fábrica, e "Nova coluna" com sugestões de cada cadastro (CPF, endereço, marca, categoria...).
 - **Importação de planilha**, colunas com os nomes do negócio, logotipo e cores próprias.
 - **Alterar o sistema ativo** sem perder dados, além de inativar, reativar e excluir sistemas.
 - **Pedidos ao desenvolvedor**: o que o catálogo não cobre vira um pedido acompanhado pelo dono do Nexus.
@@ -89,7 +90,7 @@ _Todas as telas usam dados fictícios._
 | ------------ | -------------------------------------------------------------------- |
 | Front-end    | React 19, TypeScript, Tailwind CSS 4, shadcn/ui, TanStack Query      |
 | API          | TypeScript num único Cloudflare Worker, que também serve o front-end |
-| Banco        | Cloudflare D1 (SQLite), com 17 migrations                            |
+| Banco        | Cloudflare D1 (SQLite), com 18 migrations                            |
 | Autenticação | Firebase Authentication, com o token verificado no Worker            |
 | IA           | Google Gemini (`gemini-3.1-flash-lite`), com saída estruturada       |
 | Contrato     | Zod, compartilhado entre front-end, API e IA                         |
@@ -105,7 +106,7 @@ As decisões de arquitetura estão registradas em 15 ADRs no [Vault do autor](ht
 
 ## Qualidade
 
-- **491 testes** (Vitest). Os do Worker rodam no runtime real do Workers (`workerd`), com D1 local e todas as migrations aplicadas.
+- **507 testes** (Vitest). Os do Worker rodam no runtime real do Workers (`workerd`), com D1 local e todas as migrations aplicadas.
 - **CI** em todo PR: formatação, lint, tipos, integridade dos cenários do experimento, testes e build. A `main` é protegida e só recebe PR com CI verde.
 - **Revisão cruzada**: cada mudança passa pela revisão de outro agente de IA (Codex) antes do merge.
 - **Provas técnicas** com resultado registrado, em [`provas/`](provas):
