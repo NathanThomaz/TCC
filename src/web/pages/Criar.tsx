@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ROTULO_ASSUNTO } from "@/lib/criacao";
+import { useAlturaRestante } from "@/lib/alturaRestante";
 import { Link } from "@/lib/rotas";
 
 // Criação guiada pela IA (seção 8 e ADR-004). A IA pergunta um assunto por vez; o resumo ao lado
@@ -29,15 +30,19 @@ export function Criar() {
   const [pendente, setPendente] = useState<string | null>(null);
   const resumoRef = useRef<HTMLDivElement>(null);
   const totalItens = q.data?.requisitos.length ?? 0;
-  const itensAntes = useRef(totalItens);
+  // Nulo até o primeiro carregamento: abrir a tela não conta como item novo (antes, o resumo já
+  // abria rolado até o fim).
+  const itensAntes = useRef<number | null>(null);
   useEffect(() => {
+    if (!q.data) return;
     // Item novo no resumo: rola até ele, sem mexer quando a lista diminui ou só muda.
-    if (totalItens > itensAntes.current) {
+    if (itensAntes.current !== null && totalItens > itensAntes.current) {
       const el = resumoRef.current;
       if (el) el.scrollTop = el.scrollHeight; // suave pelo scroll-smooth do contêiner
     }
     itensAntes.current = totalItens;
-  }, [totalItens]);
+  }, [q.data, totalItens]);
+  const { medir: medirArea, estilo: estiloArea } = useAlturaRestante<HTMLDivElement>();
   const [pedidoAberto, setPedidoAberto] = useState<string | null>(null);
   const [resumoAberto, setResumoAberto] = useState(false);
   const campo = useRef<HTMLTextAreaElement>(null);
@@ -188,8 +193,9 @@ export function Criar() {
         </div>
       )}
       <TrilhaAssuntos estado={estado} onEscolher={onEscolher} />
-      <div className="grid gap-8 pb-20 lg:grid-cols-5 lg:pb-0">
-        <div className="min-w-0 lg:col-span-3">
+      {/* No computador, conversa e resumo ocupam o resto da tela; cada um rola por dentro. */}
+      <div ref={medirArea} style={estiloArea} className="grid gap-8 pb-20 lg:grid-cols-5 lg:pb-0">
+        <div className="min-w-0 lg:col-span-3 lg:min-h-0">
           <Conversa
             estado={estado}
             bloqueado={bloqueado}
@@ -207,7 +213,7 @@ export function Criar() {
         </div>
         <aside
           aria-label="Resumo do seu sistema"
-          className="hidden min-w-0 self-start border-l pl-6 lg:sticky lg:top-20 lg:col-span-2 lg:flex lg:flex-col"
+          className="hidden min-w-0 border-l pl-6 lg:col-span-2 lg:flex lg:min-h-0 lg:flex-col"
         >
           <h2 className="mb-3 flex items-center justify-between gap-2 text-lg font-semibold">
             Resumo do seu sistema
@@ -218,7 +224,7 @@ export function Criar() {
           {/* Rolagem própria (pedido do dono): a lista cresce e o item novo aparece sozinho. */}
           <div
             ref={resumoRef}
-            className="h-[min(70vh,44rem)] scroll-smooth overflow-y-auto overscroll-contain pr-2 [scrollbar-gutter:stable] motion-reduce:scroll-auto"
+            className="min-h-0 flex-1 scroll-smooth overflow-y-auto overscroll-contain pr-2 [scrollbar-gutter:stable] motion-reduce:scroll-auto"
           >
             {resumo}
           </div>

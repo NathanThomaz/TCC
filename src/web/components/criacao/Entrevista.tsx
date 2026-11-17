@@ -47,8 +47,9 @@ export function TrilhaAssuntos({
   onEscolher: (assunto: AssuntoDto) => void;
 }) {
   return (
-    <nav aria-label="Assuntos da entrevista" className="mb-6 border-y py-3">
-      <ol className="flex gap-2 overflow-x-auto">
+    <nav aria-label="Assuntos da entrevista" className="mb-4 border-y py-2">
+      {/* No computador as etapas quebram linha: nenhuma fica cortada no fim. */}
+      <ol className="flex gap-1 overflow-x-auto lg:flex-wrap lg:overflow-visible">
         {assuntosDaEntrevista(estado).map((a) => {
           const { texto, Icone, classe } = VISUAL_ASSUNTO[a.estado];
           const conteudo = (
@@ -141,9 +142,9 @@ export function Conversa({
   const desativado = bloqueado || ocupado;
 
   return (
-    <section aria-label="Conversa com o assistente" className="flex min-w-0 flex-col">
+    <section aria-label="Conversa com o assistente" className="flex min-w-0 flex-col lg:h-full">
       <div
-        className="h-[min(60vh,40rem)] min-h-72 space-y-4 overflow-y-auto pb-4 pr-1"
+        className="h-[min(60vh,40rem)] min-h-72 space-y-4 overflow-y-auto pb-4 pr-1 lg:h-auto lg:min-h-0 lg:flex-1"
         role="log"
         aria-label="Mensagens da entrevista"
         aria-live="polite"

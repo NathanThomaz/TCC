@@ -73,7 +73,8 @@ export function Configuracoes() {
             : "Seu perfil e sua senha. O acesso aos sistemas é definido pelo administrador."
         }
       />
-      <div className="grid items-start gap-6 lg:grid-cols-2">
+      {/* Mesma estrutura nos dois cartões: alturas, linhas de campos e botões alinhados. */}
+      <div className="grid gap-6 lg:grid-cols-2">
         <SeuPerfil />
         <TrocarSenha />
       </div>
@@ -90,16 +91,19 @@ function Cartao({
   titulo,
   descricao,
   children,
+  rodape,
   onSubmit,
 }: {
   titulo: string;
   descricao: string;
   children: ReactNode;
+  /** Botão do cartão: fica sempre no fim, na mesma altura do cartão ao lado. */
+  rodape: ReactNode;
   onSubmit: () => void;
 }) {
   return (
     <form
-      className="space-y-4 rounded-xl border bg-card p-5 shadow-card"
+      className="flex h-full flex-col gap-5 rounded-xl border bg-card p-5 shadow-card"
       onSubmit={(e) => {
         e.preventDefault();
         onSubmit();
@@ -109,8 +113,38 @@ function Cartao({
         <h2 className="text-lg font-semibold tracking-tight">{titulo}</h2>
         <p className="text-sm text-muted-foreground">{descricao}</p>
       </div>
-      {children}
+      <div className="flex-1 space-y-4">{children}</div>
+      <div className="flex justify-end border-t pt-4">{rodape}</div>
     </form>
+  );
+}
+
+/** Campo só de leitura com o mesmo desenho dos campos editáveis (linhas alinhadas). */
+function CampoLeitura({
+  id,
+  rotulo,
+  valor,
+  dica,
+}: {
+  id: string;
+  rotulo: string;
+  valor: string;
+  dica: string;
+}) {
+  return (
+    <div className="min-w-0 space-y-1.5">
+      <Label htmlFor={id}>{rotulo}</Label>
+      <Input
+        id={id}
+        value={valor}
+        readOnly
+        aria-describedby={`${id}-dica`}
+        className="truncate bg-muted/50 text-muted-foreground"
+      />
+      <p id={`${id}-dica`} className="text-xs text-muted-foreground">
+        {dica}
+      </p>
+    </div>
   );
 }
 
@@ -127,7 +161,20 @@ function SeuPerfil() {
   });
   if (!usuario) return null;
   return (
-    <Cartao titulo="Seu perfil" descricao="Como você aparece no Nexus." onSubmit={() => m.mutate()}>
+    <Cartao
+      titulo="Seu perfil"
+      descricao={
+        usuario.temNome
+          ? "Como você aparece no Nexus."
+          : "Informe seu nome completo para ser chamado por ele."
+      }
+      onSubmit={() => m.mutate()}
+      rodape={
+        <Button type="submit" disabled={m.isPending || !nome.trim()}>
+          {m.isPending && <Loader2 className="animate-spin" aria-hidden />}Salvar nome
+        </Button>
+      }
+    >
       <div className="space-y-1.5">
         <Label htmlFor="perfil-nome">Nome</Label>
         <Input
@@ -138,29 +185,22 @@ function SeuPerfil() {
           autoComplete="name"
           onChange={(e) => setNome(e.target.value)}
         />
-        {!usuario.temNome && (
-          <p className="text-xs text-muted-foreground">
-            Informe seu nome completo para ser chamado por ele na tela inicial.
-          </p>
-        )}
       </div>
-      <dl className="grid gap-3 text-sm sm:grid-cols-2">
-        <div className="min-w-0">
-          <dt className="text-muted-foreground">E-mail</dt>
-          <dd className="truncate font-medium">{usuario.email}</dd>
-        </div>
-        <div>
-          <dt className="text-muted-foreground">Papel</dt>
-          <dd className="font-medium">
-            {ROTULO_PAPEL[usuario.papel]}
-            {usuario.dono ? " · dono do Nexus" : ""}
-          </dd>
-        </div>
-      </dl>
+      <div className="grid items-start gap-3 sm:grid-cols-2">
+        <CampoLeitura
+          id="perfil-email"
+          rotulo="E-mail"
+          valor={usuario.email}
+          dica="É o usuário de acesso."
+        />
+        <CampoLeitura
+          id="perfil-papel"
+          rotulo="Papel"
+          valor={`${ROTULO_PAPEL[usuario.papel]}${usuario.dono ? " · dono do Nexus" : ""}`}
+          dica="Definido por quem criou a conta."
+        />
+      </div>
       <ErroApi erro={m.error} />
-      <Button type="submit" disabled={m.isPending || !nome.trim()}>
-        {m.isPending && <Loader2 className="animate-spin" aria-hidden />}Salvar nome
-      </Button>
     </Cartao>
   );
 }
@@ -184,8 +224,16 @@ function TrocarSenha() {
   return (
     <Cartao
       titulo="Senha"
-      descricao="Confirme a senha atual e escolha uma nova. Os outros aparelhos saem da conta."
+      descricao="Ao trocar, os outros aparelhos saem da conta."
       onSubmit={() => m.mutate()}
+      rodape={
+        <Button
+          type="submit"
+          disabled={m.isPending || !atual || nova.length < 8 || repetir !== nova || igual}
+        >
+          {m.isPending && <Loader2 className="animate-spin" aria-hidden />}Trocar senha
+        </Button>
+      }
     >
       <div className="space-y-1.5">
         <Label htmlFor="senha-atual">Senha atual</Label>
@@ -242,12 +290,6 @@ function TrocarSenha() {
         </div>
       </div>
       <ErroApi erro={m.error} />
-      <Button
-        type="submit"
-        disabled={m.isPending || !atual || nova.length < 8 || repetir !== nova || igual}
-      >
-        {m.isPending && <Loader2 className="animate-spin" aria-hidden />}Trocar senha
-      </Button>
     </Cartao>
   );
 }
