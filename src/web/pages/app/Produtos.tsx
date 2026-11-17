@@ -1,6 +1,16 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Package, PackageMinus, PackagePlus, Pencil, Plus, Scale } from "lucide-react";
+import {
+  Ellipsis,
+  Loader2,
+  Package,
+  PackageMinus,
+  PackagePlus,
+  Pencil,
+  Plus,
+  Power,
+  Scale,
+} from "lucide-react";
 import { toast } from "sonner";
 import type { CamposInformativos, ProdutoDto } from "../../../shared/api";
 import { formatarCentavos } from "../../../shared/dominio/precos";
@@ -37,6 +47,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -212,7 +228,8 @@ export function Produtos() {
                   />
                 </td>
               )}
-              <td className="px-4 py-2">
+              {/* Ações sempre à vista: com muitas colunas, a tabela rola por baixo delas. */}
+              <td className="sticky right-0 bg-card px-2 py-2 shadow-[-8px_0_8px_-8px_rgb(0_0_0/0.25)]">
                 <div className="flex justify-end gap-1">
                   <Button
                     size="sm"
@@ -226,37 +243,48 @@ export function Produtos() {
                     <Button
                       size="sm"
                       variant="outline"
+                      aria-label={`Entrada de ${p.nome}`}
+                      title="Entrada"
                       onClick={() => setDialogo({ tipo: "entrada", produto: p })}
                     >
-                      <PackagePlus aria-hidden /> Entrada
+                      <PackagePlus aria-hidden />
                     </Button>
                   )}
-                  {temEstoque && regraSaida && p.status === "active" && p.fisico > 0 && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setDialogo({ tipo: "saida", produto: p })}
-                    >
-                      <PackageMinus aria-hidden /> Saída
-                    </Button>
-                  )}
-                  {temEstoque && app.papel === "admin" && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setDialogo({ tipo: "correcao", produto: p })}
-                    >
-                      <Scale aria-hidden /> Corrigir
-                    </Button>
-                  )}
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    disabled={status.isPending}
-                    onClick={() => status.mutate(p)}
-                  >
-                    {p.status === "active" ? "Inativar" : "Reativar"}
-                  </Button>
+                  {/* O que é menos usado fica no menu: a linha cabe sem esconder colunas. */}
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        aria-label={`Mais ações de ${p.nome}`}
+                        title="Mais ações"
+                      >
+                        <Ellipsis aria-hidden />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      {temEstoque && regraSaida && p.status === "active" && p.fisico > 0 && (
+                        <DropdownMenuItem
+                          onSelect={() => setDialogo({ tipo: "saida", produto: p })}
+                        >
+                          <PackageMinus aria-hidden /> Registrar saída
+                        </DropdownMenuItem>
+                      )}
+                      {temEstoque && app.papel === "admin" && (
+                        <DropdownMenuItem
+                          onSelect={() => setDialogo({ tipo: "correcao", produto: p })}
+                        >
+                          <Scale aria-hidden /> Corrigir saldo
+                        </DropdownMenuItem>
+                      )}
+                      <DropdownMenuItem
+                        disabled={status.isPending}
+                        onSelect={() => status.mutate(p)}
+                      >
+                        <Power aria-hidden /> {p.status === "active" ? "Inativar" : "Reativar"}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
               </td>
             </tr>
@@ -815,15 +843,21 @@ function Validade({
   const texto = `${d}/${m}/${a}`;
   if (dias < 0) {
     return (
-      <span className="rounded-md bg-destructive/15 px-2 py-0.5 text-xs font-medium text-destructive">
-        Venceu em {texto}
+      <span
+        className="rounded-md bg-destructive/15 px-2 py-0.5 text-xs font-medium text-destructive"
+        title={`Venceu em ${texto}`}
+      >
+        Vencido
       </span>
     );
   }
   if (dias <= diasAviso) {
     return (
-      <span className="rounded-md bg-warning-soft px-2 py-0.5 text-xs font-medium text-warning">
-        {dias === 0 ? "Vence hoje" : `Vence em ${dias} ${dias === 1 ? "dia" : "dias"}`}
+      <span
+        className="rounded-md bg-warning-soft px-2 py-0.5 text-xs font-medium text-warning"
+        title={`Vence em ${texto}`}
+      >
+        {dias === 0 ? "Vence hoje" : `Em ${dias} ${dias === 1 ? "dia" : "dias"}`}
       </span>
     );
   }
