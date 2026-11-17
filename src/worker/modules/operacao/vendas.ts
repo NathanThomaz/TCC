@@ -588,7 +588,9 @@ export const TETO_CONTA_CENTAVOS = 10_000_000_000;
 /**
  * Lote da conclusão: a venda passa de rascunho a concluída e, com venda a prazo e financeiro, a
  * conta a receber nasce no mesmo lote. Cada passo depende do anterior por changes(): se outra
- * conclusão venceu a corrida (UPDATE sem linhas), nem auditoria nem conta são gravadas.
+ * conclusão venceu a corrida (UPDATE sem linhas), nem auditoria nem conta são gravadas. Com
+ * limite de crédito, o UPDATE só passa se o que o cliente deve mais esta venda couber nele: a
+ * conferência roda dentro do lote, então duas vendas a prazo simultâneas não estouram o limite.
  */
 export function loteDeConclusao(
   db: D1Database,
@@ -600,6 +602,7 @@ export function loteDeConclusao(
     revisao: number;
     forma: PaymentMethod | null;
     conta: { id: string; cliente: string; vencimento: string } | null;
+    limiteCentavos: number | null;
   },
 ): D1PreparedStatement[] {
   return [
@@ -607,9 +610,22 @@ export function loteDeConclusao(
       .prepare(
         `UPDATE sales SET status = 'completed', completed_at = ?, completed_by = ?, revision = ?,
            payment_method = ?, updated_at = max(updated_at, ?)
-         WHERE id = ? AND system_id = ? AND status = 'draft'`,
+         WHERE id = ? AND system_id = ? AND status = 'draft'
+           AND (?8 IS NULL OR total_cents + (
+             SELECT COALESCE(SUM(amount_cents), 0) FROM financial_entries f
+             WHERE f.system_id = sales.system_id AND f.customer_id = sales.customer_id
+               AND f.kind = 'receber' AND f.status = 'pendente') <= ?8)`,
       )
-      .bind(a.agora, a.atorId, a.revisao + 1, a.forma, a.agora, a.vendaId, a.systemId),
+      .bind(
+        a.agora,
+        a.atorId,
+        a.revisao + 1,
+        a.forma,
+        a.agora,
+        a.vendaId,
+        a.systemId,
+        a.conta ? a.limiteCentavos : null,
+      ),
     db
       .prepare(
         "INSERT INTO audit_events (system_id, actor_id, action, target_type, target_id, created_at) SELECT ?, ?, 'venda.completed', 'venda', ?, ? WHERE changes() = 1",
@@ -660,8 +676,9 @@ export const concluirVenda: Handler = async (ctx) => {
   const db = ctx.env.DB;
   const comConta = pagamento.forma === "a_prazo" && op.config.modulos.includes("financeiro");
   // Limite de crédito (ADR-015): o que o cliente já deve a receber mais esta venda a prazo.
-  const limite = regraDo(op.config, "limite_credito");
-  if (comConta && limite) {
+  const limite = comConta ? regraDo(op.config, "limite_credito") : undefined;
+  const conferirLimite = async () => {
+    if (!limite) return;
     const deve = await db
       .prepare(
         `SELECT COALESCE(SUM(amount_cents), 0) AS total FROM financial_entries
@@ -679,7 +696,8 @@ export const concluirVenda: Handler = async (ctx) => {
         `Passa do limite de crédito de ${reais(limite.valor_centavos)}: ${venda.customer_name} já deve ${reais(emAberto)} e esta venda é de ${reais(venda.total_cents)}. Receba antes ou escolha outra forma de pagamento.`,
       );
     }
-  }
+  };
+  await conferirLimite();
   if (comConta && venda.total_cents > TETO_CONTA_CENTAVOS) {
     throw new AppError(
       422,
@@ -703,13 +721,18 @@ export const concluirVenda: Handler = async (ctx) => {
               vencimento: vencimentoEmDias(now, pagamento.prazoDias),
             }
           : null,
+        limiteCentavos: limite?.valor_centavos ?? null,
       }),
     );
   } catch (error) {
     triggerConflict(error, MENSAGENS);
   }
   const depois = await carregarVenda(ctx, op.systemId, id);
-  if (depois.status !== "completed") throw conflict("A venda não pôde ser concluída. Recarregue.");
+  if (depois.status !== "completed") {
+    // Outra venda a prazo do mesmo cliente entrou entre a conferência e o lote.
+    if (depois.status === "draft") await conferirLimite();
+    throw conflict("A venda não pôde ser concluída. Recarregue.");
+  }
   return json({ venda: depois });
 };
 

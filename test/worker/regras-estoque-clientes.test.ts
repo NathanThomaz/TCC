@@ -6,6 +6,7 @@ import { validateDraft } from "../../src/shared/contract/validate";
 import type { VerifiedToken } from "../../src/worker/auth/firebase-token";
 import { InvalidTokenError } from "../../src/worker/auth/firebase-token";
 import { createApp } from "../../src/worker/app";
+import { loteDeConclusao } from "../../src/worker/modules/operacao/vendas";
 import { limparBanco } from "../limpar-banco";
 
 // Regras de estoque, clientes e vendas (ADR-015, etapa 2b): validade dos produtos, saída com
@@ -217,6 +218,53 @@ describe("limite de crédito na venda a prazo", () => {
     expect(passa.status).toBe(409);
     expect(passa.body.error!.code).toBe("limite_credito");
     expect(passa.body.error!.message).toMatch(/já deve R\$ 40,00/);
+  });
+
+  it("o lote confere o limite de novo: outra dívida que entra no meio barra a conclusão", async () => {
+    const p = await ativar([{ tipo: "limite_credito", valor_centavos: 5_000, ...REQ }]);
+    const prod = await produto(p);
+    const cliente = (await call("POST", p("/clientes"), { nome: "Zé" })).body.cliente!.id;
+    const venda = (
+      await call("POST", p("/vendas"), {
+        cliente,
+        itens: [{ produto: prod.id, caixas: 0, unidades: 4 }],
+      })
+    ).body.venda!;
+    const systemId = p("").split("/")[2]!;
+    // Outra venda a prazo de R$ 40,00 concluída depois da conferência e antes deste lote.
+    await env.DB.prepare(
+      `INSERT INTO financial_entries (id, system_id, kind, description, amount_cents, due_date,
+         customer_id, created_by, created_at, updated_at)
+       VALUES ('fe-corrida', ?, 'receber', 'Venda a prazo', 4000, '2026-12-17', ?, 'a', ?, ?)`,
+    )
+      .bind(systemId, cliente, NOW, NOW)
+      .run();
+    const lote = (limiteCentavos: number | null) =>
+      loteDeConclusao(env.DB, {
+        systemId,
+        vendaId: venda.id,
+        atorId: "a",
+        agora: NOW,
+        revisao: venda.revisao,
+        forma: "a_prazo",
+        conta: { id: crypto.randomUUID(), cliente: "Zé", vencimento: "2026-12-17" },
+        limiteCentavos,
+      });
+    await env.DB.batch(lote(5_000));
+    const status = () =>
+      env.DB.prepare("SELECT status FROM sales WHERE id = ?")
+        .bind(venda.id)
+        .first<{ status: string }>();
+    expect((await status())?.status).toBe("draft");
+    const contas = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM financial_entries WHERE sale_id = ?",
+    )
+      .bind(venda.id)
+      .first<{ n: number }>();
+    expect(contas?.n).toBe(0);
+    // Sem a regra, o mesmo lote conclui.
+    await env.DB.batch(lote(null));
+    expect((await status())?.status).toBe("completed");
   });
 });
 
