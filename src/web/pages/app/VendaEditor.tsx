@@ -245,9 +245,10 @@ function Rascunho({ venda, servicos }: { venda: VendaDto | null; servicos: Atend
   const desatualizada = venda !== null && base !== null && venda.revisao !== base.revisao;
   const [campos, setCampos] = useState<CamposInformativos>(venda?.campos ?? r?.campos ?? {});
   const comItem = linhas.filter((l) => l.produto).length;
-  const nomeCliente = [...(clientes.data ?? []), ...clientesExtras].find(
-    (c) => c.id === cliente,
-  )?.nome;
+  const nomeCliente = [
+    ...(clientes.data ?? []).map((c) => ({ id: c.id, nome: c.nomeCompleto })),
+    ...clientesExtras,
+  ].find((c) => c.id === cliente)?.nome;
   const guardado = useRascunho<DadosVenda>({
     sistema: app.id,
     tipo: "venda",
@@ -542,7 +543,9 @@ function Rascunho({ venda, servicos }: { venda: VendaDto | null; servicos: Atend
                   </SelectTrigger>
                   <SelectContent>
                     {[
-                      ...(clientes.data ?? []).filter((c) => c.status === "active"),
+                      ...(clientes.data ?? [])
+                        .filter((c) => c.status === "active")
+                        .map((c) => ({ id: c.id, nome: c.nomeCompleto })),
                       ...clientesExtras.filter((e) => !clientes.data?.some((c) => c.id === e.id)),
                     ].map((c) => (
                       <SelectItem key={c.id} value={c.id}>

@@ -23,7 +23,7 @@ import {
 } from "../../http/idempotency";
 import { json } from "../../http/responses";
 import type { Handler, RequestContext } from "../../http/router";
-import { parse, triggerCode, triggerConflict } from "../comum";
+import { nomeClienteSql, parse, triggerCode, triggerConflict } from "../comum";
 import { atendimentosDaVenda } from "./agenda";
 import {
   abrirOperacao,
@@ -138,7 +138,7 @@ function publicItem(row: ItemRow): ItemVendaDto {
 }
 
 const SELECT_VENDA = `
-  SELECT s.*, c.name AS customer_name FROM sales s
+  SELECT s.*, ${nomeClienteSql("c")} AS customer_name FROM sales s
   JOIN customers c ON c.id = s.customer_id AND c.system_id = s.system_id`;
 
 async function carregarItens(ctx: RequestContext, saleId: string): Promise<ItemRow[]> {

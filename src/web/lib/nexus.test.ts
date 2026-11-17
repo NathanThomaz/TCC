@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { validateDraft } from "../../shared/contract/validate";
+import { MODELOS, modelosParaEscolher } from "./modelos";
 import type { ConfigDraft } from "@/types/nexus";
 import {
   comRequisitosGerados,
@@ -136,7 +137,12 @@ describe("campo de dinheiro (pedido do dono, 2026-11-14)", () => {
 
 describe("seis modelos (ADR-015)", () => {
   it("cada modelo novo começa com os seus módulos e passa no validador", () => {
-    for (const modelo of ["controle_financeiro", "clientes_cobrancas", "agenda_simples"] as const) {
+    for (const modelo of [
+      "controle_financeiro",
+      "clientes_cobrancas",
+      "agenda_simples",
+      "controle_estoque",
+    ] as const) {
       const d = rascunhoPadrao("Teste", modelo);
       expect(d.modulos).toEqual([...MODULOS_POR_MODELO[modelo]]);
       expect(bloqueantes(d), modelo).toEqual([]);
@@ -170,5 +176,83 @@ describe("seis modelos (ADR-015)", () => {
     const r = reconciliarModelo(comModelo(d, "comercio_com_servicos"), "servicos");
     expect(r.aparencia.rotulos_menu).toEqual({ profissionais: "Recursos" });
     expect(r.tipos_atendimento).toHaveLength(1);
+  });
+});
+
+describe("controle de estoque no lugar da agenda simples (2026-11-17)", () => {
+  it("a tela inicial oferece seis modelos, com o controle de estoque e sem a agenda simples", () => {
+    const ids = MODELOS.map((m) => m.id);
+    expect(ids).toHaveLength(6);
+    expect(ids).toContain("controle_estoque");
+    expect(ids).not.toContain("agenda_simples");
+  });
+
+  it("sistema que já usa a agenda simples continua vendo o próprio modelo", () => {
+    expect(modelosParaEscolher("agenda_simples").map((m) => m.id)).toContain("agenda_simples");
+    expect(modelosParaEscolher("comercio")).toHaveLength(6);
+  });
+
+  it("controle de estoque: só produtos e estoque, com a saída por motivo já ligada", () => {
+    const d = rascunhoPadrao("Almoxarifado", "controle_estoque");
+    expect(d.modulos).toEqual(["produtos", "estoque"]);
+    expect(d.regras.map((r) => r.tipo)).toEqual(["saida_manual"]);
+    expect(d.campos).toEqual([]);
+    expect(bloqueantes(d)).toEqual([]);
+  });
+
+  it("sem a saída com motivo, o controle de estoque não passa no validador", () => {
+    const d = { ...rascunhoPadrao("Almoxarifado", "controle_estoque"), regras: [] };
+    expect(bloqueantes(d).map((i) => i.code)).toContain("parametro_obrigatorio_ausente");
+  });
+});
+
+describe("telefone e e-mail de fábrica nos clientes (2026-11-17)", () => {
+  it("sistema novo com clientes já traz as duas colunas, e passa no validador", () => {
+    for (const modelo of ["comercio", "servicos", "clientes_cobrancas"] as const) {
+      const d = rascunhoPadrao("Teste", modelo);
+      expect(
+        d.campos.map((c) => [c.entidade, c.rotulo]),
+        modelo,
+      ).toEqual([
+        ["clientes", "Telefone"],
+        ["clientes", "E-mail"],
+      ]);
+      // Comércio e serviços ainda pedem ao dono o prazo da reserva e os atendimentos; os campos
+      // de fábrica não bloqueiam nada.
+      expect(
+        bloqueantes(d).filter((i) => i.path.startsWith("campos")),
+        modelo,
+      ).toEqual([]);
+    }
+    expect(bloqueantes(rascunhoPadrao("Aulas", "clientes_cobrancas"))).toEqual([]);
+  });
+
+  it("no rascunho novo, quando clientes entra com a troca de modelo, as colunas vêm junto", () => {
+    const d = rascunhoPadrao("Teste", "controle_estoque");
+    const r = reconciliarModelo(comModelo(d, "clientes_cobrancas"), "controle_estoque");
+    expect(r.campos.map((c) => c.rotulo)).toEqual(["Telefone", "E-mail"]);
+  });
+
+  it("se clientes já existia, a coluna que o dono tirou não volta", () => {
+    const d = rascunhoPadrao("Teste", "comercio");
+    d.campos = d.campos.filter((c) => c.id !== "telefone");
+    const r = reconciliarModelo(comModelo(d, "comercio_com_servicos"), "comercio");
+    expect(r.campos.map((c) => c.rotulo)).toEqual(["E-mail"]);
+  });
+
+  it("sem clientes, nada de colunas de fábrica", () => {
+    expect(rascunhoPadrao("Casa", "controle_financeiro").campos).toEqual([]);
+  });
+
+  it("uma coluna extra chamada Sobrenome agora duplica o campo próprio", () => {
+    const d = rascunhoPadrao("Loja", "comercio");
+    d.campos.push({
+      id: "sobrenome",
+      entidade: "clientes",
+      rotulo: "Sobrenome",
+      tipo: "texto",
+      obrigatorio: false,
+    });
+    expect(bloqueantes(d).length).toBeGreaterThan(0);
   });
 });

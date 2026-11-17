@@ -106,6 +106,7 @@ export function Produtos() {
     retomado ? { tipo: "produto", atual: null, rascunho: retomado } : null,
   );
   const temEstoque = app.config.modulos.includes("estoque");
+  const temVendas = app.config.modulos.includes("vendas");
   const temAtacado = app.config.regras.some((r) => r.tipo === "limite_atacado");
   const temCaixa = app.config.regras.some((r) => r.tipo === "unidades_por_caixa");
   // Regras de estoque (ADR-015): validade com aviso e saída com motivo.
@@ -133,7 +134,11 @@ export function Produtos() {
     ...(temAtacado ? [col("produtos.atacado")] : []),
     ...(temCaixa ? [col("produtos.caixa")] : []),
     ...campos.map((c) => <ColunaEditavel chave={`campo:produtos:${c.id}`} rotulo={c.rotulo} />),
-    ...(temEstoque ? ["Físico", "Reservado", "Disponível", "Mínimo"] : []),
+    ...(temEstoque
+      ? temVendas
+        ? ["Físico", "Reservado", "Disponível", "Mínimo"]
+        : ["Em estoque", "Mínimo"]
+      : []),
     ...(regraValidade ? ["Validade"] : []),
     <span className="sr-only">Ações</span>,
   ];
@@ -144,7 +149,9 @@ export function Produtos() {
         titulo={rotuloModulo(app, "produtos")}
         descricao={
           temEstoque
-            ? "Disponível = físico − reservado em rascunhos de venda ainda no prazo."
+            ? temVendas
+              ? "Disponível = físico − reservado em rascunhos de venda ainda no prazo."
+              : "O saldo muda pelas entradas e pelas saídas com motivo."
             : undefined
         }
         acoes={
@@ -204,8 +211,13 @@ export function Produtos() {
               ))}
               {temEstoque && (
                 <>
-                  <td className="px-4 py-2 tabular-nums">{p.fisico}</td>
-                  <td className="px-4 py-2 tabular-nums">{p.reservado}</td>
+                  {/* Sem vendas não há reserva: físico e disponível são o mesmo número. */}
+                  {temVendas && (
+                    <>
+                      <td className="px-4 py-2 tabular-nums">{p.fisico}</td>
+                      <td className="px-4 py-2 tabular-nums">{p.reservado}</td>
+                    </>
+                  )}
                   <td
                     className={cn(
                       "px-4 py-2 font-medium tabular-nums",

@@ -374,6 +374,17 @@ export function semanticIssues(draft: ConfigDraft): ValidationIssue[] {
       );
     }
   }
+  // Sem vendas, a saída com motivo é o único jeito de tirar do estoque: o controle de estoque
+  // precisa dela, com os motivos que o dono usa.
+  if (draft.modelo === "controle_estoque" && !draft.regras.some((r) => r.tipo === "saida_manual")) {
+    issues.push(
+      block(
+        "parametro_obrigatorio_ausente",
+        "regras",
+        "No controle de estoque, a regra saida_manual precisa ser informada pelo dono: é por ela que os itens saem do estoque (uso, perda, quebra).",
+      ),
+    );
+  }
 
   // Fora do catálogo: registrado e explicado, nunca transformado em promessa.
   draft.fora_do_catalogo.forEach((need, index) => {

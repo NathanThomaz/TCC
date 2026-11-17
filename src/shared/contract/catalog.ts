@@ -1,7 +1,7 @@
 // Catálogo fechado do Nexus (seção 5 da especificação). Tudo o que uma configuração pode usar
 // está aqui; o que não está não é criado silenciosamente — vira necessidade fora do catálogo.
 
-export const CATALOG_VERSION = "2026.11.9";
+export const CATALOG_VERSION = "2026.11.10";
 
 export const MODULES = [
   "clientes",
@@ -40,8 +40,23 @@ export const TEMPLATES = [
   "controle_financeiro",
   "agenda_simples",
   "clientes_cobrancas",
+  "controle_estoque",
 ] as const;
 export type TemplateId = (typeof TEMPLATES)[number];
+
+/**
+ * Modelos oferecidos na tela inicial, no modo avançado e à IA (pedido do dono, 2026-11-17). A agenda
+ * simples tinha os mesmos módulos de serviços agendados e deu lugar ao controle de estoque; continua
+ * no contrato só para os sistemas que já a usam.
+ */
+export const TEMPLATES_OFERECIDOS = [
+  "comercio",
+  "servicos",
+  "comercio_com_servicos",
+  "controle_financeiro",
+  "controle_estoque",
+  "clientes_cobrancas",
+] as const satisfies readonly TemplateId[];
 
 /** Cada modelo define exatamente o conjunto de módulos (seção 5). */
 export const TEMPLATE_MODULES: Record<TemplateId, readonly ModuleId[]> = {
@@ -53,6 +68,8 @@ export const TEMPLATE_MODULES: Record<TemplateId, readonly ModuleId[]> = {
   // vem pronto (recursos em vez de profissionais, reserva de horário), não nos módulos.
   agenda_simples: ["clientes", "profissionais", "agenda"],
   clientes_cobrancas: ["clientes", "financeiro"],
+  // Entrada, saída com motivo e saldo, sem vender pelo sistema.
+  controle_estoque: ["produtos", "estoque"],
 };
 
 /** Módulos opcionais que cada modelo aceita, além dos seus (ADR-006). */
@@ -63,6 +80,7 @@ export const OPTIONAL_MODULES: Record<TemplateId, readonly ModuleId[]> = {
   controle_financeiro: [],
   agenda_simples: [],
   clientes_cobrancas: [],
+  controle_estoque: ["fornecedores"],
 };
 
 /**
@@ -77,6 +95,7 @@ export const ROTULOS_CAMPOS = {
   "produtos.atacado": { padrao: "Preço de atacado", modulo: "produtos" },
   "produtos.caixa": { padrao: "Unidades por caixa", modulo: "produtos" },
   "clientes.nome": { padrao: "Nome", modulo: "clientes" },
+  "clientes.sobrenome": { padrao: "Sobrenome", modulo: "clientes" },
   "profissionais.nome": { padrao: "Nome", modulo: "profissionais" },
   "fornecedores.nome": { padrao: "Nome", modulo: "fornecedores" },
 } as const satisfies Record<string, { padrao: string; modulo: ModuleId }>;
@@ -109,6 +128,7 @@ export const TEMPLATE_LABELS: Record<TemplateId, string> = {
   controle_financeiro: "Controle financeiro",
   agenda_simples: "Agenda simples",
   clientes_cobrancas: "Clientes e cobranças",
+  controle_estoque: "Controle de estoque",
 };
 
 /** Para quem é cada modelo (tela inicial, modo avançado e instruções da IA). */
@@ -137,6 +157,10 @@ export const TEMPLATE_DESCRIPTIONS: Record<TemplateId, { para: string; exemplos:
     para: "Quem cadastra clientes e cobra mensalidades ou serviços, sem estoque nem agenda.",
     exemplos: "professor particular, personal trainer, escola de idiomas, consultoria",
   },
+  controle_estoque: {
+    para: "Quem só controla o que entra e sai do estoque, sem vender pelo sistema.",
+    exemplos: "almoxarifado, depósito, insumos de restaurante, materiais de obra",
+  },
 };
 
 /** Entidades que aceitam campos informativos adicionais e o módulo que as provê. */
@@ -163,6 +187,8 @@ export const NATIVE_FIELDS: Record<
   // campos legítimos e não são barrados.
   clientes: [
     { label: "Nome", aliases: ["nome do cliente"] },
+    // Campo próprio desde a migration 0018 (pedido do dono, 2026-11-17).
+    { label: "Sobrenome", aliases: ["ultimo nome", "nome de familia"] },
     { label: "Situação (ativo ou inativo)", aliases: ["situacao", "status"] },
   ],
   produtos: [
@@ -207,6 +233,65 @@ export const NATIVE_FIELDS: Record<
   fornecedores: [
     { label: "Nome", aliases: ["nome do fornecedor", "razao social"] },
     { label: "Situação (ativo ou inativo)", aliases: ["situacao", "status"] },
+  ],
+};
+
+/**
+ * Colunas que um sistema novo já traz no cadastro de clientes (pedido do dono, 2026-11-17): são
+ * campos informativos comuns, que o dono renomeia, deixa vazios ou tira na revisão.
+ */
+export const CAMPOS_PADRAO_CLIENTES = [
+  { id: "telefone", entidade: "clientes", rotulo: "Telefone", tipo: "texto", obrigatorio: false },
+  { id: "email", entidade: "clientes", rotulo: "E-mail", tipo: "texto", obrigatorio: false },
+] as const;
+
+/** Sugestões da "Nova coluna" por cadastro: um clique preenche o nome e o tipo. */
+export const SUGESTOES_DE_COLUNA: Record<
+  FieldEntity,
+  readonly { rotulo: string; tipo: (typeof FIELD_TYPES)[number] }[]
+> = {
+  clientes: [
+    { rotulo: "Telefone", tipo: "texto" },
+    { rotulo: "E-mail", tipo: "texto" },
+    { rotulo: "CPF ou CNPJ", tipo: "texto" },
+    { rotulo: "Data de nascimento", tipo: "data" },
+    { rotulo: "Endereço", tipo: "texto" },
+    { rotulo: "Bairro", tipo: "texto" },
+    { rotulo: "Cidade", tipo: "texto" },
+    { rotulo: "Observações", tipo: "texto" },
+  ],
+  produtos: [
+    { rotulo: "Marca", tipo: "texto" },
+    { rotulo: "Categoria", tipo: "texto" },
+    { rotulo: "Fornecedor preferido", tipo: "texto" },
+    { rotulo: "Localização no estoque", tipo: "texto" },
+    { rotulo: "Peso", tipo: "numero" },
+    { rotulo: "Observações", tipo: "texto" },
+  ],
+  profissionais: [
+    { rotulo: "Telefone", tipo: "texto" },
+    { rotulo: "E-mail", tipo: "texto" },
+    { rotulo: "Especialidade", tipo: "texto" },
+    { rotulo: "Comissão (%)", tipo: "numero" },
+    { rotulo: "Data de admissão", tipo: "data" },
+  ],
+  vendas: [
+    { rotulo: "Observações", tipo: "texto" },
+    { rotulo: "Data de entrega", tipo: "data" },
+    { rotulo: "Endereço de entrega", tipo: "texto" },
+    { rotulo: "Vendedor", tipo: "texto" },
+  ],
+  agendamentos: [
+    { rotulo: "Observações", tipo: "texto" },
+    { rotulo: "Telefone para contato", tipo: "texto" },
+    { rotulo: "Local", tipo: "texto" },
+  ],
+  fornecedores: [
+    { rotulo: "CNPJ", tipo: "texto" },
+    { rotulo: "Telefone", tipo: "texto" },
+    { rotulo: "E-mail", tipo: "texto" },
+    { rotulo: "Pessoa de contato", tipo: "texto" },
+    { rotulo: "Prazo de entrega (dias)", tipo: "numero" },
   ],
 };
 

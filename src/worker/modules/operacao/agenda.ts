@@ -10,7 +10,7 @@ import { AppError, conflict, notFound, validationFailed } from "../../http/error
 import { beginIdempotent, recordStatement, replayAfterRace } from "../../http/idempotency";
 import { json } from "../../http/responses";
 import type { Handler, RequestContext } from "../../http/router";
-import { parse, triggerConflict } from "../comum";
+import { nomeClienteSql, parse, triggerConflict } from "../comum";
 import { abrirOperacao, camposValidos, lerCampos } from "./contexto";
 
 // Agenda (seção 13 e ADR-002, item 3). Sobreposição por profissional, par coerente e transições
@@ -35,7 +35,7 @@ interface AtendimentoRow {
 }
 
 const SELECT_ATENDIMENTO = `
-  SELECT a.*, c.name AS customer_name, p.name AS professional_name FROM appointments a
+  SELECT a.*, ${nomeClienteSql("c")} AS customer_name, p.name AS professional_name FROM appointments a
   JOIN customers c ON c.id = a.customer_id AND c.system_id = a.system_id
   JOIN professionals p ON p.id = a.professional_id AND p.system_id = a.system_id`;
 

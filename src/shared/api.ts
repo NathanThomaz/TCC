@@ -70,6 +70,10 @@ export interface ResumoPessoaDto {
 export interface ClienteDto {
   id: string;
   nome: string;
+  /** Só clientes têm sobrenome; nos demais cadastros é sempre null. */
+  sobrenome: string | null;
+  /** Nome e sobrenome juntos: o que as telas mostram. */
+  nomeCompleto: string;
   status: StatusCadastro;
   campos: CamposInformativos;
   resumo?: ResumoPessoaDto;
@@ -78,6 +82,8 @@ export interface ClienteDto {
 export interface ProfissionalDto {
   id: string;
   nome: string;
+  sobrenome: string | null;
+  nomeCompleto: string;
   status: StatusCadastro;
   campos: CamposInformativos;
   resumo?: ResumoPessoaDto;

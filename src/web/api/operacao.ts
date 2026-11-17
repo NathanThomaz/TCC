@@ -71,7 +71,7 @@ export async function listarPessoas(
 export async function criarPessoa(
   sistema: string,
   tipo: TipoPessoa,
-  dados: { nome: string; campos: CamposInformativos },
+  dados: { nome: string; sobrenome?: string | null; campos: CamposInformativos },
   chave = novaChave(),
 ) {
   const r = await chamar<OperacaoApiBody>(`${base(sistema)}/${tipo}`, {
@@ -86,7 +86,7 @@ export async function editarPessoa(
   sistema: string,
   tipo: TipoPessoa,
   id: string,
-  dados: { nome: string; campos: CamposInformativos },
+  dados: { nome: string; sobrenome?: string | null; campos: CamposInformativos },
 ) {
   const r = await chamar<OperacaoApiBody>(`${base(sistema)}/${tipo}/${encodeURIComponent(id)}`, {
     method: "PATCH",

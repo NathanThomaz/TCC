@@ -342,7 +342,7 @@ function AgendarDialog({
   const [inicioSegundo, setInicioSegundo] = useState(r?.inicioSegundo ?? "");
   const [campos, setCampos] = useState<CamposInformativos>(r?.campos ?? {});
   const par = parDoTipo(app.config, tipo);
-  const nomeCliente = (clientes.data ?? []).find((c) => c.id === cliente)?.nome;
+  const nomeCliente = (clientes.data ?? []).find((c) => c.id === cliente)?.nomeCompleto;
   const guardado = useRascunho<DadosAgendamento>({
     sistema: app.id,
     tipo: "agendamento",
@@ -410,7 +410,7 @@ function AgendarDialog({
               onChange={setCliente}
               opcoes={(clientes.data ?? [])
                 .filter((c) => c.status === "active")
-                .map((c) => [c.id, c.nome])}
+                .map((c) => [c.id, c.nomeCompleto])}
             />
             <Escolha
               id="agendar-profissional"

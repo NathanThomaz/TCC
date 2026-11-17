@@ -21,7 +21,7 @@ import {
   instrucoesConsulta,
   type Consulta,
 } from "../../ia/prompts";
-import { isUnique, parse } from "../comum";
+import { isUnique, nomeClienteSql, parse } from "../comum";
 import { abrirOperacao, type Operacao } from "./contexto";
 import * as modulos from "./consulta-modulos";
 import { PAYMENT_LABELS } from "../../../shared/contract/catalog";
@@ -188,7 +188,7 @@ async function estoque(ctx: RequestContext, op: Operacao, c: Consulta): Promise<
 async function reservas(ctx: RequestContext, op: Operacao): Promise<Resposta> {
   if (!temModulo(op.config, "vendas")) return semModulo("vendas");
   const { results } = await ctx.env.DB.prepare(
-    `SELECT c.name AS cliente, s.expires_at FROM sales s
+    `SELECT ${nomeClienteSql("c")} AS cliente, s.expires_at FROM sales s
      JOIN customers c ON c.id = s.customer_id AND c.system_id = s.system_id
      WHERE s.system_id = ? AND s.status = 'draft' AND s.expires_at > ? ORDER BY s.expires_at LIMIT 20`,
   )
@@ -214,7 +214,7 @@ async function agenda(ctx: RequestContext, op: Operacao, c: Consulta): Promise<R
   if (!faixa)
     return { texto: "Não entendi o período. Pode repetir as datas?", filtros: [], origem: "—" };
   const { results } = await ctx.env.DB.prepare(
-    `SELECT a.start_at, a.end_at, a.service_type, a.status, c.name AS cliente, p.name AS profissional
+    `SELECT a.start_at, a.end_at, a.service_type, a.status, ${nomeClienteSql("c")} AS cliente, p.name AS profissional
      FROM appointments a
      JOIN customers c ON c.id = a.customer_id AND c.system_id = a.system_id
      JOIN professionals p ON p.id = a.professional_id AND p.system_id = a.system_id

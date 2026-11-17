@@ -4,6 +4,7 @@ import type { ConfigDraft } from "../../../shared/contract/schema";
 import { deCampoLocal, formatarDataHora, paraCampoLocal } from "../../../shared/dominio/agenda";
 import { formatarCentavos } from "../../../shared/dominio/precos";
 import type { RequestContext } from "../../http/router";
+import { nomeClienteSql } from "../comum";
 import type { Consulta } from "../../ia/prompts";
 import type { Operacao } from "./contexto";
 import { hojeLocal } from "./financeiro";
@@ -168,7 +169,8 @@ export async function clientes(ctx: RequestContext, op: Operacao, c: Consulta): 
     // Sem o módulo de vendas, só o cadastro (nenhuma consulta às vendas).
     const { results } = await db
       .prepare(
-        `SELECT name, status FROM customers WHERE system_id = ?1 AND instr(${semAcentoSql("name")}, ?2) > 0
+        `SELECT ${nomeClienteSql("customers")} AS name, status FROM customers
+         WHERE system_id = ?1 AND instr(${semAcentoSql(nomeClienteSql("customers"))}, ?2) > 0
          ORDER BY name COLLATE NOCASE LIMIT ${LISTA}`,
       )
       .bind(op.systemId, termoBusca(c.cliente))
@@ -186,14 +188,14 @@ export async function clientes(ctx: RequestContext, op: Operacao, c: Consulta): 
     if (!per) return periodoInvalido;
     const { results } = await db
       .prepare(
-        `SELECT c.name, c.status,
+        `SELECT ${nomeClienteSql("c")} AS name, c.status,
            (SELECT COUNT(*) FROM sales s WHERE s.customer_id = c.id AND s.status = 'completed'
               AND s.completed_at >= ?3 AND s.completed_at < ?4) AS n,
            (SELECT COALESCE(SUM(total_cents), 0) FROM sales s WHERE s.customer_id = c.id
               AND s.status = 'completed' AND s.completed_at >= ?3 AND s.completed_at < ?4) AS total,
            (SELECT MAX(completed_at) FROM sales s WHERE s.customer_id = c.id AND s.status = 'completed') AS ultima
-         FROM customers c WHERE c.system_id = ?1 AND instr(${semAcentoSql("c.name")}, ?2) > 0
-         ORDER BY c.name COLLATE NOCASE LIMIT ${LISTA}`,
+         FROM customers c WHERE c.system_id = ?1 AND instr(${semAcentoSql(nomeClienteSql("c"))}, ?2) > 0
+         ORDER BY name COLLATE NOCASE LIMIT ${LISTA}`,
       )
       .bind(op.systemId, termoBusca(c.cliente), per.de, per.ate)
       .all<{ name: string; status: string; n: number; total: number; ultima: number | null }>();
@@ -227,7 +229,7 @@ export async function clientes(ctx: RequestContext, op: Operacao, c: Consulta): 
   if (!per) return periodoInvalido;
   const { results } = await db
     .prepare(
-      `SELECT c.name, COUNT(*) AS n, SUM(s.total_cents) AS total FROM sales s
+      `SELECT ${nomeClienteSql("c")} AS name, COUNT(*) AS n, SUM(s.total_cents) AS total FROM sales s
        JOIN customers c ON c.id = s.customer_id AND c.system_id = s.system_id
        WHERE s.system_id = ? AND s.status = 'completed' AND s.completed_at >= ? AND s.completed_at < ?
        GROUP BY c.id ORDER BY total DESC LIMIT 5`,

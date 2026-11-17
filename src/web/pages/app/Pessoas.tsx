@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Pencil, Plus, Search, Users } from "lucide-react";
+import { Info, Loader2, Pencil, Plus, Search, Users } from "lucide-react";
 import { toast } from "sonner";
 import type { CamposInformativos, ClienteDto } from "../../../shared/api";
 import type { Campo } from "@/types/nexus";
@@ -105,7 +105,7 @@ export function filtrarPessoas(
       (!termo ||
         normalizar(
           [
-            p.nome,
+            p.nomeCompleto,
             ...Object.values(p.campos).map(String),
             ...campos.map((c) => textoDoCampo(c, p.campos[c.id])),
           ].join(" "),
@@ -113,7 +113,7 @@ export function filtrarPessoas(
   );
   const r = (p: ClienteDto) => p.resumo;
   const porOrdem: Record<Ordem, (a: ClienteDto, b: ClienteDto) => number> = {
-    nome: (a, b) => a.nome.localeCompare(b.nome, "pt-BR"),
+    nome: (a, b) => a.nomeCompleto.localeCompare(b.nomeCompleto, "pt-BR"),
     total: (a, b) => (r(b)?.totalCentavos ?? 0) - (r(a)?.totalCentavos ?? 0),
     ultima: (a, b) => (r(b)?.ultimaCompra ?? 0) - (r(a)?.ultimaCompra ?? 0),
     // Sem próximo atendimento vai para o fim.
@@ -166,11 +166,21 @@ export function Pessoas({ tipo }: { tipo: TipoPessoa }) {
   );
 
   const ativos = (q.data ?? []).filter((p) => p.status === "active").length;
+  // Só clientes têm sobrenome (migration 0018).
+  const comSobrenome = tipo === "clientes";
   const cabecalho = [
     <ColunaEditavel
       chave={`${tipo}.nome`}
       rotulo={rotuloCampo(app.config, `${tipo}.nome` as const)}
     />,
+    ...(comSobrenome
+      ? [
+          <ColunaEditavel
+            chave="clientes.sobrenome"
+            rotulo={rotuloCampo(app.config, "clientes.sobrenome")}
+          />,
+        ]
+      : []),
     "Situação",
     ...campos.map((c) => (
       <ColunaEditavel chave={`campo:${ENTIDADE[tipo]}:${c.id}`} rotulo={c.rotulo} />
@@ -276,6 +286,9 @@ export function Pessoas({ tipo }: { tipo: TipoPessoa }) {
                   className={p.status === "inactive" ? "text-muted-foreground" : undefined}
                 >
                   <td className="px-4 py-2 font-medium whitespace-nowrap">{p.nome}</td>
+                  {comSobrenome && (
+                    <td className="px-4 py-2 font-medium whitespace-nowrap">{p.sobrenome ?? ""}</td>
+                  )}
                   <td className="px-4 py-2">
                     <span
                       className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
@@ -332,7 +345,7 @@ export function Pessoas({ tipo }: { tipo: TipoPessoa }) {
                         size="sm"
                         variant="ghost"
                         onClick={() => setEditando(p)}
-                        aria-label={`Editar ${p.nome}`}
+                        aria-label={`Editar ${p.nomeCompleto}`}
                       >
                         <Pencil aria-hidden />
                       </Button>
@@ -369,6 +382,7 @@ export function Pessoas({ tipo }: { tipo: TipoPessoa }) {
 
 interface DadosPessoa {
   nome: string;
+  sobrenome?: string;
   campos: CamposInformativos;
 }
 
@@ -386,6 +400,8 @@ function PessoaDialog({
   const app = useApp();
   const qc = useQueryClient();
   const [nome, setNome] = useState(atual?.nome ?? rascunho?.dados.nome ?? "");
+  const comSobrenome = tipo === "clientes";
+  const [sobrenome, setSobrenome] = useState(atual?.sobrenome ?? rascunho?.dados.sobrenome ?? "");
   const [campos, setCampos] = useState<CamposInformativos>(
     atual?.campos ?? rascunho?.dados.campos ?? {},
   );
@@ -395,15 +411,19 @@ function PessoaDialog({
     tipo,
     ativo: !atual,
     inicial: rascunho,
-    dados: { nome, campos },
-    vazio: nome.trim() === "" && Object.keys(campos).length === 0,
-    titulo: nome.trim() || "Cadastro sem nome",
+    dados: { nome, sobrenome, campos },
+    vazio: nome.trim() === "" && sobrenome.trim() === "" && Object.keys(campos).length === 0,
+    titulo: `${nome.trim()} ${sobrenome.trim()}`.trim() || "Cadastro sem nome",
     resumo: `Novo cadastro em ${rotuloModulo(app, tipo)}`,
   });
 
   const m = useMutation({
     mutationFn: () => {
-      const dados = { nome: nome.trim(), campos };
+      const dados = {
+        nome: nome.trim(),
+        ...(comSobrenome ? { sobrenome: sobrenome.trim() || null } : {}),
+        campos,
+      };
       if (atual) return editarPessoa(app.id, tipo, atual.id, dados);
       return criarPessoa(app.id, tipo, dados, chave(dados));
     },
@@ -427,19 +447,38 @@ function PessoaDialog({
         >
           <DialogHeader>
             <DialogTitle>
-              {atual ? `Editar ${atual.nome}` : `Novo cadastro em ${rotuloModulo(app, tipo)}`}
+              {atual
+                ? `Editar ${atual.nomeCompleto}`
+                : `Novo cadastro em ${rotuloModulo(app, tipo)}`}
             </DialogTitle>
           </DialogHeader>
-          <div className="space-y-1.5">
-            <Label htmlFor="pessoa-nome">{rotuloCampo(app.config, `${tipo}.nome` as const)}</Label>
-            <Input
-              id="pessoa-nome"
-              value={nome}
-              maxLength={120}
-              required
-              autoFocus
-              onChange={(e) => setNome(e.target.value)}
-            />
+          <div className={comSobrenome ? "grid gap-3 sm:grid-cols-2" : undefined}>
+            <div className="space-y-1.5">
+              <Label htmlFor="pessoa-nome">
+                {rotuloCampo(app.config, `${tipo}.nome` as const)}
+              </Label>
+              <Input
+                id="pessoa-nome"
+                value={nome}
+                maxLength={120}
+                required
+                autoFocus
+                onChange={(e) => setNome(e.target.value)}
+              />
+            </div>
+            {comSobrenome && (
+              <div className="space-y-1.5">
+                <Label htmlFor="pessoa-sobrenome">
+                  {rotuloCampo(app.config, "clientes.sobrenome")}
+                </Label>
+                <Input
+                  id="pessoa-sobrenome"
+                  value={sobrenome}
+                  maxLength={120}
+                  onChange={(e) => setSobrenome(e.target.value)}
+                />
+              </div>
+            )}
           </div>
           <CamposForm
             config={app.config}
@@ -448,6 +487,14 @@ function PessoaDialog({
             onChange={setCampos}
             prefixo="pessoa"
           />
+          <p className="flex gap-2 rounded-md bg-muted/60 px-3 py-2 text-xs text-muted-foreground">
+            <Info className="mt-px size-3.5 shrink-0" aria-hidden />
+            <span>
+              {app.papel === "admin"
+                ? `Precisa de mais informações (telefone, endereço, CPF...)? Use "Nova coluna" na tela de ${rotuloModulo(app, tipo)}: a coluna aparece aqui no cadastro e na tabela.`
+                : `Precisa de mais informações? Peça a um administrador para incluir uma coluna nova em ${rotuloModulo(app, tipo)}.`}
+            </span>
+          </p>
           <ErroApi erro={m.error} />
           <AvisoRascunho salvoEm={guardado.salvoEm} />
           <DialogFooter>
