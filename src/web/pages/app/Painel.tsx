@@ -8,6 +8,7 @@ import {
   ShoppingBag,
   CalendarCheck,
   CalendarClock,
+  UserX,
   CalendarDays,
   CircleAlert,
   ClipboardList,
@@ -268,6 +269,32 @@ export function indicadores(p: PainelDto): IndicadorDados[] {
       icone: CalendarDays,
       valor: prox ? `${quando.slice(0, 5)} ${quando.slice(11)}` : "—",
       detalhe: prox ? `${prox.cliente} · ${prox.tipo}` : "Nada agendado",
+    });
+  }
+  // Regras de estoque e clientes (ADR-015, etapa 2b).
+  if (p.estoque?.validade) {
+    const v = p.estoque.validade;
+    const total = v.vencidos + v.vencendo;
+    add({
+      id: "validade",
+      prioridade: total > 0 ? 4.2 : 14.2,
+      rotulo: "Validade",
+      icone: CalendarClock,
+      alerta: total > 0,
+      valor: String(total),
+      detalhe: `${plural(v.vencidos, "produto vencido", "produtos vencidos")} · ${v.vencendo} vence(m) em até ${v.dias} dias`,
+    });
+  }
+  if (p.clientes?.semComprar) {
+    const c = p.clientes.semComprar;
+    add({
+      id: "sem-comprar",
+      prioridade: c.quantidade > 0 ? 8.5 : 15,
+      rotulo: "Clientes sem comprar",
+      icone: UserX,
+      alerta: false,
+      valor: String(c.quantidade),
+      detalhe: `Há mais de ${c.dias} dias sem comprar`,
     });
   }
   if (p.financeiro) {

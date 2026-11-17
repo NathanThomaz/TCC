@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { ClienteDto, ProdutoDto, ProfissionalDto, ResumoPessoaDto } from "../../../shared/api";
 import type { FieldEntity, ModuleId } from "../../../shared/contract/catalog";
 import type { ConfigDraft } from "../../../shared/contract/schema";
+import { dataLocal } from "./financeiro";
 import { readJson } from "../../http/body";
 import { AppError, notFound, validationFailed } from "../../http/errors";
 import { beginIdempotent, recordStatement, replayAfterRace } from "../../http/idempotency";
@@ -293,6 +294,7 @@ export interface ProdutoRow {
   last_cost_cents: number | null;
   min_units: number | null;
   barcode: string | null;
+  expires_on: string | null;
 }
 
 /** Cadastros por lista (as telas carregam a lista inteira; um pequeno negócio cabe folgado). */
@@ -317,6 +319,8 @@ const ProdutoBody = z.object({
   codigoBarras: codigoBarras.nullable().optional(),
   /** Valor de compra (custo da unidade), opcional; ausente na edição mantém o atual. */
   custoCentavos: z.number().int().min(0).max(100_000_000).nullable().optional(),
+  /** Validade (regra validade_produto); ausente na edição mantém a atual. */
+  validade: dataLocal.nullable().optional(),
 });
 type ProdutoBody = z.infer<typeof ProdutoBody>;
 
@@ -335,6 +339,7 @@ export function publicProduto(row: ProdutoRow): ProdutoDto {
     custoCentavos: row.last_cost_cents,
     estoqueMinimo: row.min_units,
     codigoBarras: row.barcode,
+    validade: row.expires_on,
   };
 }
 
@@ -342,7 +347,7 @@ export function publicProduto(row: ProdutoRow): ProdutoDto {
 export const SELECT_PRODUTO = `
   SELECT p.id, p.name, p.status, p.retail_cents, p.wholesale_cents, p.units_per_box, p.physical,
          p.extra_json, COALESCE(p.last_cost_cents, p.cost_cents) AS last_cost_cents,
-         p.min_units, p.barcode,
+         p.min_units, p.barcode, p.expires_on,
          (SELECT COALESCE(SUM(r.quantity), 0) FROM reservations r
           WHERE r.product_id = p.id AND r.status = 'active' AND r.expires_at > ?1) AS reserved
   FROM products p`;
@@ -439,6 +444,7 @@ export const criarProduto: Handler = async (ctx) => {
   if (inicial !== null && !op.config.modulos.includes("estoque")) {
     throw validationFailed("Este sistema não controla estoque.");
   }
+  exigirRegraDeValidade(op.config, body);
   const id = crypto.randomUUID();
   const now = ctx.clock.now();
   const db = ctx.env.DB;
@@ -447,8 +453,8 @@ export const criarProduto: Handler = async (ctx) => {
       // EST-01: o físico começa em zero (default da coluna); só entradas o aumentam.
       db
         .prepare(
-          `INSERT INTO products (id, system_id, name, retail_cents, wholesale_cents, units_per_box, extra_json, min_units, barcode, cost_cents, last_cost_cents, cost_set_at, created_by, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO products (id, system_id, name, retail_cents, wholesale_cents, units_per_box, extra_json, min_units, barcode, cost_cents, last_cost_cents, cost_set_at, created_by, created_at, updated_at, expires_on)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .bind(
           id,
@@ -466,6 +472,7 @@ export const criarProduto: Handler = async (ctx) => {
           op.user.id,
           now,
           now,
+          body.validade ?? null,
         ),
       // Estoque inicial informado no cadastro: entra como a primeira entrada, com histórico.
       ...(inicial === null
@@ -510,6 +517,7 @@ export const editarProduto: Handler = async (ctx) => {
   const body = parse(ProdutoBody, await readJson(ctx.request));
   const { atacado, caixa } = precosDoProduto(op.config, body);
   const extra = camposValidos(op.config, "produtos", body.campos);
+  exigirRegraDeValidade(op.config, body);
   const now = ctx.clock.now();
   const db = ctx.env.DB;
   await db
@@ -524,6 +532,7 @@ export const editarProduto: Handler = async (ctx) => {
            cost_cents = CASE WHEN ?13 THEN ?14 ELSE cost_cents END,
            last_cost_cents = CASE WHEN ?13 THEN ?14 ELSE last_cost_cents END,
            cost_set_at = CASE WHEN ?13 THEN ?10 ELSE cost_set_at END,
+           expires_on = CASE WHEN ?15 THEN ?16 ELSE expires_on END,
            updated_at = max(updated_at, ?10) WHERE id = ?11 AND system_id = ?12`,
         )
         .bind(
@@ -541,6 +550,8 @@ export const editarProduto: Handler = async (ctx) => {
           op.systemId,
           body.custoCentavos === undefined ? 0 : 1,
           body.custoCentavos ?? null,
+          body.validade === undefined ? 0 : 1,
+          body.validade ?? null,
         ),
       db
         .prepare(
@@ -566,6 +577,16 @@ export const statusProduto: Handler = async (ctx) => {
   }
   return json({ produto: publicProduto(await carregarProduto(ctx, op.systemId, id)) });
 };
+
+/** Validade só com a regra validade_produto (sem ela, o campo nem aparece na tela). */
+function exigirRegraDeValidade(
+  config: ConfigDraft,
+  body: { validade?: string | null | undefined },
+) {
+  if (body.validade && !config.regras.some((r) => r.tipo === "validade_produto")) {
+    throw validationFailed("Este sistema não controla validade de produtos.");
+  }
+}
 
 /** O código de barras já é de outro produto deste sistema (índice products_barcode). */
 export function codigoRepetido(error: unknown): boolean {

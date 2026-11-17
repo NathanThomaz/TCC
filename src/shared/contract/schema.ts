@@ -156,6 +156,31 @@ export const RuleSchema = z.discriminatedUnion("tipo", [
     juros_mes_percentual: z.number().min(0).max(10),
     requisitos: requirementRefs,
   }),
+  // ---- Estoque, clientes e vendas (ADR-015, etapa 2b) ----
+  z.strictObject({
+    tipo: z.literal("validade_produto"),
+    // Cada produto pode ter validade; o painel e os produtos avisam com esta antecedência.
+    dias_aviso: z.number().int().min(1).max(365),
+    requisitos: requirementRefs,
+  }),
+  z.strictObject({
+    tipo: z.literal("saida_manual"),
+    // Saída de estoque sem venda (perda, consumo, quebra), sempre com um destes motivos.
+    motivos: z.array(z.string().trim().min(2).max(40)).min(1).max(10),
+    requisitos: requirementRefs,
+  }),
+  z.strictObject({
+    tipo: z.literal("limite_credito"),
+    // Venda a prazo só conclui se o que o cliente já deve mais a venda couber no limite.
+    valor_centavos: centavos,
+    requisitos: requirementRefs,
+  }),
+  z.strictObject({
+    tipo: z.literal("cliente_sem_comprar"),
+    // Aviso de cliente que já comprou e está há esse tempo sem comprar (não inativa o cadastro).
+    dias: z.number().int().min(7).max(365),
+    requisitos: requirementRefs,
+  }),
   z.strictObject({
     tipo: z.literal("par_atendimento"),
     // Dois atendimentos vinculados, mesmo profissional, o segundo após o fim do primeiro (AGE-02/04).

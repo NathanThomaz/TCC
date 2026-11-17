@@ -135,6 +135,14 @@ export function textoDaRegra(r: Regra, d: ConfigDraft): string {
       return `Orçamento do mês: ${r.limites
         .map((l) => `${l.categoria} até R$ ${centavosParaReais(l.valor_centavos)}`)
         .join("; ")}`;
+    case "validade_produto":
+      return `Produtos com validade: avisar ${r.dias_aviso} ${r.dias_aviso === 1 ? "dia" : "dias"} antes de vencer`;
+    case "saida_manual":
+      return `Saída de estoque sem venda com motivo: ${r.motivos.join(", ")}`;
+    case "limite_credito":
+      return `Limite de crédito por cliente na venda a prazo: R$ ${centavosParaReais(r.valor_centavos)}`;
+    case "cliente_sem_comprar":
+      return `Avisar de cliente sem comprar há ${r.dias} dias`;
     case "multa_juros_atraso":
       return `Conta a receber em atraso: multa de ${formatarPercentual(r.multa_percentual)} e juros de ${formatarPercentual(r.juros_mes_percentual)} ao mês`;
   }

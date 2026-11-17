@@ -40,6 +40,10 @@ const NOME: Record<TipoExtra, string> = {
   aviso_vencimento: "Aviso de vencimento",
   orcamento_mensal: "Orçamento mensal por categoria",
   multa_juros_atraso: "Multa e juros por atraso",
+  validade_produto: "Validade dos produtos",
+  saida_manual: "Saída de estoque com motivo",
+  limite_credito: "Limite de crédito na venda a prazo",
+  cliente_sem_comprar: "Cliente sem comprar",
 };
 
 const EXPLICA: Record<TipoExtra, string> = {
@@ -58,12 +62,60 @@ const EXPLICA: Record<TipoExtra, string> = {
     "Limite de gasto do mês por categoria; o painel mostra quanto já foi e avisa ao passar.",
   multa_juros_atraso:
     "Conta a receber paga depois do vencimento é cobrada com multa e juros, calculados sozinhos.",
+  validade_produto:
+    "Cada produto pode ter validade; o painel avisa do que está para vencer ou já venceu.",
+  saida_manual:
+    "Perda, consumo ou quebra saem do estoque com um motivo, e ficam no histórico do produto.",
+  limite_credito:
+    "Venda a prazo só é concluída se o que o cliente já deve mais a venda couber no limite.",
+  cliente_sem_comprar:
+    "O painel e a lista de clientes mostram quem já comprou e está há tempo sem comprar.",
 };
 
 const SEM_REQ = { requisitos: [] as string[] };
 
 /** Regras prontas, agrupadas como aparecem no menu. */
 export const PREDEFINICOES: { grupo: string; titulo: string; regra: Regra }[] = [
+  // Estoque, clientes e vendas (ADR-015, etapa 2b).
+  {
+    grupo: "Estoque",
+    titulo: "Avisar 7 dias antes de vencer",
+    regra: { tipo: "validade_produto", dias_aviso: 7, ...SEM_REQ },
+  },
+  {
+    grupo: "Estoque",
+    titulo: "Avisar 30 dias antes de vencer",
+    regra: { tipo: "validade_produto", dias_aviso: 30, ...SEM_REQ },
+  },
+  {
+    grupo: "Estoque",
+    titulo: "Saída por perda, consumo ou quebra",
+    regra: {
+      tipo: "saida_manual",
+      motivos: ["Perda", "Consumo próprio", "Quebra", "Vencido"],
+      ...SEM_REQ,
+    },
+  },
+  {
+    grupo: "Vendas",
+    titulo: "Limite de crédito de R$ 500,00 por cliente",
+    regra: { tipo: "limite_credito", valor_centavos: 50_000, ...SEM_REQ },
+  },
+  {
+    grupo: "Vendas",
+    titulo: "Limite de crédito de R$ 2.000,00 por cliente",
+    regra: { tipo: "limite_credito", valor_centavos: 200_000, ...SEM_REQ },
+  },
+  {
+    grupo: "Clientes",
+    titulo: "Avisar de cliente sem comprar há 30 dias",
+    regra: { tipo: "cliente_sem_comprar", dias: 30, ...SEM_REQ },
+  },
+  {
+    grupo: "Clientes",
+    titulo: "Avisar de cliente sem comprar há 90 dias",
+    regra: { tipo: "cliente_sem_comprar", dias: 90, ...SEM_REQ },
+  },
   // Financeiro (ADR-015, etapa 2a).
   {
     grupo: "Financeiro",
@@ -422,6 +474,49 @@ function EditorRegra({
           />
         </div>
       );
+    case "validade_produto":
+      return (
+        <Numero
+          id={id}
+          rotulo="Dias de aviso antes de vencer"
+          valor={r.dias_aviso}
+          min={1}
+          max={365}
+          onChange={(n) => onChange({ ...r, dias_aviso: n })}
+        />
+      );
+    case "saida_manual":
+      return (
+        <ListaDeNomes
+          id={`${id}-motivos`}
+          rotulo="Motivos de saída"
+          nomes={r.motivos}
+          max={10}
+          onChange={(motivos) => onChange({ ...r, motivos })}
+        />
+      );
+    case "limite_credito":
+      return (
+        <div className="max-w-xs">
+          <Label htmlFor={id}>Limite por cliente (R$)</Label>
+          <CampoValorRegra
+            id={id}
+            centavos={r.valor_centavos}
+            onCentavos={(c) => onChange({ ...r, valor_centavos: c })}
+          />
+        </div>
+      );
+    case "cliente_sem_comprar":
+      return (
+        <Numero
+          id={id}
+          rotulo="Dias sem comprar"
+          valor={r.dias}
+          min={7}
+          max={365}
+          onChange={(n) => onChange({ ...r, dias: n })}
+        />
+      );
     case "aviso_vencimento":
       return (
         <Numero
@@ -634,11 +729,13 @@ function ListaDeNomes({
   id,
   rotulo,
   nomes,
+  max = 20,
   onChange,
 }: {
   id: string;
   rotulo: string;
   nomes: string[];
+  max?: number;
   onChange: (nomes: string[]) => void;
 }) {
   const [texto, setTexto] = useState(nomes.join(", "));
@@ -646,12 +743,12 @@ function ListaDeNomes({
   // com o aviso aqui embaixo.
   const curtos = nomes.filter((n) => n.length < 2);
   const erro =
-    nomes.length > 20
-      ? `São ${nomes.length} categorias; o limite é 20.`
+    nomes.length > max
+      ? `São ${nomes.length} itens; o limite é ${max}.`
       : curtos.length
-        ? "Cada categoria precisa de pelo menos 2 letras."
+        ? "Cada item precisa de pelo menos 2 letras."
         : nomes.length === 0
-          ? "Informe pelo menos uma categoria."
+          ? "Informe pelo menos um item."
           : null;
   return (
     <div>
@@ -677,7 +774,7 @@ function ListaDeNomes({
         className={cn("mt-1 text-xs", erro ? "text-destructive" : "text-muted-foreground")}
         aria-live="polite"
       >
-        {erro ?? "Separe por vírgula (até 20)."}
+        {erro ?? `Separe por vírgula (até ${max}).`}
       </p>
     </div>
   );

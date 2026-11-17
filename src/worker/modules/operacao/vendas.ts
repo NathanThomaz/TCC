@@ -7,6 +7,7 @@ import {
   conferirFormaPagamento,
   conferirLimitePorItem,
   conferirPedidoMinimo,
+  regraDo,
   conferirPrazoCancelamentoAtendimento,
   conferirPrazoCancelamentoVenda,
   vencimentoEmDias,
@@ -658,6 +659,27 @@ export const concluirVenda: Handler = async (ctx) => {
 
   const db = ctx.env.DB;
   const comConta = pagamento.forma === "a_prazo" && op.config.modulos.includes("financeiro");
+  // Limite de crédito (ADR-015): o que o cliente já deve a receber mais esta venda a prazo.
+  const limite = regraDo(op.config, "limite_credito");
+  if (comConta && limite) {
+    const deve = await db
+      .prepare(
+        `SELECT COALESCE(SUM(amount_cents), 0) AS total FROM financial_entries
+         WHERE system_id = ? AND customer_id = ? AND kind = 'receber' AND status = 'pendente'`,
+      )
+      .bind(op.systemId, venda.customer_id)
+      .first<{ total: number }>();
+    const emAberto = deve?.total ?? 0;
+    if (emAberto + venda.total_cents > limite.valor_centavos) {
+      const reais = (c: number) =>
+        `R$ ${(c / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      throw new AppError(
+        409,
+        "limite_credito",
+        `Passa do limite de crédito de ${reais(limite.valor_centavos)}: ${venda.customer_name} já deve ${reais(emAberto)} e esta venda é de ${reais(venda.total_cents)}. Receba antes ou escolha outra forma de pagamento.`,
+      );
+    }
+  }
   if (comConta && venda.total_cents > TETO_CONTA_CENTAVOS) {
     throw new AppError(
       422,

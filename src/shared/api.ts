@@ -101,6 +101,8 @@ export interface ProdutoDto {
   estoqueMinimo: number | null;
   /** Código de barras (leitor ou câmera na venda); null sem código. */
   codigoBarras: string | null;
+  /** Validade (AAAA-MM-DD; regra validade_produto); null sem validade. */
+  validade: string | null;
 }
 
 /** POST /vendas/interpretar — venda ditada ou escrita, entendida pela IA para conferir. */
@@ -400,6 +402,13 @@ export interface PainelDto {
       /** Mínimo que vale para o produto (o dele ou o da regra). */
       minimo: number | null;
     }[];
+    /** Regra validade_produto: com estoque, vencidos e vencendo no prazo do aviso. */
+    validade?: {
+      dias: number;
+      vencidos: number;
+      vencendo: number;
+      lista: { id: string; nome: string; validade: string; fisico: number }[];
+    };
     /** Unidades físicas e valor delas a preço de varejo (produtos ativos). */
     unidades: number;
     valorVarejoCentavos: number;
@@ -412,7 +421,13 @@ export interface PainelDto {
       lucroPrevistoCentavos: number;
     } | null;
   };
-  clientes?: { ativos: number; inativos: number; novosNoMes: number };
+  clientes?: {
+    ativos: number;
+    inativos: number;
+    novosNoMes: number;
+    /** Regra cliente_sem_comprar: ativos que já compraram e estão há `dias` sem comprar. */
+    semComprar?: { dias: number; quantidade: number };
+  };
   /** Vendas concluídas no mês por forma de pagamento (módulo de pagamentos). */
   pagamentos?: { forma: PaymentMethod; quantidade: number; totalCentavos: number }[];
   /** Fornecedores e compras: compras do mês e valor do estoque pelo último custo. */

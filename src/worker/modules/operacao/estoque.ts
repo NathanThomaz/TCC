@@ -1,6 +1,8 @@
 import { z } from "zod";
 import type { MovimentoDto } from "../../../shared/api";
+import { normalizarRotulo } from "../../../shared/contract/catalog";
 import { unidadesDoItem } from "../../../shared/dominio/precos";
+import { regraDo } from "../../../shared/dominio/regras";
 import { requireAdmin } from "../../auth/session";
 import { readJson } from "../../http/body";
 import { conflict, notFound, validationFailed } from "../../http/errors";
@@ -53,6 +55,14 @@ const EntradaBody = z.object({
   caixas: quantidade.default(0),
   unidades: quantidade.default(0),
   motivo,
+});
+/** Saída sem venda (regra saida_manual): quantidade, um motivo da regra e uma observação. */
+const SaidaBody = z.object({
+  produto: z.string().min(1).max(100),
+  caixas: quantidade,
+  unidades: quantidade,
+  motivo: z.string().trim().min(2).max(40),
+  observacao: z.string().trim().max(200).optional(),
 });
 const CorrecaoBody = z.object({
   produto: z.string().min(1).max(100),
@@ -216,6 +226,92 @@ export const corrigirSaldo: Handler = async (ctx) => {
       return json({ movimento: publicMovimento(row) }, { status: replay.statusCode });
     }
     throw conflict("O saldo mudou desde a consulta. Confira o valor atual e tente de novo.");
+  }
+  return json(
+    { movimento: publicMovimento(await carregarMovimento(ctx, op.systemId, id)) },
+    { status: 201 },
+  );
+};
+
+/**
+ * Saída de estoque sem venda (regra saida_manual, ADR-015): perda, consumo, quebra. Quem opera o
+ * sistema registra com um motivo da regra; o físico não fica abaixo do reservado (mesmo trigger
+ * da correção) e o movimento fica no histórico como correção negativa, com o motivo.
+ */
+export const registrarSaida: Handler = async (ctx) => {
+  const op = await abrirOperacao(ctx, "estoque");
+  const regra = regraDo(op.config, "saida_manual");
+  if (!regra) throw validationFailed("Este sistema não registra saídas avulsas de estoque.");
+  const body = parse(SaidaBody, await readJson(ctx.request));
+  const motivoDaRegra = regra.motivos.find(
+    (m) => normalizarRotulo(m) === normalizarRotulo(body.motivo),
+  );
+  if (!motivoDaRegra) {
+    throw validationFailed(`Escolha um dos motivos: ${regra.motivos.join(", ")}.`);
+  }
+  const cmd = { scope: op.systemId, actorId: op.user.id, command: "estoque.saida", body };
+  const started = await beginIdempotent(ctx, cmd);
+  if (started.kind === "replay") {
+    const row = await carregarMovimento(ctx, op.systemId, started.resourceId);
+    return json({ movimento: publicMovimento(row) }, { status: started.statusCode });
+  }
+  const produto = await carregarProduto(ctx, op.systemId, body.produto);
+  let quantidadeSaida: number;
+  try {
+    quantidadeSaida = unidadesDoItem(body.caixas, body.unidades, produto.units_per_box);
+  } catch {
+    throw validationFailed("Este produto não tem caixa: informe a saída em unidades.");
+  }
+  if (quantidadeSaida <= 0) throw validationFailed("Informe uma quantidade maior que zero.");
+  const razao = body.observacao ? `${motivoDaRegra}: ${body.observacao}` : motivoDaRegra;
+  const id = crypto.randomUUID();
+  const now = ctx.clock.now();
+  const db = ctx.env.DB;
+  let changed = 0;
+  try {
+    const [update] = await db.batch([
+      db
+        .prepare(
+          `UPDATE products SET physical = physical - ?, updated_at = max(updated_at, ?)
+           WHERE id = ? AND system_id = ? AND physical >= ?`,
+        )
+        .bind(quantidadeSaida, now, produto.id, op.systemId, quantidadeSaida),
+      db
+        .prepare(
+          `INSERT INTO stock_movements
+             (id, system_id, product_id, kind, delta, informed_boxes, informed_units, balance_after, reason, actor_id, created_at)
+           SELECT ?, system_id, id, 'correcao', ?, ?, ?, physical, ?, ?, ? FROM products
+           WHERE id = ? AND changes() = 1`,
+        )
+        .bind(id, -quantidadeSaida, body.caixas, body.unidades, razao, op.user.id, now, produto.id),
+      db
+        .prepare(
+          `INSERT INTO audit_events (system_id, actor_id, action, target_type, target_id, details_json, created_at)
+           SELECT ?, ?, 'estoque.saida', 'movimento', ?, json_object('motivo', ?, 'unidades', ?), ?
+           WHERE changes() = 1`,
+        )
+        .bind(op.systemId, op.user.id, id, motivoDaRegra, quantidadeSaida, now),
+      recordIfChanged(ctx, cmd, started, id, 201, now),
+    ]);
+    changed = update?.meta.changes ?? 0;
+  } catch (error) {
+    const replay = isUnique(error) ? await replayAfterRace(ctx, cmd, started) : null;
+    if (replay?.kind === "replay") {
+      const row = await carregarMovimento(ctx, op.systemId, replay.resourceId);
+      return json({ movimento: publicMovimento(row) }, { status: replay.statusCode });
+    }
+    triggerConflict(error, {
+      abaixo_do_reservado:
+        "A saída deixaria o estoque abaixo do que está reservado em rascunhos de venda.",
+    });
+  }
+  if (changed === 0) {
+    const replay = await replayAfterRace(ctx, cmd, started);
+    if (replay?.kind === "replay") {
+      const row = await carregarMovimento(ctx, op.systemId, replay.resourceId);
+      return json({ movimento: publicMovimento(row) }, { status: replay.statusCode });
+    }
+    throw conflict(`Não há ${quantidadeSaida} unidades em estoque para essa saída.`);
   }
   return json(
     { movimento: publicMovimento(await carregarMovimento(ctx, op.systemId, id)) },
