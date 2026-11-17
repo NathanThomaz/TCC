@@ -363,12 +363,19 @@ export interface FiltroFinanceiro {
   /** Período do vencimento (AAAA-MM-DD), inclusive. */
   de?: string;
   ate?: string;
+  categoria?: string;
 }
 
 export async function listarLancamentos(
   sistema: string,
   filtro: FiltroFinanceiro = {},
-): Promise<{ lancamentos: LancamentoDto[]; resumo: ResumoFinanceiroDto }> {
+): Promise<{
+  lancamentos: LancamentoDto[];
+  resumo: ResumoFinanceiroDto;
+  porCategoria: NonNullable<OperacaoApiBody["porCategoria"]> | null;
+  orcamento: NonNullable<OperacaoApiBody["orcamento"]> | null;
+  categoriasUsadas: string[];
+}> {
   const q = new URLSearchParams(
     Object.entries(filtro).filter((e): e is [string, string] => typeof e[1] === "string"),
   ).toString();
@@ -376,6 +383,9 @@ export async function listarLancamentos(
   return {
     lancamentos: exigir(r.lancamentos, "lançamentos"),
     resumo: exigir(r.resumoFinanceiro, "resumo"),
+    porCategoria: r.porCategoria ?? null,
+    orcamento: r.orcamento ?? null,
+    categoriasUsadas: r.categoriasUsadas ?? [],
   };
 }
 
@@ -386,6 +396,7 @@ export interface NovoLancamento {
   vencimento: string;
   cliente?: string;
   fornecedor?: string;
+  categoria?: string;
 }
 
 export async function criarLancamento(sistema: string, dados: NovoLancamento, chave = novaChave()) {
@@ -402,10 +413,17 @@ export async function acaoLancamento(
   id: string,
   acao: "baixar" | "cancelar",
   motivo?: string,
+  /** Na baixa com multa e juros: o valor que a tela mostrou (o servidor confere). */
+  valorEsperadoCentavos?: number,
 ) {
+  const body = motivo
+    ? { motivo }
+    : valorEsperadoCentavos !== undefined
+      ? { valorEsperadoCentavos }
+      : {};
   const r = await chamar<OperacaoApiBody>(
     `${base(sistema)}/financeiro/${encodeURIComponent(id)}/${acao}`,
-    { method: "POST", body: motivo ? { motivo } : {}, chave: novaChave() },
+    { method: "POST", body, chave: novaChave() },
   );
   return exigir(r.lancamento, "lançamento");
 }

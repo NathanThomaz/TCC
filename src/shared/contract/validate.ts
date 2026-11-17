@@ -269,6 +269,53 @@ export function semanticIssues(draft: ConfigDraft): ValidationIssue[] {
         );
       }
     }
+    if (rule.tipo === "categorias_financeiras") {
+      for (const lista of ["despesas", "receitas"] as const) {
+        const repetidas = duplicates(rule[lista], (c) => normalizarRotulo(c));
+        if (repetidas.size) {
+          issues.push(block("categoria_repetida", `${path}.${lista}`, "Há categoria repetida."));
+        }
+      }
+    }
+    if (rule.tipo === "orcamento_mensal") {
+      // O orçamento é por categoria de despesa: exige as categorias, e cada limite numa delas.
+      const cats = draft.regras.find((r) => r.tipo === "categorias_financeiras");
+      const despesas = new Set(
+        cats?.tipo === "categorias_financeiras" ? cats.despesas.map(normalizarRotulo) : [],
+      );
+      if (!cats) {
+        issues.push(
+          block(
+            "dependencia_ausente",
+            path,
+            "O orçamento mensal precisa das categorias de despesa (regra categorias_financeiras).",
+          ),
+        );
+      }
+      rule.limites.forEach((l, i) => {
+        if (cats && !despesas.has(normalizarRotulo(l.categoria))) {
+          issues.push(
+            block(
+              "referencia_inexistente",
+              `${path}.limites.${i}.categoria`,
+              `A categoria ${l.categoria} não está entre as despesas.`,
+            ),
+          );
+        }
+      });
+      if (duplicates(rule.limites, (l) => normalizarRotulo(l.categoria)).size) {
+        issues.push(
+          block("categoria_repetida", `${path}.limites`, "Há categoria repetida no orçamento."),
+        );
+      }
+    }
+    if (
+      rule.tipo === "multa_juros_atraso" &&
+      rule.multa_percentual === 0 &&
+      rule.juros_mes_percentual === 0
+    ) {
+      issues.push(block("parametro_invalido", path, "Informe a multa, os juros ou os dois."));
+    }
     if (rule.tipo === "par_atendimento") {
       if (rule.primeiro === rule.segundo) {
         issues.push(

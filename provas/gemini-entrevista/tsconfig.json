@@ -9,6 +9,7 @@
     "./run-loja-carros.ts",
     "./run-venda-ditada.ts",
     "./run-controle-financeiro.ts",
+    "./run-regras-financeiro.ts",
     "../../src/worker/**/*.ts",
     "../../src/shared/**/*.ts"
   ]

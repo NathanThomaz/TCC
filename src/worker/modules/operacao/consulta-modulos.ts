@@ -414,8 +414,8 @@ export async function financeiro(
            COALESCE(SUM(CASE WHEN kind = 'pagar' AND status = 'pendente' THEN amount_cents END), 0) AS pt,
            SUM(status = 'pendente' AND due_date < ?2) AS vn,
            COALESCE(SUM(CASE WHEN status = 'pendente' AND due_date < ?2 THEN amount_cents END), 0) AS vt,
-           COALESCE(SUM(CASE WHEN kind = 'receber' AND status = 'pago' AND paid_at >= ?3 AND paid_at < ?4 THEN amount_cents END), 0) AS recebido,
-           COALESCE(SUM(CASE WHEN kind = 'pagar' AND status = 'pago' AND paid_at >= ?3 AND paid_at < ?4 THEN amount_cents END), 0) AS pago
+           COALESCE(SUM(CASE WHEN kind = 'receber' AND status = 'pago' AND paid_at >= ?3 AND paid_at < ?4 THEN COALESCE(paid_amount_cents, amount_cents) END), 0) AS recebido,
+           COALESCE(SUM(CASE WHEN kind = 'pagar' AND status = 'pago' AND paid_at >= ?3 AND paid_at < ?4 THEN COALESCE(paid_amount_cents, amount_cents) END), 0) AS pago
          FROM financial_entries WHERE system_id = ?1`,
       )
       .bind(op.systemId, hoje, per.de, per.ate),

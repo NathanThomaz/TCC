@@ -33,6 +33,7 @@ import { ErrorState } from "@/components/nexus/Estados";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ROTULO_PAGAMENTO, textoDaRegra } from "@/lib/nexus";
 import { Link } from "@/lib/rotas";
+import { OrcamentoDoMes } from "@/components/app/Orcamento";
 import { cn } from "@/lib/utils";
 import { rotuloModulo, useApp } from "./Aplicacao";
 
@@ -282,6 +283,21 @@ export function indicadores(p: PainelDto): IndicadorDados[] {
       valor: String(vencidos),
       detalhe: `${formatarCentavos(f.vencidosReceber.totalCentavos)} a receber · ${formatarCentavos(f.vencidosPagar.totalCentavos)} a pagar`,
     });
+    if (f.vencendoEmBreve) {
+      const b = f.vencendoEmBreve;
+      add({
+        id: "vence-em-breve",
+        prioridade: b.quantidade > 0 ? 4 : 14,
+        rotulo: `Vence em ${b.dias} ${b.dias === 1 ? "dia" : "dias"}`,
+        icone: CalendarClock,
+        alerta: b.quantidade > 0,
+        valor: String(b.quantidade),
+        detalhe:
+          b.quantidade > 0
+            ? `${formatarCentavos(b.totalCentavos)} em contas pendentes`
+            : "Nenhuma conta vence nesse prazo",
+      });
+    }
     add({
       id: "a-receber",
       prioridade: 6.5,
@@ -549,6 +565,17 @@ export function Painel() {
                   })}
                 </ul>
               )}
+            </section>
+          )}
+          {p.financeiro?.orcamento && p.financeiro.orcamento.length > 0 && (
+            <section
+              aria-labelledby="titulo-orcamento-painel"
+              className="rounded-xl border bg-card p-4 shadow-card"
+            >
+              <h2 id="titulo-orcamento-painel" className="mb-3 text-lg font-semibold">
+                Orçamento do mês
+              </h2>
+              <OrcamentoDoMes itens={p.financeiro.orcamento} />
             </section>
           )}
           {p.agenda && (

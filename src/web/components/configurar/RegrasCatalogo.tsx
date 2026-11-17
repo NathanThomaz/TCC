@@ -36,6 +36,10 @@ const NOME: Record<TipoExtra, string> = {
   horario_funcionamento: "Horário de funcionamento",
   antecedencia_minima: "Antecedência mínima para agendar",
   prazo_cancelamento_atendimento: "Prazo para cancelar ou remarcar atendimento",
+  categorias_financeiras: "Categorias de despesa e receita",
+  aviso_vencimento: "Aviso de vencimento",
+  orcamento_mensal: "Orçamento mensal por categoria",
+  multa_juros_atraso: "Multa e juros por atraso",
 };
 
 const EXPLICA: Record<TipoExtra, string> = {
@@ -47,12 +51,73 @@ const EXPLICA: Record<TipoExtra, string> = {
   antecedencia_minima: "Ninguém marca um atendimento em cima da hora.",
   prazo_cancelamento_atendimento:
     "Perto do horário, o atendimento não pode ser cancelado nem remarcado.",
+  categorias_financeiras:
+    "Cada conta lançada escolhe uma categoria; o financeiro mostra quanto foi para cada uma.",
+  aviso_vencimento: "O painel avisa das contas pendentes que vencem nos próximos dias.",
+  orcamento_mensal:
+    "Limite de gasto do mês por categoria; o painel mostra quanto já foi e avisa ao passar.",
+  multa_juros_atraso:
+    "Conta a receber paga depois do vencimento é cobrada com multa e juros, calculados sozinhos.",
 };
 
 const SEM_REQ = { requisitos: [] as string[] };
 
 /** Regras prontas, agrupadas como aparecem no menu. */
 export const PREDEFINICOES: { grupo: string; titulo: string; regra: Regra }[] = [
+  // Financeiro (ADR-015, etapa 2a).
+  {
+    grupo: "Financeiro",
+    titulo: "Categorias para a casa",
+    regra: {
+      tipo: "categorias_financeiras",
+      despesas: [
+        "Moradia",
+        "Alimentação",
+        "Transporte",
+        "Contas da casa",
+        "Saúde",
+        "Lazer",
+        "Outros",
+      ],
+      receitas: ["Salário", "Renda extra", "Outros"],
+      ...SEM_REQ,
+    },
+  },
+  {
+    grupo: "Financeiro",
+    titulo: "Categorias para o negócio",
+    regra: {
+      tipo: "categorias_financeiras",
+      despesas: ["Aluguel", "Fornecedores", "Funcionários", "Impostos", "Marketing", "Outros"],
+      receitas: ["Vendas", "Serviços", "Mensalidades", "Outros"],
+      ...SEM_REQ,
+    },
+  },
+  {
+    grupo: "Financeiro",
+    titulo: "Avisar 3 dias antes do vencimento",
+    regra: { tipo: "aviso_vencimento", dias: 3, ...SEM_REQ },
+  },
+  {
+    grupo: "Financeiro",
+    titulo: "Avisar 7 dias antes do vencimento",
+    regra: { tipo: "aviso_vencimento", dias: 7, ...SEM_REQ },
+  },
+  {
+    grupo: "Financeiro",
+    titulo: "Orçamento do mês por categoria",
+    // A categoria e o valor são ajustados às categorias do sistema ao escolher (ver `pronta`).
+    regra: {
+      tipo: "orcamento_mensal",
+      limites: [{ categoria: "Outros", valor_centavos: 100_000 }],
+      ...SEM_REQ,
+    },
+  },
+  {
+    grupo: "Financeiro",
+    titulo: "Multa de 2% e juros de 1% ao mês",
+    regra: { tipo: "multa_juros_atraso", multa_percentual: 2, juros_mes_percentual: 1, ...SEM_REQ },
+  },
   {
     grupo: "Vendas",
     titulo: "Pedido mínimo de R$ 50,00",
@@ -173,9 +238,27 @@ export function RegrasCatalogo({
 }: PassoProps & { sugestoes: Regra["tipo"][]; setSugestoes: (s: Regra["tipo"][]) => void }) {
   const ativas = draft.regras.filter((r) => ehExtra(r.tipo));
   const temModulos = (t: Regra["tipo"]) => RULE_MODULES[t].every((m) => draft.modulos.includes(m));
-  const disponiveis = PREDEFINICOES.filter(
-    (p) => temModulos(p.regra.tipo) && !draft.regras.some((r) => r.tipo === p.regra.tipo),
+  // O orçamento é por categoria de despesa: só aparece com as categorias, e começa na primeira.
+  const categorias = draft.regras.find(
+    (r): r is Extract<Regra, { tipo: "categorias_financeiras" }> =>
+      r.tipo === "categorias_financeiras",
   );
+  const pronta = (p: (typeof PREDEFINICOES)[number]) =>
+    p.regra.tipo === "orcamento_mensal" && categorias
+      ? {
+          ...p,
+          regra: {
+            ...p.regra,
+            limites: [{ categoria: categorias.despesas[0] ?? "Outros", valor_centavos: 100_000 }],
+          },
+        }
+      : p;
+  const disponiveis = PREDEFINICOES.filter(
+    (p) =>
+      temModulos(p.regra.tipo) &&
+      !draft.regras.some((r) => r.tipo === p.regra.tipo) &&
+      (p.regra.tipo !== "orcamento_mensal" || categorias !== undefined),
+  ).map(pronta);
   const grupos = [...new Set(disponiveis.map((p) => p.grupo))];
   const trocar = (nova: Regra, confirmar: boolean) => {
     set((d) => ({ ...d, regras: [...d.regras.filter((r) => r.tipo !== nova.tipo), nova] }));
@@ -186,8 +269,10 @@ export function RegrasCatalogo({
     );
   };
   const remover = (t: Regra["tipo"]) => {
-    set((d) => ({ ...d, regras: d.regras.filter((r) => r.tipo !== t) }));
-    setSugestoes(sugestoes.filter((s) => s !== t));
+    // Sem as categorias, o orçamento (que é por categoria) sai junto.
+    const saem: Regra["tipo"][] = t === "categorias_financeiras" ? [t, "orcamento_mensal"] : [t];
+    set((d) => ({ ...d, regras: d.regras.filter((r) => !saem.includes(r.tipo)) }));
+    setSugestoes(sugestoes.filter((s) => !saem.includes(s)));
   };
 
   return (
@@ -218,7 +303,7 @@ export function RegrasCatalogo({
               </Button>
             </div>
             <div className="mt-3">
-              <EditorRegra regra={r} onChange={(n) => trocar(n, true)} />
+              <EditorRegra regra={r} draft={draft} onChange={(n) => trocar(n, true)} />
             </div>
             <div className="mt-3">
               {sugerida ? (
@@ -309,9 +394,127 @@ function Numero({
 }
 
 /** Editor dos valores de cada regra extra. */
-function EditorRegra({ regra: r, onChange }: { regra: Regra; onChange: (r: Regra) => void }) {
+function EditorRegra({
+  regra: r,
+  draft,
+  onChange,
+}: {
+  regra: Regra;
+  draft: PassoProps["draft"];
+  onChange: (r: Regra) => void;
+}) {
   const id = `regra-${r.tipo}`;
   switch (r.tipo) {
+    case "categorias_financeiras":
+      return (
+        <div className="grid gap-3 sm:grid-cols-2">
+          <ListaDeNomes
+            id={`${id}-despesas`}
+            rotulo="Categorias de despesa"
+            nomes={r.despesas}
+            onChange={(despesas) => onChange({ ...r, despesas })}
+          />
+          <ListaDeNomes
+            id={`${id}-receitas`}
+            rotulo="Categorias de receita"
+            nomes={r.receitas}
+            onChange={(receitas) => onChange({ ...r, receitas })}
+          />
+        </div>
+      );
+    case "aviso_vencimento":
+      return (
+        <Numero
+          id={id}
+          rotulo="Dias antes do vencimento"
+          valor={r.dias}
+          min={1}
+          max={30}
+          onChange={(n) => onChange({ ...r, dias: n })}
+        />
+      );
+    case "orcamento_mensal": {
+      const despesas =
+        draft.regras.find(
+          (x): x is Extract<Regra, { tipo: "categorias_financeiras" }> =>
+            x.tipo === "categorias_financeiras",
+        )?.despesas ?? [];
+      const livres = despesas.filter((c) => !r.limites.some((l) => l.categoria === c));
+      return (
+        <fieldset className="space-y-2">
+          <legend className="text-sm font-medium">Limite de gasto por categoria (por mês)</legend>
+          {r.limites.map((l, i) => (
+            <div key={l.categoria} className="flex flex-wrap items-end gap-2">
+              <span className="min-w-32 pb-2 text-sm">{l.categoria}</span>
+              <div className="w-40">
+                <Label htmlFor={`${id}-${i}`} className="sr-only">
+                  Limite de {l.categoria} (R$)
+                </Label>
+                <CampoValorRegra
+                  id={`${id}-${i}`}
+                  centavos={l.valor_centavos}
+                  onCentavos={(c) =>
+                    onChange({
+                      ...r,
+                      limites: r.limites.map((x, j) => (j === i ? { ...x, valor_centavos: c } : x)),
+                    })
+                  }
+                />
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label={`Tirar ${l.categoria} do orçamento`}
+                disabled={r.limites.length === 1}
+                onClick={() => onChange({ ...r, limites: r.limites.filter((_, j) => j !== i) })}
+              >
+                <Trash2 aria-hidden />
+              </Button>
+            </div>
+          ))}
+          {livres.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {livres.map((c) => (
+                <Button
+                  key={c}
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    onChange({
+                      ...r,
+                      limites: [...r.limites, { categoria: c, valor_centavos: 50_000 }],
+                    })
+                  }
+                >
+                  + {c}
+                </Button>
+              ))}
+            </div>
+          )}
+        </fieldset>
+      );
+    }
+    case "multa_juros_atraso":
+      return (
+        <div className="flex flex-wrap gap-3">
+          <Percentual
+            id={`${id}-multa`}
+            rotulo="Multa (%)"
+            valor={r.multa_percentual}
+            max={20}
+            onChange={(n) => onChange({ ...r, multa_percentual: n })}
+          />
+          <Percentual
+            id={`${id}-juros`}
+            rotulo="Juros ao mês (%)"
+            valor={r.juros_mes_percentual}
+            max={10}
+            onChange={(n) => onChange({ ...r, juros_mes_percentual: n })}
+          />
+        </div>
+      );
     case "pedido_minimo":
       return (
         <div className="max-w-xs">
@@ -424,6 +627,92 @@ function EditorRegra({ regra: r, onChange }: { regra: Regra; onChange: (r: Regra
     default:
       return null;
   }
+}
+
+/** Lista de nomes separados por vírgula; guarda o texto enquanto a pessoa digita. */
+function ListaDeNomes({
+  id,
+  rotulo,
+  nomes,
+  onChange,
+}: {
+  id: string;
+  rotulo: string;
+  nomes: string[];
+  onChange: (nomes: string[]) => void;
+}) {
+  const [texto, setTexto] = useState(nomes.join(", "));
+  // Nada é descartado em silêncio: o que passar do limite fica na regra e o validador barra,
+  // com o aviso aqui embaixo.
+  const curtos = nomes.filter((n) => n.length < 2);
+  const erro =
+    nomes.length > 20
+      ? `São ${nomes.length} categorias; o limite é 20.`
+      : curtos.length
+        ? "Cada categoria precisa de pelo menos 2 letras."
+        : nomes.length === 0
+          ? "Informe pelo menos uma categoria."
+          : null;
+  return (
+    <div>
+      <Label htmlFor={id}>{rotulo}</Label>
+      <Input
+        id={id}
+        className="mt-1"
+        value={texto}
+        aria-describedby={`${id}-dica`}
+        aria-invalid={erro !== null}
+        onChange={(e) => {
+          setTexto(e.target.value);
+          onChange(
+            e.target.value
+              .split(",")
+              .map((n) => n.trim())
+              .filter((n) => n.length > 0),
+          );
+        }}
+      />
+      <p
+        id={`${id}-dica`}
+        className={cn("mt-1 text-xs", erro ? "text-destructive" : "text-muted-foreground")}
+        aria-live="polite"
+      >
+        {erro ?? "Separe por vírgula (até 20)."}
+      </p>
+    </div>
+  );
+}
+
+function Percentual({
+  id,
+  rotulo,
+  valor,
+  max,
+  onChange,
+}: {
+  id: string;
+  rotulo: string;
+  valor: number;
+  max: number;
+  onChange: (n: number) => void;
+}) {
+  return (
+    <div className="w-36">
+      <Label htmlFor={id}>{rotulo}</Label>
+      <Input
+        id={id}
+        type="number"
+        min={0}
+        max={max}
+        step={0.1}
+        className="mt-1 tabular-nums"
+        value={Number.isFinite(valor) ? valor : ""}
+        onChange={(e) =>
+          onChange(Number.isFinite(e.target.valueAsNumber) ? e.target.valueAsNumber : 0)
+        }
+      />
+    </div>
+  );
 }
 
 /** Valor em reais da regra, com a máscara de dinheiro; guarda o texto enquanto a pessoa digita. */
