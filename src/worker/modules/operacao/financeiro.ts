@@ -218,7 +218,7 @@ export const listarLancamentos: Handler = async (ctx) => {
   const categoriasUsadas = (
     await ctx.env.DB.prepare(
       `SELECT DISTINCT category FROM financial_entries
-       WHERE system_id = ? AND category IS NOT NULL ORDER BY category LIMIT 100`,
+       WHERE system_id = ? AND category IS NOT NULL ORDER BY category`,
     )
       .bind(op.systemId)
       .all<{ category: string }>()
