@@ -131,8 +131,8 @@ export function CriarSistemaDialog({ gatilho }: { gatilho: ReactNode }) {
                 <CircleAlert className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
                 <span>
                   Você já tem um sistema chamado <strong>{repetido.nome}</strong>
-                  {repetido.status === "archived" ? " (inativo)" : ""}. Escolha outro nome para
-                  não confundir os dois.
+                  {repetido.status === "archived" ? " (inativo)" : ""}. Escolha outro nome para não
+                  confundir os dois.
                 </span>
               </p>
             )}
