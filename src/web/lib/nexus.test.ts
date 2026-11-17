@@ -133,3 +133,33 @@ describe("campo de dinheiro (pedido do dono, 2026-11-14)", () => {
     expect(reaisParaCentavos(completarReais("1234567,8"))).toBe(123456780);
   });
 });
+
+describe("seis modelos (ADR-015)", () => {
+  it("cada modelo novo começa com os seus módulos e passa no validador", () => {
+    for (const modelo of ["controle_financeiro", "clientes_cobrancas", "agenda_simples"] as const) {
+      const d = rascunhoPadrao("Teste", modelo);
+      expect(d.modulos).toEqual([...MODULOS_POR_MODELO[modelo]]);
+      expect(bloqueantes(d), modelo).toEqual([]);
+    }
+  });
+
+  it("agenda simples já vem com recursos, responsáveis e reserva de 1 hora", () => {
+    const d = rascunhoPadrao("Quadras", "agenda_simples");
+    expect(d.aparencia.rotulos_menu).toMatchObject({
+      profissionais: "Recursos",
+      clientes: "Responsáveis",
+      agenda: "Reservas",
+    });
+    expect(d.tipos_atendimento).toEqual([
+      { id: "reserva", rotulo: "Reserva", duracao_minutos: 60 },
+    ]);
+  });
+
+  it("saindo da agenda simples, os nomes dela saem; os do dono ficam", () => {
+    const d = rascunhoPadrao("Quadras", "agenda_simples");
+    d.aparencia.rotulos_menu = { ...d.aparencia.rotulos_menu, clientes: "Alunos" };
+    const servicos = reconciliarModelo(comModelo(d, "servicos"));
+    expect(servicos.aparencia.rotulos_menu).toEqual({ clientes: "Alunos" });
+    expect(servicos.tipos_atendimento).toEqual([]);
+  });
+});

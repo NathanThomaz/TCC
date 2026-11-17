@@ -1,7 +1,7 @@
 // Catálogo fechado do Nexus (seção 5 da especificação). Tudo o que uma configuração pode usar
 // está aqui; o que não está não é criado silenciosamente — vira necessidade fora do catálogo.
 
-export const CATALOG_VERSION = "2026.11.6";
+export const CATALOG_VERSION = "2026.11.7";
 
 export const MODULES = [
   "clientes",
@@ -31,7 +31,16 @@ export const MODULE_INFO: Record<ModuleId, { label: string; dependsOn: readonly 
   financeiro: { label: "Financeiro", dependsOn: [] },
 };
 
-export const TEMPLATES = ["comercio", "servicos", "comercio_com_servicos"] as const;
+// Seis modelos (pedido do dono, 2026-11-16, ADR-015): os três de origem e três para quem quer só
+// uma parte (controle financeiro, agenda de reservas, clientes com cobranças).
+export const TEMPLATES = [
+  "comercio",
+  "servicos",
+  "comercio_com_servicos",
+  "controle_financeiro",
+  "agenda_simples",
+  "clientes_cobrancas",
+] as const;
 export type TemplateId = (typeof TEMPLATES)[number];
 
 /** Cada modelo define exatamente o conjunto de módulos (seção 5). */
@@ -39,6 +48,11 @@ export const TEMPLATE_MODULES: Record<TemplateId, readonly ModuleId[]> = {
   comercio: ["clientes", "produtos", "vendas", "estoque"],
   servicos: ["clientes", "profissionais", "agenda"],
   comercio_com_servicos: ["clientes", "produtos", "vendas", "estoque", "profissionais", "agenda"],
+  controle_financeiro: ["financeiro"],
+  // O agendamento sempre tem um responsável (cliente): a diferença para "servicos" está no que
+  // vem pronto (recursos em vez de profissionais, reserva de horário), não nos módulos.
+  agenda_simples: ["clientes", "profissionais", "agenda"],
+  clientes_cobrancas: ["clientes", "financeiro"],
 };
 
 /** Módulos opcionais que cada modelo aceita, além dos seus (ADR-006). */
@@ -46,6 +60,9 @@ export const OPTIONAL_MODULES: Record<TemplateId, readonly ModuleId[]> = {
   comercio: ["pagamentos", "fornecedores", "financeiro"],
   servicos: ["financeiro"],
   comercio_com_servicos: ["pagamentos", "fornecedores", "financeiro"],
+  controle_financeiro: [],
+  agenda_simples: [],
+  clientes_cobrancas: [],
 };
 
 /**
@@ -89,6 +106,37 @@ export const TEMPLATE_LABELS: Record<TemplateId, string> = {
   comercio: "Comércio",
   servicos: "Serviços agendados",
   comercio_com_servicos: "Comércio com serviços",
+  controle_financeiro: "Controle financeiro",
+  agenda_simples: "Agenda simples",
+  clientes_cobrancas: "Clientes e cobranças",
+};
+
+/** Para quem é cada modelo (tela inicial, modo avançado e instruções da IA). */
+export const TEMPLATE_DESCRIPTIONS: Record<TemplateId, { para: string; exemplos: string }> = {
+  comercio: {
+    para: "Quem vende produtos e controla estoque.",
+    exemplos: "distribuidora, mercadinho, loja de roupas",
+  },
+  servicos: {
+    para: "Quem atende clientes com hora marcada.",
+    exemplos: "salão, clínica, oficina, pet shop",
+  },
+  comercio_com_servicos: {
+    para: "Quem vende produtos e também faz atendimentos agendados.",
+    exemplos: "distribuidora com instalação, loja com assistência técnica",
+  },
+  controle_financeiro: {
+    para: "Quem quer só controlar contas a pagar e a receber.",
+    exemplos: "finanças pessoais, autônomo, pequena empresa sem estoque",
+  },
+  agenda_simples: {
+    para: "Quem reserva horários de um recurso (sala, quadra, equipamento).",
+    exemplos: "sala de reunião, quadra esportiva, estúdio, aluguel de equipamento",
+  },
+  clientes_cobrancas: {
+    para: "Quem cadastra clientes e cobra mensalidades ou serviços, sem estoque nem agenda.",
+    exemplos: "professor particular, personal trainer, escola de idiomas, consultoria",
+  },
 };
 
 /** Entidades que aceitam campos informativos adicionais e o módulo que as provê. */

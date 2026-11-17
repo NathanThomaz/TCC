@@ -1,21 +1,12 @@
 import { useState, type ReactNode } from "react";
 import { CampoDinheiro } from "@/components/nexus/CampoDinheiro";
-import {
-  AlertTriangle,
-  Briefcase,
-  Check,
-  CircleCheck,
-  Plus,
-  Scissors,
-  Store,
-  Trash2,
-} from "lucide-react";
+import { AlertTriangle, Check, CircleCheck, Plus, Trash2 } from "lucide-react";
 import {
   campoNativoDuplicado,
   NATIVE_FIELDS,
   normalizarRotulo,
 } from "../../../shared/contract/catalog";
-import type { Campo, ConfigDraft, Modelo } from "@/types/nexus";
+import type { Campo, ConfigDraft } from "@/types/nexus";
 import { hexValido, textoSobre } from "@/lib/cores";
 import {
   centavosParaReais,
@@ -27,6 +18,7 @@ import {
   ROTULO_MODULO,
   type Entidade,
 } from "@/lib/nexus";
+import { MODELOS } from "@/lib/modelos";
 import { cn } from "@/lib/utils";
 import { ModulosProntos } from "@/components/nexus/ModulosProntos";
 import { Button } from "@/components/ui/button";
@@ -73,28 +65,7 @@ function Vazio({ children }: { children: ReactNode }) {
   );
 }
 
-/* 1. Modelo */
-const MODELOS: { id: Modelo; nome: string; desc: string; Icone: typeof Store }[] = [
-  {
-    id: "comercio",
-    nome: "Comércio",
-    desc: "Para quem vende produtos e controla estoque.",
-    Icone: Store,
-  },
-  {
-    id: "servicos",
-    nome: "Serviços agendados",
-    desc: "Para quem atende com hora marcada.",
-    Icone: Scissors,
-  },
-  {
-    id: "comercio_com_servicos",
-    nome: "Comércio com serviços",
-    desc: "Venda de produtos e atendimentos agendados.",
-    Icone: Briefcase,
-  },
-];
-
+/* 1. Modelo (os seis do catálogo, ADR-015) */
 export function PassoModelo({ draft, set, travado }: PassoProps & { travado?: boolean }) {
   if (travado) {
     return (
@@ -133,7 +104,7 @@ export function PassoModelo({ draft, set, travado }: PassoProps & { travado?: bo
           e.currentTarget.querySelector<HTMLButtonElement>(`[data-modelo="${prox.id}"]`)?.focus();
         }}
       >
-        {MODELOS.map(({ id, nome, desc, Icone }) => {
+        {MODELOS.map(({ id, nome, desc, exemplos, Icone }) => {
           const sel = draft.modelo === id;
           return (
             <button
@@ -157,6 +128,7 @@ export function PassoModelo({ draft, set, travado }: PassoProps & { travado?: bo
               </span>
               <span className="font-semibold">{nome}</span>
               <span className="mt-1 text-sm text-muted-foreground">{desc}</span>
+              <span className="mt-1 text-xs text-muted-foreground">Ex.: {exemplos}</span>
               <span className="mt-4 flex flex-wrap gap-1.5">
                 {MODULOS_POR_MODELO[id].map((m) => (
                   <span

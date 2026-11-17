@@ -8,6 +8,7 @@ import {
   OPTIONAL_MODULES,
   PAYMENT_METHODS,
   ROTULOS_CAMPOS,
+  TEMPLATE_DESCRIPTIONS,
   TEMPLATE_LABELS,
   TEMPLATE_MODULES,
   TEMPLATES,
@@ -19,14 +20,14 @@ import type { ConfigDraft } from "../../shared/contract/schema";
 // das constantes do contrato, para nunca divergir do que o validador aceita. Prompts versionados:
 // mudar o texto é mudar a configuração congelada do experimento (seção 25).
 
-export const VERSAO_PROMPTS = "2026-11-14.2";
+export const VERSAO_PROMPTS = "2026-11-16.1";
 
 type Json = Parameters<typeof adaptForGemini>[0];
 
 const catalogo = (): string => {
   const modelos = TEMPLATES.map(
     (t) =>
-      `- ${t} (${TEMPLATE_LABELS[t]}): módulos ${TEMPLATE_MODULES[t].join(", ")}; opcionais: ${OPTIONAL_MODULES[t].join(", ") || "nenhum"}`,
+      `- ${t} (${TEMPLATE_LABELS[t]}): ${TEMPLATE_DESCRIPTIONS[t].para} Ex.: ${TEMPLATE_DESCRIPTIONS[t].exemplos}. Módulos ${TEMPLATE_MODULES[t].join(", ")}; opcionais: ${OPTIONAL_MODULES[t].join(", ") || "nenhum"}`,
   ).join("\n");
   const modulos = MODULES.map((m) => {
     const dep = MODULE_INFO[m].dependsOn;
@@ -168,12 +169,15 @@ COMO CONDUZIR A ENTREVISTA (objetivo: extrair o máximo do negócio, sem cansar 
    - regras: ofereça de 1 a 3 regras do catálogo que fazem sentido para o negócio e ainda não foram tratadas, uma por pergunta, com um valor comum como sugestão.
    - aparencia: primeiro o nome do sistema (só o nome); na mensagem seguinte, o tema das telas: claro ou escuro (respostas rápidas "Tema claro" e "Tema escuro"; requisito titulo "Tema", texto "Tema claro" ou "Tema escuro"). Não pergunte cor: as cores você escolhe combinando com o negócio e o tema.
    - revisao: primeiro pergunte se o dono quer incluir mais alguma coisa no sistema (respostas rápidas "Não, está tudo certo" e "Quero incluir algo"). Se ele quiser, trate o pedido (volte à etapa certa, ou registre um pedido ao desenvolvedor se for fora do catálogo) e pergunte de novo. Quando ele disser que está tudo certo, faça a mensagem final da regra 8.
-   Pule o que não se aplica ao negócio (ex.: estoque para quem só agenda serviços).
+   Pule o que não se aplica ao negócio (ex.: estoque para quem só agenda serviços) e as etapas de módulos que o modelo não tem:
+   - controle_financeiro (só contas a pagar e a receber, inclusive finanças pessoais): de negocio vá direto a regras e aparencia; não pergunte de produtos, estoque, vendas, clientes nem atendimentos.
+   - clientes_cobrancas (clientes com mensalidades ou cobranças): sem produtos, estoque, vendas nem atendimentos; pergunte do cadastro de clientes e de como cobra (mensal, por serviço, vencimento).
+   - agenda_simples (reserva de horários de um recurso: sala, quadra, equipamento): fale em recursos no lugar de profissionais, responsáveis no lugar de clientes e reservas no lugar de atendimentos; pergunte quais recursos, a duração da reserva e o horário de funcionamento.
 2. Cada mensagem tem no máximo 2 frases curtas: um comentário breve (opcional) e UMA pergunta curta e direta, que pede UMA única informação. Nunca junte duas perguntas (proibido: "Qual o nome da loja e qual a cor?"; certo: "Qual o nome da sua loja?"). SEMPRE ofereça de 2 a 4 respostas_rapidas curtas (até 5 palavras cada); deixe vazio só quando a resposta for um nome. Elas viram botões; o dono também pode escrever.
 3. Extraia requisitos curtos, um por item, com os valores explícitos que o dono disse (ex.: titulo "Preço de atacado a partir de", texto "Atacado a partir de R$ 1.500,00 em produtos"). O assunto do requisito é a etapa em que ele foi tratado.
 4. Quando faltar um valor necessário, você pode SUGERIR um valor comum, mas só como sugestão: crie o requisito com sugestao true e diga que é uma sugestão para o dono confirmar ou mudar. Nunca marque sugestao false para um valor que o dono não disse. Se o dono depois disser o valor, reescreva o requisito com sugestao false.
 5. Quando o dono pedir algo fora do catálogo, explique com respeito que isso ainda não existe no Nexus e registre um pedido_desenvolvedor com a ficha completa: título, o que o dono pediu (palavras dele), contexto do negócio, regra proposta, 1 a 3 exemplos (situação → resultado esperado) e 1 a 5 critérios para saber que ficou pronto. Nunca prometa prazo. Não crie requisito para o que é pedido ao desenvolvedor.
-6. Você não confirma nada: o dono confere o resumo e confirma no fim. Não diga que algo foi confirmado ou ativado.
+6. Você não confirma nada: o dono confere o resumo e confirma no fim. Não diga que algo foi confirmado ou ativado. Nunca repita: não proponha requisito, regra ou pedido ao desenvolvedor que já exista no resumo, nem com outras palavras. Se o dono disser de novo algo já registrado, diga em poucas palavras que isso já está no resumo e siga para a próxima pergunta.
 7. pronto_para_revisar = true só na mensagem final da etapa revisao: as etapas que se aplicam foram respondidas (com vendas, o tempo de reserva do estoque é obrigatório) e o dono disse que não quer incluir mais nada.
 8. Na mensagem final da etapa revisao (e só nela) a mensagem pode ter até 6 frases curtas, sem pergunta aberta:
    - o que o sistema dele já terá pronto (os módulos escolhidos, em linguagem simples);
@@ -279,7 +283,7 @@ ${catalogo()}
 
 REGRAS DE GERAÇÃO:
 - Em aparencia, adapte rotulos_menu e rotulos_campos ao vocabulário do negócio descrito nos requisitos (ex.: "Veículos" em vez de "Produtos"); não preencha o que já combina com o padrão.
-- Escolha o modelo pelo que os requisitos pedem e use os módulos desse modelo; acrescente um módulo opcional só se um requisito confirmado pedir (venda a prazo ou forma de pagamento, compras de fornecedores, contas a pagar e receber).
+- Escolha o modelo pelo que os requisitos pedem e use os módulos desse modelo (quem só quer contas a pagar e a receber é controle_financeiro; clientes com cobranças, sem estoque nem agenda, é clientes_cobrancas; reserva de salas, quadras ou equipamentos é agenda_simples, com rotulos_menu profissionais "Recursos", clientes "Responsáveis" e agenda "Reservas", salvo vocabulário próprio do negócio); acrescente um módulo opcional só se um requisito confirmado pedir (venda a prazo ou forma de pagamento, compras de fornecedores, contas a pagar e receber).
 - requisitos: copie a lista abaixo exatamente, com status "confirmado".
 - Cada regra cita em "requisitos" os códigos que a justificam. Não crie regra sem requisito que diga o valor; não invente valores (se um requisito necessário não existir, deixe a regra de fora: o validador vai apontar a falta).
 - Dinheiro em centavos (R$ 1.000,00 = 100000). Durações em minutos.

@@ -14,7 +14,8 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { Skeleton } from "@/components/ui/skeleton";
 import { ROTULO_ASSUNTO } from "@/lib/criacao";
 import { useAlturaRestante } from "@/lib/alturaRestante";
-import { Link } from "@/lib/rotas";
+import { ehModelo, INICIO_DA_CONVERSA } from "@/lib/modelos";
+import { Link, useBusca } from "@/lib/rotas";
 
 // Criação guiada pela IA (seção 8 e ADR-004). A IA pergunta um assunto por vez; o resumo ao lado
 // mostra o sistema tomando forma. Sugestões da IA só valem quando o usuário as aceita, e o resumo
@@ -25,7 +26,11 @@ export function Criar() {
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ["criacao", id], queryFn: () => obterCriacao(id) });
   const detalhe = useQuery({ queryKey: ["sistema", id], queryFn: () => obterSistema(id) });
-  const [texto, setTexto] = useState("");
+  // Modelo escolhido na tela inicial (ADR-015): a primeira resposta já vem começada.
+  const modeloEscolhido = useBusca().modelo;
+  const [texto, setTexto] = useState(() =>
+    ehModelo(modeloEscolhido) ? INICIO_DA_CONVERSA[modeloEscolhido] : "",
+  );
   // Mensagem já enviada, à espera da IA: aparece na conversa na hora (envio fluido).
   const [pendente, setPendente] = useState<string | null>(null);
   const resumoRef = useRef<HTMLDivElement>(null);

@@ -8,7 +8,7 @@ import type {
   VersionDto,
 } from "../../shared/api";
 import { topicoGravado } from "../../shared/api";
-import { LIMITS } from "../../shared/contract/catalog";
+import { LIMITS, normalizarRotulo } from "../../shared/contract/catalog";
 import { configDraftGeminiSchema } from "../../shared/contract/gemini-schema";
 import type { ConfigDraft } from "../../shared/contract/schema";
 import { validateDraft } from "../../shared/contract/validate";
@@ -293,7 +293,8 @@ async function maiorCodigo(ctx: RequestContext, systemId: string): Promise<numbe
 }
 
 const codigoDe = (n: number) => `REQ-${String(n).padStart(2, "0")}`;
-const normalizar = (texto: string) => texto.trim().replace(/\s+/g, " ").toLowerCase();
+// Sem acento, caixa nem pontuação (ADR-015: "Pix e cartão." e "pix e cartao" são o mesmo pedido).
+const normalizar = (texto: string) => normalizarRotulo(texto);
 
 /** Requisito novo ou reescrito, com o que o resumo mostra (assunto, título e se é sugestão). */
 export interface ItemMescla {

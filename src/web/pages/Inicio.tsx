@@ -27,6 +27,7 @@ import { useAuth } from "@/lib/auth";
 import { ROTULO_MODULO } from "@/lib/nexus";
 import { cn } from "@/lib/utils";
 import { CriarSistemaDialog } from "@/components/nexus/CriarSistemaDialog";
+import { ModelosParaComecar } from "@/components/nexus/ModelosParaComecar";
 import { EmptyState, ErrorState, PageHeader } from "@/components/nexus/Estados";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -358,6 +359,8 @@ export function Inicio() {
             )}
           </section>
 
+          <ModelosParaComecar />
+
           <section aria-labelledby="titulo-acompanhamento" className="space-y-3">
             <h2 id="titulo-acompanhamento" className="text-lg font-semibold">
               Acompanhamento
@@ -588,6 +591,7 @@ function PrimeirosPassos() {
         titulo="Seu primeiro sistema em poucos minutos"
         descricao="Sem planilha nem programação: o Nexus monta o sistema a partir do que você conta sobre o negócio."
       />
+      <ModelosParaComecar />
       <ol className="grid gap-4 md:grid-cols-3">
         {passos.map(([Icone, titulo, texto], i) => (
           <li key={titulo} className="rounded-xl border bg-card p-5 shadow-card">

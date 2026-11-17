@@ -382,6 +382,25 @@ describe("conversa e requisitos", () => {
     ]);
     expect(m.novos).toEqual([{ codigo: "REQ-06", texto: "Novo", ...extra }]);
   });
+
+  it("não repete requisito que só muda acento, caixa ou pontuação (ADR-015)", () => {
+    const extra = { assunto: "negocio" as const, titulo: "Pagamento", sugestao: false };
+    const vivos = [
+      {
+        codigo: "REQ-01",
+        texto: "Aceita Pix e cartão",
+        status: "confirmado" as const,
+        origem: "ia" as const,
+        ...extra,
+      },
+    ];
+    const m = mesclarRequisitos(
+      vivos,
+      [{ codigo: null, texto: "aceita pix e cartao.", ...extra }],
+      1,
+    );
+    expect(m.novos).toEqual([]);
+  });
 });
 
 describe("geração, correção e ativação", () => {

@@ -1,4 +1,6 @@
 import { useState, type ReactNode } from "react";
+import { TEMPLATE_LABELS } from "../../../shared/contract/catalog";
+import type { Modelo } from "@/types/nexus";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef } from "react";
 import { ApiError, novaChave } from "@/api/cliente";
@@ -37,7 +39,14 @@ const MODOS = [
   },
 ] as const;
 
-export function CriarSistemaDialog({ gatilho }: { gatilho: ReactNode }) {
+export function CriarSistemaDialog({
+  gatilho,
+  modelo,
+}: {
+  gatilho: ReactNode;
+  /** Modelo escolhido na tela inicial (ADR-015): a criação já começa nele. */
+  modelo?: Modelo;
+}) {
   const [aberto, setAberto] = useState(false);
   const [nome, setNome] = useState("");
   const [tocado, setTocado] = useState(false);
@@ -69,6 +78,7 @@ export function CriarSistemaDialog({ gatilho }: { gatilho: ReactNode }) {
       navigate({
         to: modo === "assistente" ? "/sistemas/$id/criar" : "/sistemas/$id/configurar",
         params: { id: s.id },
+        ...(modelo ? { search: { modelo } } : {}),
       });
     },
     // Nome criado em outra aba ou fora da lista carregada: atualiza a lista para o aviso aparecer.
@@ -93,7 +103,9 @@ export function CriarSistemaDialog({ gatilho }: { gatilho: ReactNode }) {
           <DialogHeader>
             <DialogTitle>Criar sistema</DialogTitle>
             <DialogDescription>
-              Escolha um nome e como quer montar o seu sistema. Ele começa em rascunho.
+              {modelo
+                ? `Modelo: ${TEMPLATE_LABELS[modelo]}. Escolha um nome e como quer montar; dá para ajustar tudo depois.`
+                : "Escolha um nome e como quer montar o seu sistema. Ele começa em rascunho."}
             </DialogDescription>
           </DialogHeader>
           <div className="my-5 space-y-2">
