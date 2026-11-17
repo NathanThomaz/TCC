@@ -1,6 +1,6 @@
 import type { PainelDto } from "../../../shared/api";
 import type { ConfigDraft } from "../../../shared/contract/schema";
-import { deCampoLocal, paraCampoLocal } from "../../../shared/dominio/agenda";
+import { deCampoLocal, inicioDoDiaLocal, paraCampoLocal } from "../../../shared/dominio/agenda";
 import { regraDo } from "../../../shared/dominio/regras";
 import { json } from "../../http/responses";
 import type { Handler } from "../../http/router";
@@ -128,7 +128,7 @@ export async function calcularPainel(
     const minimo = regra?.unidades ?? null;
     const { results } = await db
       .prepare(
-        `SELECT p.id, p.name, p.physical, p.retail_cents, p.min_units,
+        `SELECT p.id, p.name, p.physical, p.retail_cents, p.min_units, p.expires_on,
            COALESCE(p.last_cost_cents, p.cost_cents) AS custo,
            (SELECT COALESCE(SUM(r.quantity), 0) FROM reservations r
              WHERE r.product_id = p.id AND r.status = 'active' AND r.expires_at > ?1) AS reserved
@@ -141,6 +141,7 @@ export async function calcularPainel(
         physical: number;
         retail_cents: number;
         min_units: number | null;
+        expires_on: string | null;
         custo: number | null;
         reserved: number;
       }>();
@@ -174,6 +175,26 @@ export async function calcularPainel(
       valorVarejoCentavos: results.reduce((soma, p) => soma + p.physical * p.retail_cents, 0),
       custo: balancoDoEstoque(results),
     };
+    // Validade (ADR-015): só o que ainda tem estoque; vencido = antes de hoje.
+    const validade = regraDo(config, "validade_produto");
+    if (validade) {
+      const dia = hojeLocal(agora);
+      const limite = somarDias(dia, validade.dias_aviso);
+      const comValidade = results
+        .filter((p) => p.expires_on !== null && p.physical > 0 && p.expires_on <= limite)
+        .sort((a, b) => a.expires_on!.localeCompare(b.expires_on!));
+      painel.estoque.validade = {
+        dias: validade.dias_aviso,
+        vencidos: comValidade.filter((p) => p.expires_on! < dia).length,
+        vencendo: comValidade.filter((p) => p.expires_on! >= dia).length,
+        lista: comValidade.slice(0, CRITICOS).map((p) => ({
+          id: p.id,
+          nome: p.name,
+          validade: p.expires_on!,
+          fisico: p.physical,
+        })),
+      };
+    }
   }
 
   if (tem("clientes")) {
@@ -190,6 +211,22 @@ export async function calcularPainel(
       inativos: r?.inativos ?? 0,
       novosNoMes: r?.novos ?? 0,
     };
+    // Cliente sem comprar (ADR-015): ativo que já comprou e cuja última compra foi há mais de N
+    // dias de calendário no fuso do Nexus (a mesma conta da lista de clientes).
+    const semComprar = tem("vendas") ? regraDo(config, "cliente_sem_comprar") : undefined;
+    if (semComprar) {
+      const desde = inicioDoDiaLocal(agora, semComprar.dias);
+      const q = await db
+        .prepare(
+          `SELECT COUNT(*) AS n FROM customers c
+           WHERE c.system_id = ?1 AND c.status = 'active'
+             AND (SELECT MAX(completed_at) FROM sales
+                  WHERE system_id = ?1 AND customer_id = c.id AND status = 'completed') < ?2`,
+        )
+        .bind(s, desde)
+        .first<{ n: number }>();
+      painel.clientes.semComprar = { dias: semComprar.dias, quantidade: q?.n ?? 0 };
+    }
   }
 
   if (tem("agenda")) {

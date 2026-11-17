@@ -316,6 +316,22 @@ export function semanticIssues(draft: ConfigDraft): ValidationIssue[] {
     ) {
       issues.push(block("parametro_invalido", path, "Informe a multa, os juros ou os dois."));
     }
+    if (rule.tipo === "saida_manual" && duplicates(rule.motivos, (m) => normalizarRotulo(m)).size) {
+      issues.push(block("motivo_repetido", `${path}.motivos`, "Há motivo de saída repetido."));
+    }
+    if (rule.tipo === "limite_credito") {
+      // Sem venda a prazo o limite nunca seria usado.
+      const formas = draft.regras.find((r) => r.tipo === "formas_pagamento");
+      if (formas?.tipo === "formas_pagamento" && !formas.formas.includes("a_prazo")) {
+        issues.push(
+          block(
+            "dependencia_ausente",
+            path,
+            'O limite de crédito vale para venda a prazo: inclua "a prazo" nas formas de pagamento.',
+          ),
+        );
+      }
+    }
     if (rule.tipo === "par_atendimento") {
       if (rule.primeiro === rule.segundo) {
         issues.push(

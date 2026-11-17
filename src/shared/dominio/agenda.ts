@@ -159,6 +159,26 @@ export function deCampoLocal(texto: string): number | null {
   return instante;
 }
 
+/** Dia de calendário (AAAA-MM-DD) do instante, no fuso do Nexus. */
+export function diaLocal(instante: number): string {
+  return paraCampoLocal(instante).slice(0, 10);
+}
+
+/** Dias de calendário no fuso do Nexus entre dois instantes (17/11 23h → 18/11 1h = 1 dia). */
+export function diasDeCalendario(de: number, ate: number): number {
+  return Math.round(
+    (Date.parse(`${diaLocal(ate)}T00:00:00Z`) - Date.parse(`${diaLocal(de)}T00:00:00Z`)) /
+      86_400_000,
+  );
+}
+
+/** Início (00:00 no fuso do Nexus) do dia que fica `diasAntes` dias antes do dia do instante. */
+export function inicioDoDiaLocal(instante: number, diasAntes = 0): number {
+  const d = new Date(`${diaLocal(instante)}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - diasAntes);
+  return deCampoLocal(`${d.toISOString().slice(0, 10)}T00:00`)!;
+}
+
 /** "05/11/2026 14:30" no fuso do Nexus. */
 export function formatarDataHora(instante: number): string {
   return new Intl.DateTimeFormat("pt-BR", {

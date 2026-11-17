@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   deCampoLocal,
   formatarDataHora,
+  diasDeCalendario,
+  inicioDoDiaLocal,
   paraCampoLocal,
   planejarAtendimento,
   sobrepoe,
@@ -70,6 +72,21 @@ describe("agenda", () => {
   it("AGE-05: intervalos semiabertos — consecutivos não conflitam", () => {
     expect(sobrepoe({ inicio: 0, fim: 10 }, { inicio: 10, fim: 20 })).toBe(false);
     expect(sobrepoe({ inicio: 0, fim: 10 }, { inicio: 9, fim: 20 })).toBe(true);
+  });
+});
+
+describe("dias de calendário no fuso do Nexus", () => {
+  it("conta a virada do dia em Brasília, não as horas nem o fuso do servidor", () => {
+    // 17/11 23h em Brasília (18/11 2h UTC) → 18/11 1h em Brasília: um dia de calendário.
+    expect(diasDeCalendario(Date.UTC(2026, 10, 18, 2), Date.UTC(2026, 10, 18, 4))).toBe(1);
+    // 18/10 10h → 17/11 11h: 30 dias, embora já tenham passado mais de 30 × 24 horas.
+    expect(diasDeCalendario(Date.UTC(2026, 9, 18, 13), Date.UTC(2026, 10, 17, 14))).toBe(30);
+  });
+
+  it("início do dia N dias antes, às 00:00 de Brasília", () => {
+    expect(inicioDoDiaLocal(Date.UTC(2026, 10, 17, 14), 30)).toBe(Date.UTC(2026, 9, 18, 3));
+    // 1h da manhã em Brasília ainda é o dia anterior em UTC; vale o dia de Brasília.
+    expect(inicioDoDiaLocal(Date.UTC(2026, 10, 18, 4))).toBe(Date.UTC(2026, 10, 18, 3));
   });
 });
 

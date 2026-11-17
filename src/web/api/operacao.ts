@@ -122,6 +122,8 @@ export interface DadosProduto {
   codigoBarras: string | null;
   /** Valor de compra da unidade (opcional, para o balanço); null limpa, ausente mantém. */
   custoCentavos?: number | null;
+  /** Validade (AAAA-MM-DD; regra validade_produto); null limpa, ausente mantém. */
+  validade?: string | null;
 }
 
 /** Ajuste de coluna num sistema ativo: renomear (só visual) ou incluir. */
@@ -176,6 +178,20 @@ export async function registrarEntrada(
   chave = novaChave(),
 ) {
   const r = await chamar<OperacaoApiBody>(`${base(sistema)}/estoque/entradas`, {
+    method: "POST",
+    body: dados,
+    chave,
+  });
+  return exigir(r.movimento, "movimento");
+}
+
+/** Saída sem venda com motivo (regra saida_manual, ADR-015). */
+export async function registrarSaida(
+  sistema: string,
+  dados: { produto: string; caixas: number; unidades: number; motivo: string; observacao?: string },
+  chave = novaChave(),
+) {
+  const r = await chamar<OperacaoApiBody>(`${base(sistema)}/estoque/saidas`, {
     method: "POST",
     body: dados,
     chave,

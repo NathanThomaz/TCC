@@ -44,6 +44,7 @@ import {
   listarEstoque,
   listarMovimentos,
   registrarEntrada,
+  registrarSaida,
 } from "./modules/operacao/estoque";
 import {
   cancelarVenda,
@@ -262,6 +263,8 @@ export function createApp(
       { method: "GET", path: `${O}/estoque/movimentos`, handler: listarMovimentos },
       { method: "POST", path: `${O}/estoque/entradas`, handler: registrarEntrada },
       { method: "POST", path: `${O}/estoque/correcoes`, handler: corrigirSaldo },
+      // Saída avulsa com motivo (regra saida_manual, ADR-015).
+      { method: "POST", path: `${O}/estoque/saidas`, handler: registrarSaida },
       { method: "GET", path: `${O}/vendas`, handler: listarVendas },
       { method: "POST", path: `${O}/vendas`, handler: criarVenda },
       // Menos digitação (pedido do dono, 2026-11-14): venda ditada, última compra, planilhas.

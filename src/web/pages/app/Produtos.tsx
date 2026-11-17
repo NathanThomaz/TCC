@@ -1,9 +1,21 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Package, PackagePlus, Pencil, Plus, Scale } from "lucide-react";
+import {
+  Ellipsis,
+  Loader2,
+  Package,
+  PackageMinus,
+  PackagePlus,
+  Pencil,
+  Plus,
+  Power,
+  Scale,
+} from "lucide-react";
 import { toast } from "sonner";
 import type { CamposInformativos, ProdutoDto } from "../../../shared/api";
+import { diaLocal } from "../../../shared/dominio/agenda";
 import { formatarCentavos } from "../../../shared/dominio/precos";
+import { regraDo } from "../../../shared/dominio/regras";
 import {
   corrigirSaldo,
   criarProduto,
@@ -11,6 +23,7 @@ import {
   listarProdutos,
   mudarStatus,
   registrarEntrada,
+  registrarSaida,
 } from "@/api/operacao";
 import {
   AvisoRascunho,
@@ -35,8 +48,21 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { centavosParaReais, reaisParaCentavos, rotuloCampo } from "@/lib/nexus";
 import { rotuloModulo, useApp } from "./Aplicacao";
@@ -47,6 +73,7 @@ import { rotuloModulo, useApp } from "./Aplicacao";
 type Dialogo =
   | { tipo: "produto"; atual: ProdutoDto | null; rascunho?: Rascunho<DadosProduto> }
   | { tipo: "entrada"; produto: ProdutoDto }
+  | { tipo: "saida"; produto: ProdutoDto }
   | { tipo: "correcao"; produto: ProdutoDto };
 
 /** Margem sobre o preço de venda ("35%"); null sem valor de compra. */
@@ -81,6 +108,11 @@ export function Produtos() {
   const temEstoque = app.config.modulos.includes("estoque");
   const temAtacado = app.config.regras.some((r) => r.tipo === "limite_atacado");
   const temCaixa = app.config.regras.some((r) => r.tipo === "unidades_por_caixa");
+  // Regras de estoque (ADR-015): validade com aviso e saída com motivo.
+  const regraValidade = regraDo(app.config, "validade_produto");
+  const regraSaida = regraDo(app.config, "saida_manual");
+  // Dia de hoje no fuso do Nexus, o mesmo do painel (não o do navegador).
+  const [hoje] = useState(() => diaLocal(Date.now()));
 
   const status = useMutation({
     mutationFn: (p: ProdutoDto) =>
@@ -102,6 +134,7 @@ export function Produtos() {
     ...(temCaixa ? [col("produtos.caixa")] : []),
     ...campos.map((c) => <ColunaEditavel chave={`campo:produtos:${c.id}`} rotulo={c.rotulo} />),
     ...(temEstoque ? ["Físico", "Reservado", "Disponível", "Mínimo"] : []),
+    ...(regraValidade ? ["Validade"] : []),
     <span className="sr-only">Ações</span>,
   ];
 
@@ -188,7 +221,17 @@ export function Produtos() {
                   </td>
                 </>
               )}
-              <td className="px-4 py-2">
+              {regraValidade && (
+                <td className="whitespace-nowrap px-4 py-2">
+                  <Validade
+                    validade={p.validade}
+                    hoje={hoje}
+                    diasAviso={regraValidade.dias_aviso}
+                  />
+                </td>
+              )}
+              {/* Ações sempre à vista: com muitas colunas, a tabela rola por baixo delas. */}
+              <td className="sticky right-0 bg-card px-2 py-2 shadow-[-8px_0_8px_-8px_rgb(0_0_0/0.25)]">
                 <div className="flex justify-end gap-1">
                   <Button
                     size="sm"
@@ -202,28 +245,48 @@ export function Produtos() {
                     <Button
                       size="sm"
                       variant="outline"
+                      aria-label={`Entrada de ${p.nome}`}
+                      title="Entrada"
                       onClick={() => setDialogo({ tipo: "entrada", produto: p })}
                     >
-                      <PackagePlus aria-hidden /> Entrada
+                      <PackagePlus aria-hidden />
                     </Button>
                   )}
-                  {temEstoque && app.papel === "admin" && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setDialogo({ tipo: "correcao", produto: p })}
-                    >
-                      <Scale aria-hidden /> Corrigir
-                    </Button>
-                  )}
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    disabled={status.isPending}
-                    onClick={() => status.mutate(p)}
-                  >
-                    {p.status === "active" ? "Inativar" : "Reativar"}
-                  </Button>
+                  {/* O que é menos usado fica no menu: a linha cabe sem esconder colunas. */}
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        aria-label={`Mais ações de ${p.nome}`}
+                        title="Mais ações"
+                      >
+                        <Ellipsis aria-hidden />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      {temEstoque && regraSaida && p.status === "active" && p.fisico > 0 && (
+                        <DropdownMenuItem
+                          onSelect={() => setDialogo({ tipo: "saida", produto: p })}
+                        >
+                          <PackageMinus aria-hidden /> Registrar saída
+                        </DropdownMenuItem>
+                      )}
+                      {temEstoque && app.papel === "admin" && (
+                        <DropdownMenuItem
+                          onSelect={() => setDialogo({ tipo: "correcao", produto: p })}
+                        >
+                          <Scale aria-hidden /> Corrigir saldo
+                        </DropdownMenuItem>
+                      )}
+                      <DropdownMenuItem
+                        disabled={status.isPending}
+                        onSelect={() => status.mutate(p)}
+                      >
+                        <Power aria-hidden /> {p.status === "active" ? "Inativar" : "Reativar"}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
               </td>
             </tr>
@@ -239,6 +302,13 @@ export function Produtos() {
       )}
       {dialogo?.tipo === "entrada" && (
         <EntradaDialog produto={dialogo.produto} onFechar={() => setDialogo(null)} />
+      )}
+      {dialogo?.tipo === "saida" && regraSaida && (
+        <SaidaDialog
+          produto={dialogo.produto}
+          motivos={regraSaida.motivos}
+          onFechar={() => setDialogo(null)}
+        />
       )}
       {dialogo?.tipo === "correcao" && (
         <CorrecaoDialog produto={dialogo.produto} onFechar={() => setDialogo(null)} />
@@ -267,6 +337,7 @@ interface DadosProduto {
   minimo: string;
   codigo: string;
   custo: string;
+  validade?: string;
 }
 
 function ProdutoDialog({
@@ -303,6 +374,8 @@ function ProdutoDialog({
     atual?.estoqueMinimo ? String(atual.estoqueMinimo) : (r?.minimo ?? ""),
   );
   const [codigo, setCodigo] = useState(atual?.codigoBarras ?? r?.codigo ?? "");
+  const temValidade = regraDo(app.config, "validade_produto") !== undefined;
+  const [validade, setValidade] = useState(atual?.validade ?? r?.validade ?? "");
   const [custo, setCusto] = useState(
     atual && atual.custoCentavos !== null
       ? centavosParaReais(atual.custoCentavos)
@@ -315,10 +388,12 @@ function ProdutoDialog({
     tipo: "produto",
     ativo: !atual,
     inicial: rascunho,
-    dados: { nome, varejo, atacado, caixa, campos, inicial, minimo, codigo, custo },
+    dados: { nome, varejo, atacado, caixa, campos, inicial, minimo, codigo, custo, validade },
     // A caixa já vem sugerida pela regra: sozinha, não é começo de cadastro.
     vazio:
-      [nome, varejo, atacado, inicial, minimo, codigo, custo].every((t) => t.trim() === "") &&
+      [nome, varejo, atacado, inicial, minimo, codigo, custo, validade].every(
+        (t) => t.trim() === "",
+      ) &&
       caixa === caixaSugerida &&
       Object.keys(campos).length === 0,
     titulo: nome.trim() || `${rotuloCampo(app.config, "produtos.item")} sem nome`,
@@ -351,6 +426,7 @@ function ProdutoDialog({
         campos,
         estoqueMinimo: temEstoque ? estoqueMinimo : null,
         codigoBarras: codigo.trim() || null,
+        ...(temValidade ? { validade: validade || null } : {}),
         // Na edição, só manda o custo se a pessoa mudou: o campo vem com o custo em uso (talvez
         // o da última compra), que não deve virar "valor informado" só por salvar o nome.
         ...(!atual || c !== atual.custoCentavos ? { custoCentavos: c } : {}),
@@ -495,6 +571,21 @@ function ProdutoDialog({
                 />
                 <p id="dica-minimo" className="text-xs text-muted-foreground">
                   Unidades deste {item}; vazio, avisa só quando acabar.
+                </p>
+              </div>
+            )}
+            {temValidade && (
+              <div className="space-y-1.5">
+                <Label htmlFor="produto-validade">Validade</Label>
+                <Input
+                  id="produto-validade"
+                  type="date"
+                  value={validade}
+                  onChange={(e) => setValidade(e.target.value)}
+                  aria-describedby="dica-validade"
+                />
+                <p id="dica-validade" className="text-xs text-muted-foreground">
+                  Opcional. O painel avisa antes de vencer.
                 </p>
               </div>
             )}
@@ -728,6 +819,166 @@ function CorrecaoDialog({ produto, onFechar }: { produto: ProdutoDto; onFechar: 
               }
             >
               {m.isPending && <Loader2 className="animate-spin" aria-hidden />}Corrigir
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** Validade do produto com aviso (regra validade_produto): vencido, vence em breve ou a data. */
+function Validade({
+  validade,
+  hoje,
+  diasAviso,
+}: {
+  validade: string | null;
+  hoje: string;
+  diasAviso: number;
+}) {
+  if (!validade) return <span className="text-muted-foreground">—</span>;
+  const [a, m, d] = validade.split("-");
+  const dias = Math.round(
+    (Date.parse(`${validade}T00:00:00Z`) - Date.parse(`${hoje}T00:00:00Z`)) / 86_400_000,
+  );
+  const texto = `${d}/${m}/${a}`;
+  if (dias < 0) {
+    return (
+      <span
+        className="rounded-md bg-destructive/15 px-2 py-0.5 text-xs font-medium text-destructive"
+        title={`Venceu em ${texto}`}
+      >
+        Vencido
+      </span>
+    );
+  }
+  if (dias <= diasAviso) {
+    return (
+      <span
+        className="rounded-md bg-warning-soft px-2 py-0.5 text-xs font-medium text-warning"
+        title={`Vence em ${texto}`}
+      >
+        {dias === 0 ? "Vence hoje" : `Em ${dias} ${dias === 1 ? "dia" : "dias"}`}
+      </span>
+    );
+  }
+  return <span className="tabular-nums text-muted-foreground">{texto}</span>;
+}
+
+/** Saída sem venda com motivo (regra saida_manual, ADR-015): perda, consumo, quebra. */
+function SaidaDialog({
+  produto,
+  motivos,
+  onFechar,
+}: {
+  produto: ProdutoDto;
+  motivos: string[];
+  onFechar: () => void;
+}) {
+  const app = useApp();
+  const invalidar = useInvalidarProdutos();
+  const chave = useChavePorConteudo();
+  const [caixas, setCaixas] = useState("0");
+  const [unidades, setUnidades] = useState("0");
+  const [motivo, setMotivo] = useState("");
+  const [observacao, setObservacao] = useState("");
+  const total = Number(caixas || 0) * (produto.unidadesPorCaixa ?? 0) + Number(unidades || 0);
+  const m = useMutation({
+    mutationFn: () => {
+      const dados = {
+        produto: produto.id,
+        caixas: Number(caixas || 0),
+        unidades: Number(unidades || 0),
+        motivo,
+        ...(observacao.trim() ? { observacao: observacao.trim() } : {}),
+      };
+      return registrarSaida(app.id, dados, chave(dados));
+    },
+    onSuccess: (mov) => {
+      invalidar();
+      toast.success(`Saída de ${-mov.delta} unidades registrada. Saldo: ${mov.saldoDepois}.`);
+      onFechar();
+    },
+  });
+  return (
+    <Dialog open onOpenChange={(a) => !a && onFechar()}>
+      <DialogContent>
+        <form
+          className="space-y-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            m.mutate();
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>Saída de {produto.nome}</DialogTitle>
+            <DialogDescription>
+              Saldo físico atual: {produto.fisico} unidades. Para o que sai sem venda.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-3">
+            {produto.unidadesPorCaixa !== null && (
+              <div className="space-y-1.5">
+                <Label htmlFor="saida-caixas">Caixas de {produto.unidadesPorCaixa}</Label>
+                <Input
+                  id="saida-caixas"
+                  type="number"
+                  min={0}
+                  value={caixas}
+                  onChange={(e) => setCaixas(e.target.value)}
+                />
+              </div>
+            )}
+            <div className="space-y-1.5">
+              <Label htmlFor="saida-unidades">Unidades</Label>
+              <Input
+                id="saida-unidades"
+                type="number"
+                min={0}
+                value={unidades}
+                onChange={(e) => setUnidades(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="saida-motivo">Motivo</Label>
+              <Select value={motivo} onValueChange={setMotivo}>
+                <SelectTrigger id="saida-motivo">
+                  <SelectValue placeholder="Escolha o motivo" />
+                </SelectTrigger>
+                <SelectContent>
+                  {motivos.map((x) => (
+                    <SelectItem key={x} value={x}>
+                      {x}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="saida-obs">Observação (opcional)</Label>
+              <Input
+                id="saida-obs"
+                maxLength={200}
+                value={observacao}
+                placeholder="Ex.: caixa amassada"
+                onChange={(e) => setObservacao(e.target.value)}
+              />
+            </div>
+          </div>
+          <p className="text-sm text-muted-foreground" aria-live="polite">
+            Total da saída:{" "}
+            <span className="font-medium tabular-nums text-foreground">{total}</span> unidades
+          </p>
+          <ErroApi erro={m.error} />
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onFechar}>
+              Cancelar
+            </Button>
+            <Button type="submit" disabled={m.isPending || total <= 0 || !motivo}>
+              {m.isPending && <Loader2 className="animate-spin" aria-hidden />}Registrar saída
             </Button>
           </DialogFooter>
         </form>

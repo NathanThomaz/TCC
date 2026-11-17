@@ -4,7 +4,11 @@ import { Loader2, Pencil, Plus, Search, Users } from "lucide-react";
 import { toast } from "sonner";
 import type { CamposInformativos, ClienteDto } from "../../../shared/api";
 import type { Campo } from "@/types/nexus";
-import { formatarDataHora } from "../../../shared/dominio/agenda";
+import {
+  diasDeCalendario,
+  formatarDataHora,
+  inicioDoDiaLocal,
+} from "../../../shared/dominio/agenda";
 import { formatarCentavos } from "../../../shared/dominio/precos";
 import {
   criarPessoa,
@@ -43,6 +47,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { rotuloModulo, useApp } from "./Aplicacao";
 import { rotuloCampo } from "@/lib/nexus";
+import { regraDo } from "../../../shared/dominio/regras";
 import { type Rascunho, useRascunho, useRascunhoDaBusca } from "@/lib/rascunhos";
 
 // Clientes e profissionais (seção 14): cadastrar, editar, inativar e reativar; sem exclusão.
@@ -54,7 +59,7 @@ const ENTIDADE = {
   fornecedores: "fornecedores",
 } as const;
 
-export type Filtro = "todos" | "active" | "inactive";
+export type Filtro = "todos" | "active" | "inactive" | "sem_comprar";
 export type Ordem = "nome" | "total" | "ultima" | "proximo";
 
 /** Valor de um campo informativo como texto da célula (data em dd/mm/aaaa). */
@@ -85,11 +90,18 @@ export function filtrarPessoas(
   busca: string,
   filtro: Filtro,
   ordem: Ordem,
+  /** Regra cliente_sem_comprar (ADR-015): última compra antes deste instante. */
+  semComprarAntesDe?: number,
 ): ClienteDto[] {
+  const semComprar = (p: ClienteDto) =>
+    semComprarAntesDe !== undefined &&
+    p.status === "active" &&
+    typeof p.resumo?.ultimaCompra === "number" &&
+    p.resumo.ultimaCompra < semComprarAntesDe;
   const termo = normalizar(busca.trim());
   const lista = pessoas.filter(
     (p) =>
-      (filtro === "todos" || p.status === filtro) &&
+      (filtro === "todos" || (filtro === "sem_comprar" ? semComprar(p) : p.status === filtro)) &&
       (!termo ||
         normalizar(
           [
@@ -140,10 +152,17 @@ export function Pessoas({ tipo }: { tipo: TipoPessoa }) {
   const [busca, setBusca] = useState("");
   const [filtro, setFiltro] = useState<Filtro>("todos");
   const [ordem, setOrdem] = useState<Ordem>("nome");
+  // Regra cliente_sem_comprar (ADR-015): filtro e aviso na última compra.
+  const regraSemComprar =
+    tipo === "clientes" && temVendas ? regraDo(app.config, "cliente_sem_comprar") : undefined;
+  const [agora] = useState(() => Date.now());
+  const semComprarAntesDe = regraSemComprar
+    ? inicioDoDiaLocal(agora, regraSemComprar.dias)
+    : undefined;
 
   const linhas = useMemo(
-    () => filtrarPessoas(q.data ?? [], campos, busca, filtro, ordem),
-    [q.data, campos, busca, filtro, ordem],
+    () => filtrarPessoas(q.data ?? [], campos, busca, filtro, ordem, semComprarAntesDe),
+    [q.data, campos, busca, filtro, ordem, semComprarAntesDe],
   );
 
   const ativos = (q.data ?? []).filter((p) => p.status === "active").length;
@@ -215,6 +234,11 @@ export function Pessoas({ tipo }: { tipo: TipoPessoa }) {
                   <SelectItem value="todos">Todos</SelectItem>
                   <SelectItem value="active">Ativos</SelectItem>
                   <SelectItem value="inactive">Inativos</SelectItem>
+                  {regraSemComprar && (
+                    <SelectItem value="sem_comprar">
+                      Sem comprar há {regraSemComprar.dias}+ dias
+                    </SelectItem>
+                  )}
                 </SelectContent>
               </Select>
             </div>
@@ -280,6 +304,14 @@ export function Pessoas({ tipo }: { tipo: TipoPessoa }) {
                       </td>
                       <td className="px-4 py-2 text-muted-foreground tabular-nums">
                         {data(p.resumo?.ultimaCompra)}
+                        {semComprarAntesDe !== undefined &&
+                          p.status === "active" &&
+                          typeof p.resumo?.ultimaCompra === "number" &&
+                          p.resumo.ultimaCompra < semComprarAntesDe && (
+                            <span className="ml-2 rounded-md bg-warning-soft px-1.5 py-0.5 text-xs text-warning">
+                              {diasDeCalendario(p.resumo.ultimaCompra, agora)} dias
+                            </span>
+                          )}
                       </td>
                     </>
                   )}
