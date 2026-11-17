@@ -374,6 +374,7 @@ export async function listarLancamentos(
   resumo: ResumoFinanceiroDto;
   porCategoria: NonNullable<OperacaoApiBody["porCategoria"]> | null;
   orcamento: NonNullable<OperacaoApiBody["orcamento"]> | null;
+  categoriasUsadas: string[];
 }> {
   const q = new URLSearchParams(
     Object.entries(filtro).filter((e): e is [string, string] => typeof e[1] === "string"),
@@ -384,6 +385,7 @@ export async function listarLancamentos(
     resumo: exigir(r.resumoFinanceiro, "resumo"),
     porCategoria: r.porCategoria ?? null,
     orcamento: r.orcamento ?? null,
+    categoriasUsadas: r.categoriasUsadas ?? [],
   };
 }
 
@@ -411,10 +413,17 @@ export async function acaoLancamento(
   id: string,
   acao: "baixar" | "cancelar",
   motivo?: string,
+  /** Na baixa com multa e juros: o valor que a tela mostrou (o servidor confere). */
+  valorEsperadoCentavos?: number,
 ) {
+  const body = motivo
+    ? { motivo }
+    : valorEsperadoCentavos !== undefined
+      ? { valorEsperadoCentavos }
+      : {};
   const r = await chamar<OperacaoApiBody>(
     `${base(sistema)}/financeiro/${encodeURIComponent(id)}/${acao}`,
-    { method: "POST", body: motivo ? { motivo } : {}, chave: novaChave() },
+    { method: "POST", body, chave: novaChave() },
   );
   return exigir(r.lancamento, "lançamento");
 }

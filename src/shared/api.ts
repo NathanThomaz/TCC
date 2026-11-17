@@ -320,6 +320,8 @@ export interface OperacaoApiBody {
   porCategoria?: { tipo: TipoLancamento; categoria: string; totalCentavos: number }[];
   /** Regra orcamento_mensal: uso do mês por categoria de despesa. */
   orcamento?: OrcamentoCategoriaDto[];
+  /** Categorias que já aparecem em contas do sistema (para o filtro). */
+  categoriasUsadas?: string[];
   error?: ApiErrorBody["error"];
 }
 

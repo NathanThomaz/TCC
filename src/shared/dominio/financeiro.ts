@@ -27,11 +27,9 @@ export function valorComEncargos(
   if (!regra || dias === 0) {
     return { totalCentavos: valorCentavos, multaCentavos: 0, jurosCentavos: 0, dias };
   }
-  // Percentuais em centésimos (2,5% = 250) para não acumular erro de ponto flutuante.
-  const multaBp = Math.round(regra.multa_percentual * 100);
-  const jurosBp = Math.round(regra.juros_mes_percentual * 100);
-  const multaCentavos = Math.round((valorCentavos * multaBp) / 10_000);
-  const jurosCentavos = Math.round((valorCentavos * jurosBp * dias) / (10_000 * 30));
+  // A taxa entra inteira; só o resultado é arredondado para centavos (0,125% vale 0,125%).
+  const multaCentavos = Math.round((valorCentavos * regra.multa_percentual) / 100);
+  const jurosCentavos = Math.round((valorCentavos * regra.juros_mes_percentual * dias) / 3_000);
   return {
     totalCentavos: valorCentavos + multaCentavos + jurosCentavos,
     multaCentavos,

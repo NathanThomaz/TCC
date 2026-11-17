@@ -240,3 +240,72 @@ describe("financeiro com as regras ligadas", () => {
     expect(pagar.body.lancamento!.encargosHoje).toBeNull();
   });
 });
+
+describe("correções da revisão do Codex", () => {
+  it("taxa com mais de duas casas não é arredondada antes da conta", () => {
+    // R$ 10.000,00 com multa de 0,125% = R$ 12,50 (não R$ 13,00).
+    expect(
+      valorComEncargos(1_000_000, "2026-11-01", "2026-11-02", {
+        multa_percentual: 0.125,
+        juros_mes_percentual: 0,
+      }).multaCentavos,
+    ).toBe(1250);
+  });
+
+  it("orçamento soma a mesma categoria escrita com outra caixa e o filtro também a acha", async () => {
+    const p = await ativar([
+      CATEGORIAS,
+      {
+        tipo: "orcamento_mensal",
+        limites: [{ categoria: "Moradia", valor_centavos: 25_000 }],
+        ...REQ,
+      },
+    ]);
+    await conta(p, {
+      tipo: "pagar",
+      descricao: "Aluguel",
+      categoria: "Moradia",
+      valorCentavos: 10_000,
+    });
+    // Conta antiga gravada com outra caixa (ex.: a categoria foi renomeada depois).
+    await env.DB.prepare(
+      `INSERT INTO financial_entries (id, system_id, kind, description, amount_cents, due_date,
+         category, created_by, created_at, updated_at)
+       SELECT 'antiga', system_id, 'pagar', 'Condomínio', 20000, '2026-11-25', 'moradia', 'a', ?1, ?1
+       FROM financial_entries LIMIT 1`,
+    )
+      .bind(NOW)
+      .run();
+    const painel = (await call("GET", p("/painel"))).body.painel!;
+    expect(painel.financeiro!.orcamento).toEqual([
+      { categoria: "Moradia", limiteCentavos: 25_000, gastoCentavos: 30_000 },
+    ]);
+    const filtrada = await call("GET", p("/financeiro?categoria=Moradia"));
+    expect(filtrada.body.lancamentos!.map((l: LancamentoDto) => l.descricao).sort()).toEqual([
+      "Aluguel",
+      "Condomínio",
+    ]);
+    expect(filtrada.body.categoriasUsadas).toEqual(expect.arrayContaining(["Moradia", "moradia"]));
+  });
+
+  it("baixa recusa quando o valor com multa e juros mudou desde a tela", async () => {
+    const p = await ativar([
+      { tipo: "multa_juros_atraso", multa_percentual: 2, juros_mes_percentual: 1, ...REQ },
+    ]);
+    const r = await conta(p, {
+      tipo: "receber",
+      descricao: "Mensalidade",
+      vencimento: "2026-11-02",
+    });
+    const id = r.body.lancamento!.id;
+    const velho = await call("POST", p(`/financeiro/${id}/baixar`), {
+      valorEsperadoCentavos: 10_200,
+    });
+    expect(velho.status).toBe(409);
+    expect(velho.body.error!.code).toBe("valor_mudou");
+    const certo = await call("POST", p(`/financeiro/${id}/baixar`), {
+      valorEsperadoCentavos: 10_250,
+    });
+    expect(certo.body.lancamento!.valorPagoCentavos).toBe(10_250);
+  });
+});

@@ -105,6 +105,8 @@ export function Financeiro() {
   const q = useQuery({
     queryKey: ["app", app.id, "financeiro", filtro],
     queryFn: () => listarLancamentos(app.id, filtro),
+    // Multa e juros mudam a cada dia: o valor de hoje se atualiza sozinho.
+    refetchInterval: 5 * 60_000,
   });
   // Aberto pela aba Rascunhos: a conta volta como a pessoa deixou.
   const retomado = useRascunhoDaBusca<DadosConta>(app.id, "conta");
@@ -117,12 +119,17 @@ export function Financeiro() {
     void qc.invalidateQueries({ queryKey: ["painel", app.id] });
   };
   const baixar = useMutation({
-    mutationFn: (l: LancamentoDto) => acaoLancamento(app.id, l.id, "baixar"),
+    mutationFn: (l: LancamentoDto) =>
+      acaoLancamento(app.id, l.id, "baixar", undefined, l.encargosHoje?.totalCentavos),
     onSuccess: (l) => {
       toast.success(l.tipo === "receber" ? "Recebimento registrado." : "Pagamento registrado.");
       atualizar();
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => {
+      toast.error(e.message);
+      // Valor mudou (virou o dia): recarrega para mostrar o novo.
+      atualizar();
+    },
   });
 
   // Resumo calculado no backend sobre todas as pendentes (independe do filtro e do limite).
@@ -247,7 +254,13 @@ export function Financeiro() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={TODAS}>Todas</SelectItem>
-                {[...new Set([...categorias.despesas, ...categorias.receitas])].map((c) => (
+                {[
+                  ...new Set([
+                    ...categorias.despesas,
+                    ...categorias.receitas,
+                    ...(q.data?.categoriasUsadas ?? []),
+                  ]),
+                ].map((c) => (
                   <SelectItem key={c} value={c}>
                     {c}
                   </SelectItem>

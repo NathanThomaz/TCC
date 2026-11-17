@@ -46,6 +46,10 @@ const LancamentoBody = z.object({
   categoria: z.string().trim().min(2).max(40).optional(),
 });
 const CancelarBody = z.object({ motivo: z.string().trim().min(3).max(300) });
+/** A tela manda o valor que mostrou; se a multa e os juros mudaram (virou o dia), não baixa. */
+const BaixarBody = z.object({
+  valorEsperadoCentavos: z.number().int().min(1).max(100_000_000_000).optional(),
+});
 
 const MENSAGENS = {
   lancamento_encerrado: "Esta conta já foi paga ou cancelada.",
@@ -156,7 +160,11 @@ export async function orcamentoDoMes(
     )
     .bind(systemId, mes)
     .all<{ category: string; total: number }>();
-  const gasto = new Map(results.map((r) => [normalizarRotulo(r.category), r.total]));
+  const gasto = new Map<string, number>();
+  for (const r of results) {
+    const k = normalizarRotulo(r.category);
+    gasto.set(k, (gasto.get(k) ?? 0) + r.total);
+  }
   return regra.limites.map((l) => ({
     categoria: l.categoria,
     limiteCentavos: l.valor_centavos,
@@ -212,7 +220,7 @@ export const listarLancamentos: Handler = async (ctx) => {
      WHERE f.system_id = ?1 AND (?2 IS NULL OR f.kind = ?2) AND (?3 IS NULL OR f.status = ?3)
        AND (?4 = 0 OR (f.status = 'pendente' AND f.due_date < ?5))
        AND (?6 IS NULL OR f.due_date >= ?6) AND (?7 IS NULL OR f.due_date <= ?7)
-       AND (?8 IS NULL OR f.category = ?8)
+       AND (?8 IS NULL OR f.category = ?8 COLLATE NOCASE)
      ORDER BY f.due_date, f.created_at LIMIT ${LIMITE_LISTA}`,
   )
     .bind(op.systemId, tipo, status, situacao === "vencido" ? 1 : 0, hoje, de, ate, categoria)
@@ -232,6 +240,15 @@ export const listarLancamentos: Handler = async (ctx) => {
       ).results.map((r) => ({ tipo: r.kind, categoria: r.category, totalCentavos: r.total }))
     : undefined;
   const orcamento = await orcamentoDoMes(ctx.env.DB, op.systemId, op.config, hoje);
+  // Categorias que já aparecem em contas (renomeadas ou tiradas da regra continuam filtráveis).
+  const categoriasUsadas = (
+    await ctx.env.DB.prepare(
+      `SELECT DISTINCT category FROM financial_entries
+       WHERE system_id = ? AND category IS NOT NULL ORDER BY category LIMIT 100`,
+    )
+      .bind(op.systemId)
+      .all<{ category: string }>()
+  ).results.map((r) => r.category);
   // Resumo sobre todas as pendentes (a lista tem limite de 500 linhas).
   const r = await ctx.env.DB.prepare(
     `SELECT
@@ -251,6 +268,7 @@ export const listarLancamentos: Handler = async (ctx) => {
     lancamentos: results.map((row) => publicLancamento(row, hoje, op.config)),
     ...(porCategoria ? { porCategoria } : {}),
     ...(orcamento ? { orcamento } : {}),
+    categoriasUsadas,
     resumoFinanceiro: {
       aReceber: { quantidade: n("rn"), totalCentavos: n("rt") },
       aPagar: { quantidade: n("pn"), totalCentavos: n("pt") },
@@ -359,6 +377,14 @@ export const baixarLancamento: Handler = async (ctx) => {
   const multa =
     atual.kind === "receber" ? (regraDo(op.config, "multa_juros_atraso") ?? null) : null;
   const pago = valorComEncargos(atual.amount_cents, atual.due_date, hoje, multa).totalCentavos;
+  const { valorEsperadoCentavos } = parse(BaixarBody, await readJson(ctx.request));
+  if (valorEsperadoCentavos !== undefined && valorEsperadoCentavos !== pago) {
+    throw new AppError(
+      409,
+      "valor_mudou",
+      `O valor com multa e juros mudou para R$ ${(pago / 100).toFixed(2).replace(".", ",")}. Confira e receba de novo.`,
+    );
+  }
   const db = ctx.env.DB;
   try {
     await db.batch([

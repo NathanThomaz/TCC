@@ -642,6 +642,17 @@ function ListaDeNomes({
   onChange: (nomes: string[]) => void;
 }) {
   const [texto, setTexto] = useState(nomes.join(", "));
+  // Nada é descartado em silêncio: o que passar do limite fica na regra e o validador barra,
+  // com o aviso aqui embaixo.
+  const curtos = nomes.filter((n) => n.length < 2);
+  const erro =
+    nomes.length > 20
+      ? `São ${nomes.length} categorias; o limite é 20.`
+      : curtos.length
+        ? "Cada categoria precisa de pelo menos 2 letras."
+        : nomes.length === 0
+          ? "Informe pelo menos uma categoria."
+          : null;
   return (
     <div>
       <Label htmlFor={id}>{rotulo}</Label>
@@ -650,19 +661,23 @@ function ListaDeNomes({
         className="mt-1"
         value={texto}
         aria-describedby={`${id}-dica`}
+        aria-invalid={erro !== null}
         onChange={(e) => {
           setTexto(e.target.value);
           onChange(
             e.target.value
               .split(",")
               .map((n) => n.trim())
-              .filter((n) => n.length >= 2)
-              .slice(0, 20),
+              .filter((n) => n.length > 0),
           );
         }}
       />
-      <p id={`${id}-dica`} className="mt-1 text-xs text-muted-foreground">
-        Separe por vírgula (até 20).
+      <p
+        id={`${id}-dica`}
+        className={cn("mt-1 text-xs", erro ? "text-destructive" : "text-muted-foreground")}
+        aria-live="polite"
+      >
+        {erro ?? "Separe por vírgula (até 20)."}
       </p>
     </div>
   );
