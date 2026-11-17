@@ -15,7 +15,7 @@ import { AppError, conflict, notFound, validationFailed } from "../../http/error
 import { beginIdempotent, recordStatement, replayAfterRace } from "../../http/idempotency";
 import { json } from "../../http/responses";
 import type { Handler, RequestContext } from "../../http/router";
-import { isUnique, parse, triggerConflict } from "../comum";
+import { isUnique, nomeClienteSql, parse, triggerConflict } from "../comum";
 import { abrirOperacao } from "./contexto";
 
 // Financeiro (ADR-006): contas a receber e a pagar, com vencimento em data local. Venda a prazo e
@@ -76,7 +76,7 @@ interface LancamentoRow {
 }
 
 const SELECT_LANCAMENTO = `
-  SELECT f.*, COALESCE(c.name, s.name) AS counterpart FROM financial_entries f
+  SELECT f.*, COALESCE(${nomeClienteSql("c")}, s.name) AS counterpart FROM financial_entries f
   LEFT JOIN customers c ON c.id = f.customer_id
   LEFT JOIN suppliers s ON s.id = f.supplier_id`;
 

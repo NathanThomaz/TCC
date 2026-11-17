@@ -460,7 +460,10 @@ export function Painel() {
                     <tr>
                       <th className="pb-2 font-medium">Produto</th>
                       <th className="pb-2 text-right font-medium">Disponível</th>
-                      <th className="pb-2 text-right font-medium">Reservado</th>
+                      {/* Sem vendas não há reserva (controle de estoque). */}
+                      {config.modulos.includes("vendas") && (
+                        <th className="pb-2 text-right font-medium">Reservado</th>
+                      )}
                       <th className="pb-2 pl-3 font-medium">Situação</th>
                     </tr>
                   </thead>
@@ -472,9 +475,11 @@ export function Painel() {
                         <tr key={c.id}>
                           <td className="py-2">{c.nome}</td>
                           <td className="py-2 text-right tabular-nums">{c.disponivel}</td>
-                          <td className="py-2 text-right tabular-nums text-muted-foreground">
-                            {c.reservado}
-                          </td>
+                          {config.modulos.includes("vendas") && (
+                            <td className="py-2 text-right tabular-nums text-muted-foreground">
+                              {c.reservado}
+                            </td>
+                          )}
                           <td className="py-2 pl-3">
                             {zerado ? (
                               <span className="inline-flex items-center gap-1 rounded-md bg-danger-soft px-2 py-0.5 text-xs text-destructive">

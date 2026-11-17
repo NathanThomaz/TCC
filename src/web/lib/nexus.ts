@@ -1,5 +1,6 @@
 import type { Campo, ConfigDraft, Modelo, Modulo, Regra } from "@/types/nexus";
 import {
+  CAMPOS_PADRAO_CLIENTES,
   OPTIONAL_MODULES,
   TEMPLATE_MODULES,
   PAYMENT_LABELS,
@@ -243,6 +244,22 @@ export function validarNomeSistema(nome: string): string | null {
  * recurso: as telas falam de recursos, responsáveis e reservas, com um tipo "Reserva" de 1 hora.
  */
 export function comPadraoDoModelo(d: ConfigDraft): ConfigDraft {
+  // Sem vendas, a saída do estoque é a saída com motivo: o controle de estoque já vem com ela.
+  if (d.modelo === "controle_estoque") {
+    return d.regras.some((r) => r.tipo === "saida_manual")
+      ? d
+      : {
+          ...d,
+          regras: [
+            ...d.regras,
+            {
+              tipo: "saida_manual",
+              motivos: ["Uso interno", "Perda", "Quebra", "Vencido"],
+              requisitos: [],
+            },
+          ],
+        };
+  }
   if (d.modelo !== "agenda_simples") return d;
   return {
     ...d,
@@ -270,7 +287,10 @@ export function rascunhoPadrao(nome: string, modelo: Modelo = "comercio"): Confi
       texto_boas_vindas: "",
     },
     requisitos: [],
-    campos: [],
+    // Sistema novo com clientes já traz Telefone e E-mail (pedido do dono, 2026-11-17).
+    campos: MODULOS_POR_MODELO[modelo].includes("clientes")
+      ? CAMPOS_PADRAO_CLIENTES.map((c) => ({ ...c }))
+      : [],
     tipos_atendimento: [],
     regras: [],
     fora_do_catalogo: [],

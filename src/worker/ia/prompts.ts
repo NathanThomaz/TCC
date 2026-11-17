@@ -11,7 +11,8 @@ import {
   TEMPLATE_DESCRIPTIONS,
   TEMPLATE_LABELS,
   TEMPLATE_MODULES,
-  TEMPLATES,
+  TEMPLATES_OFERECIDOS,
+  CAMPOS_PADRAO_CLIENTES,
 } from "../../shared/contract/catalog";
 import { adaptForGemini } from "../../shared/contract/gemini-schema";
 import type { ConfigDraft } from "../../shared/contract/schema";
@@ -20,12 +21,12 @@ import type { ConfigDraft } from "../../shared/contract/schema";
 // das constantes do contrato, para nunca divergir do que o validador aceita. Prompts versionados:
 // mudar o texto é mudar a configuração congelada do experimento (seção 25).
 
-export const VERSAO_PROMPTS = "2026-11-17.2";
+export const VERSAO_PROMPTS = "2026-11-17.3";
 
 type Json = Parameters<typeof adaptForGemini>[0];
 
 const catalogo = (): string => {
-  const modelos = TEMPLATES.map(
+  const modelos = TEMPLATES_OFERECIDOS.map(
     (t) =>
       `- ${t} (${TEMPLATE_LABELS[t]}): ${TEMPLATE_DESCRIPTIONS[t].para} Ex.: ${TEMPLATE_DESCRIPTIONS[t].exemplos}. Módulos ${TEMPLATE_MODULES[t].join(", ")}; opcionais: ${OPTIONAL_MODULES[t].join(", ") || "nenhum"}`,
   ).join("\n");
@@ -39,11 +40,12 @@ const catalogo = (): string => {
   return `CATÁLOGO FECHADO DO NEXUS (nada fora dele é criado):
 Modelos (cada um define os módulos obrigatórios; os opcionais só entram se o negócio usar):
 ${modelos}
+- agenda_simples: modelo antigo, mantido só para sistemas que já o usam (mesmos módulos de servicos); nunca o proponha.
 Módulos:
 ${modulos}
 Campos que cada cadastro JÁ TEM (nunca crie campo informativo para eles nem para sinônimos):
 ${camposNativos}
-Campos informativos (extras, só o que não está acima): tipos ${FIELD_TYPES.join(", ")}; até ${LIMITS.fieldsPerEntity} por entidade (clientes, produtos, profissionais, vendas, agendamentos, fornecedores); lista com ${LIMITS.listOptions.min} a ${LIMITS.listOptions.max} opções.
+Campos informativos (extras, só o que não está acima): tipos ${FIELD_TYPES.join(", ")}; em clientes, inclua por padrão ${CAMPOS_PADRAO_CLIENTES.map((c) => `${c.id} ("${c.rotulo}", ${c.tipo}, não obrigatório)`).join(" e ")}, salvo se o dono recusar ou usar outro nome para eles; até ${LIMITS.fieldsPerEntity} por entidade (clientes, produtos, profissionais, vendas, agendamentos, fornecedores); lista com ${LIMITS.listOptions.min} a ${LIMITS.listOptions.max} opções.
 Tipos de atendimento: id, rótulo e duração em minutos (15 a 480).
 Regras parametrizáveis:
 - limite_atacado: valor em centavos a partir do qual vale o preço de atacado, inclusive; a base é o subtotal dos produtos a preço de varejo.
@@ -180,7 +182,8 @@ COMO CONDUZIR A ENTREVISTA (objetivo: extrair o máximo do negócio, sem cansar 
    Pule o que não se aplica ao negócio (ex.: estoque para quem só agenda serviços) e as etapas de módulos que o modelo não tem:
    - controle_financeiro (só contas a pagar e a receber, inclusive finanças pessoais): de negocio vá direto a regras e aparencia; não pergunte de produtos, estoque, vendas, clientes nem atendimentos.
    - clientes_cobrancas (clientes com mensalidades ou cobranças): sem produtos, estoque, vendas nem atendimentos; pergunte do cadastro de clientes e de como cobra (mensal, por serviço, vencimento).
-   - agenda_simples (reserva de horários de um recurso: sala, quadra, equipamento): fale em recursos no lugar de profissionais, responsáveis no lugar de clientes e reservas no lugar de atendimentos; pergunte quais recursos, a duração da reserva e o horário de funcionamento.
+   - controle_estoque (só entradas, saídas e saldo do estoque, sem vender pelo sistema): sem clientes, vendas nem atendimentos; pergunte dos produtos, da unidade e da caixa, do estoque mínimo, da validade e dos motivos de saída (a regra saida_manual é o jeito de tirar do estoque).
+   - reserva de horários de um recurso (sala, quadra, equipamento) é servicos: fale em recursos no lugar de profissionais, responsáveis no lugar de clientes e reservas no lugar de atendimentos; pergunte quais recursos, a duração da reserva e o horário de funcionamento.
 2. Cada mensagem tem no máximo 2 frases curtas: um comentário breve (opcional) e UMA pergunta curta e direta, que pede UMA única informação. Nunca junte duas perguntas (proibido: "Qual o nome da loja e qual a cor?"; certo: "Qual o nome da sua loja?"). SEMPRE ofereça de 2 a 4 respostas_rapidas curtas (até 5 palavras cada); deixe vazio só quando a resposta for um nome. Elas viram botões; o dono também pode escrever.
 3. Extraia requisitos curtos, um por item, com os valores explícitos que o dono disse (ex.: titulo "Preço de atacado a partir de", texto "Atacado a partir de R$ 1.500,00 em produtos"). O assunto do requisito é a etapa em que ele foi tratado.
 4. Quando faltar um valor necessário, você pode SUGERIR um valor comum, mas só como sugestão: crie o requisito com sugestao true e diga que é uma sugestão para o dono confirmar ou mudar. Nunca marque sugestao false para um valor que o dono não disse. Se o dono depois disser o valor, reescreva o requisito com sugestao false.
@@ -291,7 +294,7 @@ ${catalogo()}
 
 REGRAS DE GERAÇÃO:
 - Em aparencia, adapte rotulos_menu e rotulos_campos ao vocabulário do negócio descrito nos requisitos (ex.: "Veículos" em vez de "Produtos"); não preencha o que já combina com o padrão.
-- Escolha o modelo pelo que os requisitos pedem e use os módulos desse modelo (quem só quer contas a pagar e a receber é controle_financeiro; clientes com cobranças, sem estoque nem agenda, é clientes_cobrancas; reserva de salas, quadras ou equipamentos é agenda_simples, com rotulos_menu profissionais "Recursos", clientes "Responsáveis" e agenda "Reservas", salvo vocabulário próprio do negócio); acrescente um módulo opcional só se um requisito confirmado pedir (venda a prazo ou forma de pagamento, compras de fornecedores, contas a pagar e receber).
+- Escolha o modelo pelo que os requisitos pedem e use os módulos desse modelo (quem só quer contas a pagar e a receber é controle_financeiro; clientes com cobranças, sem estoque nem agenda, é clientes_cobrancas; reserva de salas, quadras ou equipamentos é servicos, com rotulos_menu profissionais "Recursos", clientes "Responsáveis" e agenda "Reservas", salvo vocabulário próprio do negócio; quem só controla entradas e saídas do estoque, sem vender, é controle_estoque, sempre com a regra saida_manual); acrescente um módulo opcional só se um requisito confirmado pedir (venda a prazo ou forma de pagamento, compras de fornecedores, contas a pagar e receber).
 - requisitos: copie a lista abaixo exatamente, com status "confirmado".
 - Cada regra cita em "requisitos" os códigos que a justificam. Não crie regra sem requisito que diga o valor; não invente valores (se um requisito necessário não existir, deixe a regra de fora: o validador vai apontar a falta).
 - Dinheiro em centavos (R$ 1.000,00 = 100000). Durações em minutos.

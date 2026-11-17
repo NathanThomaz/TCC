@@ -18,7 +18,7 @@ import {
   ROTULO_MODULO,
   type Entidade,
 } from "@/lib/nexus";
-import { MODELOS } from "@/lib/modelos";
+import { modelosParaEscolher } from "@/lib/modelos";
 import { cn } from "@/lib/utils";
 import { ModulosProntos } from "@/components/nexus/ModulosProntos";
 import { Button } from "@/components/ui/button";
@@ -67,6 +67,8 @@ function Vazio({ children }: { children: ReactNode }) {
 
 /* 1. Modelo (os seis do catálogo, ADR-015) */
 export function PassoModelo({ draft, set, travado }: PassoProps & { travado?: boolean }) {
+  // Os seis oferecidos e, num sistema antigo, o modelo que ele já usa (ex.: agenda simples).
+  const modelos = modelosParaEscolher(draft.modelo);
   if (travado) {
     return (
       <>
@@ -77,7 +79,7 @@ export function PassoModelo({ draft, set, travado }: PassoProps & { travado?: bo
         <ModulosProntos
           modulos={draft.modulos}
           regras={draft.regras}
-          titulo={`O que este sistema já tem (${MODELOS.find((m) => m.id === draft.modelo)?.nome ?? draft.modelo})`}
+          titulo={`O que este sistema já tem (${modelos.find((m) => m.id === draft.modelo)?.nome ?? draft.modelo})`}
         />
       </>
     );
@@ -97,14 +99,14 @@ export function PassoModelo({ draft, set, travado }: PassoProps & { travado?: bo
           const passo = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
           if (!passo) return;
           e.preventDefault();
-          const i = MODELOS.findIndex((m) => m.id === draft.modelo);
-          const prox = MODELOS[(i + passo + MODELOS.length) % MODELOS.length];
+          const i = modelos.findIndex((m) => m.id === draft.modelo);
+          const prox = modelos[(i + passo + modelos.length) % modelos.length];
           if (!prox) return;
           set((d) => ({ ...d, modelo: prox.id, modulos: [...MODULOS_POR_MODELO[prox.id]] }));
           e.currentTarget.querySelector<HTMLButtonElement>(`[data-modelo="${prox.id}"]`)?.focus();
         }}
       >
-        {MODELOS.map(({ id, nome, desc, exemplos, Icone }) => {
+        {modelos.map(({ id, nome, desc, exemplos, Icone }) => {
           const sel = draft.modelo === id;
           return (
             <button
@@ -146,7 +148,7 @@ export function PassoModelo({ draft, set, travado }: PassoProps & { travado?: bo
       <div className="mt-6">
         <ModulosProntos
           modulos={draft.modulos}
-          titulo={`O que já vem pronto em ${MODELOS.find((m) => m.id === draft.modelo)?.nome ?? "este modelo"}`}
+          titulo={`O que já vem pronto em ${modelos.find((m) => m.id === draft.modelo)?.nome ?? "este modelo"}`}
         />
       </div>
     </>

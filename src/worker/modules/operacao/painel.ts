@@ -4,6 +4,7 @@ import { deCampoLocal, inicioDoDiaLocal, paraCampoLocal } from "../../../shared/
 import { regraDo } from "../../../shared/dominio/regras";
 import { json } from "../../http/responses";
 import type { Handler } from "../../http/router";
+import { nomeClienteSql } from "../comum";
 import { abrirOperacao } from "./contexto";
 import { hojeLocal, orcamentoDoMes } from "./financeiro";
 
@@ -92,7 +93,7 @@ export async function calcularPainel(
         .first<{ n: number }>(),
       db
         .prepare(
-          `SELECT s.id, c.name AS cliente, s.total_cents, s.completed_at FROM sales s
+          `SELECT s.id, ${nomeClienteSql("c")} AS cliente, s.total_cents, s.completed_at FROM sales s
            JOIN customers c ON c.system_id = s.system_id AND c.id = s.customer_id
            WHERE s.system_id = ? AND s.status = 'completed' ORDER BY s.completed_at DESC LIMIT 5`,
         )
@@ -245,7 +246,7 @@ export async function calcularPainel(
         }>(),
       db
         .prepare(
-          `SELECT a.id, a.start_at, a.service_type, c.name AS cliente, p.name AS profissional
+          `SELECT a.id, a.start_at, a.service_type, ${nomeClienteSql("c")} AS cliente, p.name AS profissional
            FROM appointments a
            JOIN customers c ON c.system_id = a.system_id AND c.id = a.customer_id
            JOIN professionals p ON p.system_id = a.system_id AND p.id = a.professional_id

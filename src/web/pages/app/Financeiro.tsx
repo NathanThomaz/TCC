@@ -610,7 +610,7 @@ function NovaContaDialog({
                       .filter((p) => p.status === "active")
                       .map((p) => (
                         <SelectItem key={p.id} value={p.id}>
-                          {p.nome}
+                          {p.nomeCompleto}
                         </SelectItem>
                       ))}
                   </SelectContent>

@@ -14,7 +14,7 @@ import {
 } from "../../ia/prompts";
 import { requireAdmin } from "../../auth/session";
 import { idempotencyKey } from "../../http/idempotency";
-import { isUnique, parse } from "../comum";
+import { isUnique, nomeClienteSql, parse } from "../comum";
 import {
   codigoBarras,
   codigoEmUso,
@@ -60,8 +60,8 @@ export const interpretarVenda: Handler = async (ctx) => {
       .bind(op.systemId),
     db
       .prepare(
-        `SELECT id, name FROM customers WHERE system_id = ? AND status = 'active'
-         ORDER BY name COLLATE NOCASE LIMIT ${MAX_LISTA}`,
+        `SELECT id, ${nomeClienteSql("customers")} AS name FROM customers
+         WHERE system_id = ? AND status = 'active' ORDER BY name COLLATE NOCASE LIMIT ${MAX_LISTA}`,
       )
       .bind(op.systemId),
   ]);

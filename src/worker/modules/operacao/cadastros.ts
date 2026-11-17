@@ -21,12 +21,20 @@ const StatusBody = z.object({ status: z.enum(STATUS) });
 interface PessoaRow {
   id: string;
   name: string;
+  surname: string | null;
   status: (typeof STATUS)[number];
   extra_json: string;
 }
 
 function publicPessoa(row: PessoaRow): ClienteDto & ProfissionalDto {
-  return { id: row.id, nome: row.name, status: row.status, campos: lerCampos(row.extra_json) };
+  return {
+    id: row.id,
+    nome: row.name,
+    sobrenome: row.surname,
+    nomeCompleto: row.surname ? `${row.name} ${row.surname}` : row.name,
+    status: row.status,
+    campos: lerCampos(row.extra_json),
+  };
 }
 
 // ---- Clientes e profissionais (mesma forma) ----
@@ -74,11 +82,35 @@ const FORNECEDORES: Pessoa = {
   inativo: {},
 };
 
-const PessoaBody = z.object({ nome, campos: z.unknown().optional() });
+// Sobrenome só no cadastro de clientes (migration 0018); vazio vira null.
+const PessoaBody = z.object({
+  nome,
+  sobrenome: z
+    .string()
+    .trim()
+    .max(120)
+    .nullish()
+    .transform((s) => s || null),
+  campos: z.unknown().optional(),
+});
+
+/** Colunas lidas de uma pessoa: só clientes têm sobrenome. */
+function colunasPessoa(p: Pessoa): string {
+  return `id, name, ${p.table === "customers" ? "surname" : "NULL AS surname"}, status, extra_json`;
+}
+
+/** Corpo de pessoa: sobrenome só em clientes. */
+function lerPessoa(p: Pessoa, body: unknown) {
+  const dados = parse(PessoaBody, body);
+  if (dados.sobrenome && p.table !== "customers") {
+    throw validationFailed("Só o cadastro de clientes tem sobrenome.");
+  }
+  return dados;
+}
 
 async function carregarPessoa(ctx: RequestContext, p: Pessoa, systemId: string, id: string) {
   const row = await ctx.env.DB.prepare(
-    `SELECT id, name, status, extra_json FROM ${p.table} WHERE id = ? AND system_id = ?`,
+    `SELECT ${colunasPessoa(p)} FROM ${p.table} WHERE id = ? AND system_id = ?`,
   )
     .bind(id, systemId)
     .first<PessoaRow>();
@@ -95,8 +127,10 @@ function listarPessoas(p: Pessoa): Handler {
     const [{ results }, vendas, agenda] = await Promise.all([
       db
         .prepare(
-          `SELECT id, name, status, extra_json, created_at FROM ${p.table}
-           WHERE system_id = ?1 AND (?2 IS NULL OR status = ?2) ORDER BY name COLLATE NOCASE LIMIT ${LIMITE_LISTA}`,
+          `SELECT ${colunasPessoa(p)}, created_at FROM ${p.table}
+           WHERE system_id = ?1 AND (?2 IS NULL OR status = ?2)
+           ORDER BY name COLLATE NOCASE${p.table === "customers" ? ", surname COLLATE NOCASE" : ""}
+           LIMIT ${LIMITE_LISTA}`,
         )
         .bind(op.systemId, status)
         .all<PessoaRow & { created_at: number }>(),
@@ -154,7 +188,7 @@ function listarPessoas(p: Pessoa): Handler {
 function criarPessoa(p: Pessoa): Handler {
   return async (ctx) => {
     const op = await abrirOperacao(ctx, p.modulo);
-    const body = parse(PessoaBody, await readJson(ctx.request));
+    const body = lerPessoa(p, await readJson(ctx.request));
     const cmd = { scope: op.systemId, actorId: op.user.id, command: `${p.chave}.create`, body };
     const started = await beginIdempotent(ctx, cmd);
     if (started.kind === "replay") {
@@ -167,11 +201,17 @@ function criarPessoa(p: Pessoa): Handler {
     const db = ctx.env.DB;
     try {
       await db.batch([
-        db
-          .prepare(
-            `INSERT INTO ${p.table} (id, system_id, name, extra_json, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          )
-          .bind(id, op.systemId, body.nome, extra, op.user.id, now, now),
+        p.table === "customers"
+          ? db
+              .prepare(
+                `INSERT INTO customers (id, system_id, name, surname, extra_json, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+              )
+              .bind(id, op.systemId, body.nome, body.sobrenome, extra, op.user.id, now, now)
+          : db
+              .prepare(
+                `INSERT INTO ${p.table} (id, system_id, name, extra_json, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+              )
+              .bind(id, op.systemId, body.nome, extra, op.user.id, now, now),
         db
           .prepare(
             "INSERT INTO audit_events (system_id, actor_id, action, target_type, target_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",
@@ -197,17 +237,23 @@ function editarPessoa(p: Pessoa): Handler {
     const op = await abrirOperacao(ctx, p.modulo);
     const id = ctx.params.id ?? "";
     await carregarPessoa(ctx, p, op.systemId, id);
-    const body = parse(PessoaBody, await readJson(ctx.request));
+    const body = lerPessoa(p, await readJson(ctx.request));
     const extra = camposValidos(op.config, p.entidade, body.campos);
     const now = ctx.clock.now();
     const db = ctx.env.DB;
     // Editar dados cadastrais não muda operações já registradas (elas guardam o que precisam).
     await db.batch([
-      db
-        .prepare(
-          `UPDATE ${p.table} SET name = ?, extra_json = ?, updated_at = max(updated_at, ?) WHERE id = ? AND system_id = ?`,
-        )
-        .bind(body.nome, extra, now, id, op.systemId),
+      p.table === "customers"
+        ? db
+            .prepare(
+              `UPDATE customers SET name = ?, surname = ?, extra_json = ?, updated_at = max(updated_at, ?) WHERE id = ? AND system_id = ?`,
+            )
+            .bind(body.nome, body.sobrenome, extra, now, id, op.systemId)
+        : db
+            .prepare(
+              `UPDATE ${p.table} SET name = ?, extra_json = ?, updated_at = max(updated_at, ?) WHERE id = ? AND system_id = ?`,
+            )
+            .bind(body.nome, extra, now, id, op.systemId),
       db
         .prepare(
           "INSERT INTO audit_events (system_id, actor_id, action, target_type, target_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",

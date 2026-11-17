@@ -2,7 +2,13 @@ import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Check, Columns3, Loader2, Pencil, X } from "lucide-react";
 import { toast } from "sonner";
-import { LIMITS, type FieldEntity } from "../../../shared/contract/catalog";
+import {
+  LIMITS,
+  SUGESTOES_DE_COLUNA,
+  campoNativoDuplicado,
+  normalizarRotulo,
+  type FieldEntity,
+} from "../../../shared/contract/catalog";
 import { ajustarColuna, type AjusteColuna } from "@/api/operacao";
 import { ErroApi } from "@/components/app/Comum";
 import { Button } from "@/components/ui/button";
@@ -141,6 +147,7 @@ export function NovaColuna({ entidade }: { entidade: FieldEntity }) {
 }
 
 function NovaColunaDialog({ entidade, onFechar }: { entidade: FieldEntity; onFechar: () => void }) {
+  const app = useApp();
   const [rotulo, setRotulo] = useState("");
   const [tipo, setTipo] = useState<(typeof TIPOS)[number]["valor"]>("texto");
   const [opcoes, setOpcoes] = useState("");
@@ -170,6 +177,16 @@ function NovaColunaDialog({ entidade, onFechar }: { entidade: FieldEntity; onFec
     });
   }
 
+  // Sugestões do próprio cadastro, sem as colunas que o sistema já tem.
+  const existentes = new Set(
+    app.config.campos.filter((c) => c.entidade === entidade).map((c) => normalizarRotulo(c.rotulo)),
+  );
+  const sugestoes = SUGESTOES_DE_COLUNA[entidade].filter(
+    (s) =>
+      !existentes.has(normalizarRotulo(s.rotulo)) &&
+      !campoNativoDuplicado(entidade, s.rotulo, app.config.modulos),
+  );
+
   return (
     <Dialog open onOpenChange={(v) => !v && onFechar()}>
       <DialogContent>
@@ -187,11 +204,47 @@ function NovaColunaDialog({ entidade, onFechar }: { entidade: FieldEntity; onFec
               id="coluna-nome"
               autoFocus
               maxLength={60}
-              placeholder="Ex.: Cor, Validade, Fornecedor preferido"
+              placeholder={
+                sugestoes.length
+                  ? `Ex.: ${sugestoes
+                      .slice(0, 3)
+                      .map((s) => s.rotulo)
+                      .join(", ")}`
+                  : "Nome da informação"
+              }
               value={rotulo}
               onChange={(e) => setRotulo(e.target.value)}
             />
           </div>
+          {sugestoes.length > 0 && (
+            <div className="space-y-1.5">
+              <p className="text-sm font-medium" id="coluna-sugestoes">
+                Sugestões para este cadastro
+              </p>
+              <div className="flex flex-wrap gap-2" role="group" aria-labelledby="coluna-sugestoes">
+                {sugestoes.map((s) => (
+                  <Button
+                    key={s.rotulo}
+                    type="button"
+                    size="sm"
+                    variant={
+                      normalizarRotulo(rotulo) === normalizarRotulo(s.rotulo)
+                        ? "default"
+                        : "outline"
+                    }
+                    className="h-7 rounded-full px-3 text-xs"
+                    onClick={() => {
+                      setRotulo(s.rotulo);
+                      setTipo(s.tipo);
+                      setErro(null);
+                    }}
+                  >
+                    {s.rotulo}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="space-y-1.5">
             <Label htmlFor="coluna-tipo">Tipo de informação</Label>
             <Select value={tipo} onValueChange={(v) => setTipo(v as typeof tipo)}>

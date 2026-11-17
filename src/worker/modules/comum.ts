@@ -3,6 +3,11 @@ import { AppError, validationFailed } from "../http/errors";
 
 // Utilidades dos módulos de negócio: validação do corpo e tradução das recusas do D1.
 
+/** Nome completo do cliente no SQL (nome + sobrenome, quando houver), para a tabela de `alias`. */
+export function nomeClienteSql(alias: string): string {
+  return `(${alias}.name || COALESCE(' ' || ${alias}.surname, ''))`;
+}
+
 export function parse<T>(schema: z.ZodType<T>, body: unknown): T {
   const result = schema.safeParse(body);
   if (!result.success) {
