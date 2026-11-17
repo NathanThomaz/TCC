@@ -274,7 +274,14 @@ export function PassoAparencia({ draft, set }: PassoProps) {
               className="rounded-md px-3 py-1.5 text-sm font-medium"
               style={okD && td ? { background: a.cor_destaque, color: td.cor } : undefined}
             >
-              Nova venda
+              {/* Ação principal do sistema conforme os módulos (ex.: Controle financeiro não vende). */}
+              {draft.modulos.includes("vendas")
+                ? "Nova venda"
+                : draft.modulos.includes("agenda")
+                  ? "Agendar"
+                  : draft.modulos.includes("financeiro")
+                    ? "Nova conta"
+                    : "Novo cadastro"}
             </span>
           </div>
           <div className="bg-card p-5 text-sm text-muted-foreground">
