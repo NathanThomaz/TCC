@@ -315,10 +315,12 @@ export const comentarPedido: Handler = async (ctx) => {
       db
         .prepare(
           `INSERT INTO dev_request_events (id, request_id, actor_id, kind, status, note, created_at)
-           VALUES (?, ?, ?, 'comentario', NULL, ?, ?)`,
+           SELECT ?, ?, ?, 'comentario', NULL, ?, ?
+           WHERE EXISTS (SELECT 1 FROM dev_requests r JOIN systems s ON s.id = r.system_id
+                         WHERE r.id = ? AND s.deleted_at IS NULL)`,
         )
-        .bind(crypto.randomUUID(), id, user.id, body.texto, now),
-      recordStatement(ctx, cmd, started, id, 201, now),
+        .bind(crypto.randomUUID(), id, user.id, body.texto, now, id),
+      recordIfChanged(ctx, cmd, started, id, 201, now),
     ]);
   } catch (error) {
     const replay = isUnique(error) ? await replayAfterRace(ctx, cmd, started) : null;
@@ -393,7 +395,11 @@ async function responderGeral(ctx: RequestContext, id: string, status = 200) {
 async function exigirPedidoGeral(
   ctx: RequestContext,
 ): Promise<{ id: string; status: EstadoPedidoDto }> {
-  const row = await ctx.env.DB.prepare("SELECT id, status FROM dev_requests WHERE id = ?")
+  const row = await ctx.env.DB.prepare(
+    `SELECT r.id, r.status FROM dev_requests r
+     JOIN systems s ON s.id = r.system_id AND s.deleted_at IS NULL
+     WHERE r.id = ?`,
+  )
     .bind(ctx.params.pedidoId ?? "")
     .first<{ id: string; status: EstadoPedidoDto }>();
   if (!row) throw notFound();
@@ -440,7 +446,8 @@ export const mudarEstadoPedido: Handler = async (ctx) => {
       db
         .prepare(
           `UPDATE dev_requests SET status = ?, updated_at = max(updated_at, ?)
-           WHERE id = ? AND status = ?`,
+           WHERE id = ? AND status = ?
+             AND system_id IN (SELECT id FROM systems WHERE deleted_at IS NULL)`,
         )
         .bind(body.estado, now, id, atual.status),
       db

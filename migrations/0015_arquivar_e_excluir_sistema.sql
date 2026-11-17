@@ -23,3 +23,34 @@ WHEN OLD.deleted_at IS NOT NULL
 BEGIN
   SELECT RAISE(ABORT, 'sistema_excluido');
 END;
+
+-- Inativar confere as pendências no próprio UPDATE; aqui, o outro lado da corrida: venda, reserva
+-- e agendamento novos só entram em sistema ativo (quem chegar depois do arquivar é recusado).
+CREATE TRIGGER sales_only_active_system
+BEFORE INSERT ON sales
+WHEN (SELECT status FROM systems WHERE id = NEW.system_id) IS NOT 'active'
+BEGIN
+  SELECT RAISE(ABORT, 'sistema_inativo');
+END;
+
+CREATE TRIGGER reservations_only_active_system
+BEFORE INSERT ON reservations
+WHEN (SELECT status FROM systems WHERE id = NEW.system_id) IS NOT 'active'
+BEGIN
+  SELECT RAISE(ABORT, 'sistema_inativo');
+END;
+
+CREATE TRIGGER appointments_only_active_system
+BEFORE INSERT ON appointments
+WHEN (SELECT status FROM systems WHERE id = NEW.system_id) IS NOT 'active'
+BEGIN
+  SELECT RAISE(ABORT, 'sistema_inativo');
+END;
+
+-- Uma resposta da IA começada antes da exclusão não grava na conversa do sistema excluído.
+CREATE TRIGGER creation_state_system_deleted
+BEFORE UPDATE ON creation_state
+WHEN (SELECT deleted_at FROM systems WHERE id = NEW.system_id) IS NOT NULL
+BEGIN
+  SELECT RAISE(ABORT, 'sistema_excluido');
+END;

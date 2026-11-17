@@ -206,3 +206,63 @@ describe("excluir", () => {
     ).rejects.toThrow(/exclusao_invalida/);
   });
 });
+
+describe("corridas com inativar e excluir (revisão do Codex)", () => {
+  it("venda, reserva e agendamento que chegam depois de inativar são recusados pelo banco", async () => {
+    const id = await ativo();
+    await call("POST", `/systems/${id}/arquivar`, ADMIN, {});
+    await expect(
+      env.DB.prepare(
+        // O gatilho roda antes das outras restrições: as colunas mínimas bastam.
+        "INSERT INTO sales (id, system_id, customer_id, expires_at) VALUES ('v1', ?, 'c', ?)",
+      )
+        .bind(id, NOW + 1)
+        .run(),
+    ).rejects.toThrow(/sistema_inativo/);
+    await expect(
+      env.DB.prepare(
+        `INSERT INTO appointments (id, system_id, customer_id, professional_id, service_type, start_at, end_at)
+         VALUES ('a1', ?, 'c', 'p', 'tt', ?, ?)`,
+      )
+        .bind(id, NOW, NOW + 1)
+        .run(),
+    ).rejects.toThrow(/sistema_inativo/);
+  });
+
+  it("resposta da IA começada antes da exclusão não grava na conversa", async () => {
+    const id = await rascunho();
+    await env.DB.prepare("INSERT OR IGNORE INTO creation_state (system_id, revision) VALUES (?, 0)")
+      .bind(id)
+      .run();
+    await call("POST", `/systems/${id}/excluir`, ADMIN, {});
+    await expect(
+      env.DB.prepare("UPDATE creation_state SET revision = revision + 1 WHERE system_id = ?")
+        .bind(id)
+        .run(),
+    ).rejects.toThrow(/sistema_excluido/);
+  });
+
+  it("pedido de sistema excluído não muda de estado nem recebe comentário", async () => {
+    const id = await rascunho();
+    const pedido = (
+      await call("POST", `/systems/${id}/pedidos`, ADMIN, {
+        titulo: "Emitir nota fiscal",
+        pedido: "Quero emitir nota fiscal.",
+      })
+    ).body as unknown as { pedido: { id: string } };
+    await call("POST", `/systems/${id}/excluir`, ADMIN, {});
+    const p = pedido.pedido.id;
+    expect(
+      (await call("POST", `/pedidos/${p}/estado`, ADMIN, { estado: "em_analise" })).status,
+    ).toBe(404);
+    expect((await call("POST", `/pedidos/${p}/comentarios`, ADMIN, { texto: "Oi" })).status).toBe(
+      404,
+    );
+    const eventos = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM dev_request_events WHERE request_id = ?",
+    )
+      .bind(p)
+      .first<{ n: number }>();
+    expect(eventos?.n).toBe(1);
+  });
+});

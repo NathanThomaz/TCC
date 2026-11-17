@@ -115,6 +115,23 @@ function handleError(error: unknown, requestId: string, log: Logger): Response {
     log[level]("request.failed", { code: error.code, ...error.context });
     return errorResponse(error, requestId);
   }
+  // Gatilhos da 0015: a operação chegou depois de o sistema ser inativado ou excluído.
+  const texto = error instanceof Error ? error.message : String(error);
+  if (texto.includes("sistema_inativo")) {
+    log.info("request.failed", { code: "sistema_inativo" });
+    return errorResponse(
+      new AppError(
+        409,
+        "sistema_inativo",
+        "Este sistema foi inativado. Reative para voltar a operar.",
+      ),
+      requestId,
+    );
+  }
+  if (texto.includes("sistema_excluido")) {
+    log.info("request.failed", { code: "sistema_excluido" });
+    return errorResponse(new AppError(404, "not_found", "Recurso não encontrado."), requestId);
+  }
   // Erro inesperado: detalhes só no log, resposta genérica ao cliente.
   log.error("request.unhandled_error", { error });
   return errorResponse(
