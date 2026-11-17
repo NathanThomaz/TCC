@@ -25,7 +25,7 @@ const MAPA: Record<
 > = {
   draft: { texto: "Rascunho", tom: "aviso", Icone: CircleDashed },
   active: { texto: "Ativo", tom: "sucesso", Icone: CheckCircle2 },
-  archived: { texto: "Arquivado", tom: "neutro", Icone: Archive },
+  archived: { texto: "Inativo", tom: "neutro", Icone: Archive },
   valid: { texto: "Válida", tom: "info", Icone: CheckCircle2 },
   invalid: { texto: "Inválida", tom: "perigo", Icone: XCircle },
   approved: { texto: "Aprovada", tom: "sucesso", Icone: ShieldCheck },

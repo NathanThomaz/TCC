@@ -13,6 +13,7 @@ import {
   Wrench,
 } from "lucide-react";
 import { HashCurto } from "@/components/nexus/HashCurto";
+import { SituacaoSistema } from "@/components/nexus/SituacaoSistema";
 import { obterSistema } from "@/api/sistemas";
 import { formatarData } from "@/lib/nexus";
 import { EmptyState, ErrorState, PageHeader } from "@/components/nexus/Estados";
@@ -139,7 +140,10 @@ export function Detalhe() {
       {sistema.status === "archived" && (
         <div role="note" className="mb-6 flex gap-3 rounded-lg border bg-muted p-4 text-sm">
           <Info className="size-5 shrink-0 text-muted-foreground" aria-hidden />
-          <p>Este sistema está arquivado e não pode ser configurado.</p>
+          <p>
+            Este sistema está inativo: não aparece para quem opera e não pode ser configurado.
+            Reative em “Situação do sistema”, no fim da página.
+          </p>
         </div>
       )}
 
@@ -207,6 +211,7 @@ export function Detalhe() {
           </div>
         )}
       </section>
+      {usuario?.papel === "administrador" && <SituacaoSistema sistema={sistema} />}
     </>
   );
 }

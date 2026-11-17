@@ -126,7 +126,7 @@ async function todosOsPedidos(db: D1Database): Promise<PedidoGeralDto[]> {
         `SELECT ${COLUNAS}, s.name AS system_name, u.email AS requester_email,
                 u.display_name AS requester_name
          FROM dev_requests r
-         JOIN systems s ON s.id = r.system_id
+         JOIN systems s ON s.id = r.system_id AND s.deleted_at IS NULL
          JOIN users u ON u.id = r.created_by
          ORDER BY r.created_at DESC, r.id`,
       )

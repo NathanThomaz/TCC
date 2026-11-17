@@ -82,7 +82,7 @@ function publicVersion(row: VersionRow): VersionDto {
 }
 
 async function loadSystem(ctx: RequestContext, systemId: string): Promise<SystemRow> {
-  const row = await ctx.env.DB.prepare("SELECT * FROM systems WHERE id = ?")
+  const row = await ctx.env.DB.prepare("SELECT * FROM systems WHERE id = ? AND deleted_at IS NULL")
     .bind(systemId)
     .first<SystemRow>();
   if (!row) throw notFound();
@@ -96,7 +96,7 @@ async function loadSystem(ctx: RequestContext, systemId: string): Promise<System
  */
 async function sistemaComNome(ctx: RequestContext, ownerId: string, chave: string) {
   const { results } = await ctx.env.DB.prepare(
-    "SELECT name, status FROM systems WHERE owner_id = ?",
+    "SELECT name, status FROM systems WHERE owner_id = ? AND deleted_at IS NULL",
   )
     .bind(ownerId)
     .all<{ name: string; status: SystemRow["status"] }>();
@@ -107,7 +107,7 @@ const nomeRepetido = (outro: { name: string; status: SystemRow["status"] } | nul
   new AppError(
     409,
     "nome_em_uso",
-    `Você já tem um sistema chamado "${outro?.name ?? nome}"${outro?.status === "archived" ? " (arquivado)" : ""}. Escolha outro nome.`,
+    `Você já tem um sistema chamado "${outro?.name ?? nome}"${outro?.status === "archived" ? " (inativo)" : ""}. Escolha outro nome.`,
   );
 
 export const createSystem: Handler = async (ctx) => {
@@ -178,13 +178,16 @@ async function sistemasDoUsuario(
   const { results } =
     user.role === "admin"
       ? await db
-          .prepare("SELECT * FROM systems WHERE owner_id = ? ORDER BY created_at DESC LIMIT 100")
+          .prepare(
+            "SELECT * FROM systems WHERE owner_id = ? AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 100",
+          )
           .bind(user.id)
           .all<SystemRow>()
       : await db
           .prepare(
             `SELECT s.* FROM systems s JOIN system_access a ON a.system_id = s.id
              WHERE a.user_id = ? AND a.status = 'active' AND s.owner_id = ? AND s.status <> 'archived'
+               AND s.deleted_at IS NULL
              ORDER BY s.created_at DESC LIMIT 100`,
           )
           .bind(user.id, user.adminId)
@@ -214,7 +217,7 @@ export const obterInicio: Handler = async (ctx) => {
   const { results: linhas } = admin
     ? await db
         .prepare(
-          `SELECT * FROM systems WHERE owner_id = ?
+          `SELECT * FROM systems WHERE owner_id = ? AND deleted_at IS NULL
            ORDER BY status = 'active' DESC, created_at DESC LIMIT ${LIMITE_INICIO + 1}`,
         )
         .bind(user.id)
@@ -223,6 +226,7 @@ export const obterInicio: Handler = async (ctx) => {
         .prepare(
           `SELECT s.* FROM systems s JOIN system_access a ON a.system_id = s.id
            WHERE a.user_id = ? AND a.status = 'active' AND s.owner_id = ? AND s.status <> 'archived'
+             AND s.deleted_at IS NULL
            ORDER BY s.status = 'active' DESC, s.created_at DESC LIMIT ${LIMITE_INICIO + 1}`,
         )
         .bind(user.id, user.adminId)
@@ -436,7 +440,7 @@ export const createVersion: Handler = async (ctx) => {
   if (started.kind === "replay") {
     return versionResponse(ctx, started.resourceId, started.statusCode);
   }
-  if (system.status === "archived") throw conflict("Sistema arquivado não recebe novas versões.");
+  if (system.status === "archived") throw conflict("Sistema inativo não recebe novas versões.");
   if (body.base) {
     const ultima = await ctx.env.DB.prepare(
       "SELECT id FROM model_versions WHERE system_id = ? ORDER BY version DESC LIMIT 1",

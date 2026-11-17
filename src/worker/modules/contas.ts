@@ -61,7 +61,7 @@ async function listar(ctx: RequestContext, admin: AuthUser, so?: string): Promis
     .all<ContaRow>();
   const { results: sistemas } = await db
     .prepare(
-      "SELECT id, name FROM systems WHERE owner_id = ? AND status <> 'archived' ORDER BY created_at",
+      "SELECT id, name FROM systems WHERE owner_id = ? AND status <> 'archived' AND deleted_at IS NULL ORDER BY created_at",
     )
     .bind(admin.id)
     .all<{ id: string; name: string }>();
@@ -456,11 +456,13 @@ export const definirAcesso: Handler = async (ctx) => {
   if (ativo && conta.status === "disabled") {
     throw conflict("Reative a conta antes de conceder acessos.");
   }
-  const alvo = await ctx.env.DB.prepare("SELECT status FROM systems WHERE id = ? AND owner_id = ?")
+  const alvo = await ctx.env.DB.prepare(
+    "SELECT status FROM systems WHERE id = ? AND owner_id = ? AND deleted_at IS NULL",
+  )
     .bind(sistema, admin.id)
     .first<{ status: string }>();
   if (!alvo) throw notFound();
-  if (ativo && alvo.status === "archived") throw conflict("Sistema arquivado não recebe acessos.");
+  if (ativo && alvo.status === "archived") throw conflict("Sistema inativo não recebe acessos.");
   const db = ctx.env.DB;
   const now = ctx.clock.now();
   const status = ativo ? "active" : "revoked";

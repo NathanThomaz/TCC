@@ -29,7 +29,7 @@ export async function limparBanco(): Promise<void> {
       "DELETE FROM operation_requests",
       "DELETE FROM approvals",
       "DELETE FROM validation_runs",
-      "UPDATE systems SET active_version_id = NULL",
+      "UPDATE systems SET active_version_id = NULL WHERE deleted_at IS NULL",
       "DELETE FROM model_versions",
       "DELETE FROM audit_events",
       "DELETE FROM system_access",

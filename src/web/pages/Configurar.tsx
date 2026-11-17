@@ -133,7 +133,7 @@ export function Configurar() {
       >
         <Info className="size-5 shrink-0 text-info" aria-hidden />
         <p>
-          Este sistema está arquivado e não pode ser configurado.{" "}
+          Este sistema está inativo e não pode ser configurado.{" "}
           <Link to="/sistemas/$id" params={{ id }} className="font-medium text-primary underline">
             Voltar ao sistema
           </Link>
