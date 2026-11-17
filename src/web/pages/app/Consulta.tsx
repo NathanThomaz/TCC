@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useAlturaRestante } from "@/lib/alturaRestante";
 import { cn } from "@/lib/utils";
 import { useApp } from "./Aplicacao";
 
@@ -33,6 +34,8 @@ export function Consulta() {
   const q = useQuery({ queryKey: chaveQuery, queryFn: () => obterConsulta(app.id) });
   const [texto, setTexto] = useState("");
   const chave = useChavePorConteudo();
+  // Folga: margem da página e a nota que fica abaixo da conversa.
+  const { medir: medirArea, estilo: estiloArea } = useAlturaRestante<HTMLElement>(72);
   const fim = useRef<HTMLDivElement>(null);
   const total = q.data?.mensagens.length ?? 0;
   const m = useMutation({
@@ -65,8 +68,17 @@ export function Consulta() {
           A IA não está configurada neste ambiente. As telas continuam disponíveis.
         </div>
       )}
-      <section aria-label="Conversa" className="rounded-xl border bg-card shadow-card">
-        <ol className="max-h-[60vh] space-y-4 overflow-y-auto p-4" aria-live="polite">
+      {/* No computador a conversa vai até o fim da tela; as mensagens rolam por dentro. */}
+      <section
+        ref={medirArea}
+        style={estiloArea}
+        aria-label="Conversa"
+        className="flex flex-col rounded-xl border bg-card shadow-card"
+      >
+        <ol
+          className="max-h-[60vh] space-y-4 overflow-y-auto p-4 lg:max-h-none lg:min-h-0 lg:flex-1"
+          aria-live="polite"
+        >
           {q.data.mensagens.length === 0 && (
             <li className="flex flex-wrap gap-2">
               {SUGESTOES.map((s) => (

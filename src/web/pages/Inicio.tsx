@@ -150,7 +150,7 @@ export function numerosDoInicio(
           icone: CheckCircle2,
           cor: "bg-success-soft text-success",
           valor: String(conta("active")),
-          detalhe: `${plural(conta("draft"), "rascunho", "rascunhos")} · ${plural(conta("archived"), "arquivado", "arquivados")}`,
+          detalhe: `${plural(conta("draft"), "rascunho", "rascunhos")} · ${plural(conta("archived"), "inativo", "inativos")}`,
         },
       ];
   if (t.temAgenda) {
@@ -353,7 +353,7 @@ export function Inicio() {
                 <Archive className="size-3.5" aria-hidden />
                 {d.truncado
                   ? "Os números consideram os 100 sistemas mais relevantes (ativos primeiro)."
-                  : `${plural(conta("archived"), "sistema arquivado", "sistemas arquivados")} em Sistemas.`}
+                  : `${plural(conta("archived"), "sistema inativo", "sistemas inativos")} em Sistemas.`}
               </p>
             )}
           </section>

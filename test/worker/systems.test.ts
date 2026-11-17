@@ -310,7 +310,7 @@ describe("nome de sistema sem repetição (migration 0013)", () => {
       .run();
     const r = await criar("mercado");
     expect(r.body.error!.message).toBe(
-      'Você já tem um sistema chamado "Mercado" (arquivado). Escolha outro nome.',
+      'Você já tem um sistema chamado "Mercado" (inativo). Escolha outro nome.',
     );
   });
 

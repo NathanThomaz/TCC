@@ -79,3 +79,28 @@ export async function ativarSistema(
   });
   return exigir(r.sistema, "sistema");
 }
+
+// Inativar (arquivar), reativar e excluir o que nunca foi ativado (migration 0015).
+
+export async function inativarSistema(id: string): Promise<Sistema> {
+  const r = await chamar<SystemsApiBody>(`/systems/${encodeURIComponent(id)}/arquivar`, {
+    method: "POST",
+    body: {},
+  });
+  return exigir(r.sistema, "sistema");
+}
+
+export async function reativarSistema(id: string): Promise<Sistema> {
+  const r = await chamar<SystemsApiBody>(`/systems/${encodeURIComponent(id)}/reativar`, {
+    method: "POST",
+    body: {},
+  });
+  return exigir(r.sistema, "sistema");
+}
+
+export async function excluirSistema(id: string): Promise<void> {
+  await chamar<SystemsApiBody>(`/systems/${encodeURIComponent(id)}/excluir`, {
+    method: "POST",
+    body: {},
+  });
+}

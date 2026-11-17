@@ -62,6 +62,7 @@ import {
   ultimaCompra,
 } from "./modules/operacao/automacao";
 import { ajustarColuna } from "./modules/colunas";
+import { arquivarSistema, excluirSistema, reativarSistema } from "./modules/ciclo-sistema";
 import { definirLimite, obterConsumo } from "./modules/consumo";
 import {
   convidarConta,
@@ -195,6 +196,10 @@ export function createApp(
         handler: approveVersion,
       },
       { method: "POST", path: `${S}/:systemId/activate`, handler: activateSystem },
+      // Inativar (arquivar), reativar e excluir o que nunca foi ativado (migration 0015).
+      { method: "POST", path: `${S}/:systemId/arquivar`, handler: arquivarSistema },
+      { method: "POST", path: `${S}/:systemId/reativar`, handler: reativarSistema },
+      { method: "POST", path: `${S}/:systemId/excluir`, handler: excluirSistema },
       // Colunas das telas de um sistema ativo: renomear (só visual) ou incluir.
       { method: "POST", path: `${S}/:systemId/colunas`, handler: ajustarColuna },
       // Criação por conversa (seção 8).

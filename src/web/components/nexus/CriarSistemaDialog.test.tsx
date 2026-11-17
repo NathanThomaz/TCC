@@ -64,6 +64,6 @@ describe("CriarSistemaDialog", () => {
   it("conta os arquivados e ignora acentos", async () => {
     abrir();
     digitar("LOJA AGUA");
-    expect((await screen.findByRole("status")).textContent).toContain("Loja Água (arquivado)");
+    expect((await screen.findByRole("status")).textContent).toContain("Loja Água (inativo)");
   });
 });

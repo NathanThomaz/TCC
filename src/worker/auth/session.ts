@@ -238,7 +238,8 @@ export async function requireSystemAccess(
   systemId: string,
 ): Promise<SystemRef> {
   const system = await db
-    .prepare("SELECT id, owner_id, status FROM systems WHERE id = ?")
+    // Excluído (0015) não existe mais para ninguém.
+    .prepare("SELECT id, owner_id, status FROM systems WHERE id = ? AND deleted_at IS NULL")
     .bind(systemId)
     .first<SystemRef>();
   if (!system) throw notFound();

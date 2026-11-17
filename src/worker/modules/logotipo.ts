@@ -44,7 +44,7 @@ async function abrir(ctx: RequestContext, escrita: boolean) {
   const systemId = ctx.params.systemId ?? "";
   const system = await requireSystemAccess(ctx.env.DB, user, systemId);
   if (escrita && system.status === "archived") {
-    throw conflict("Sistema arquivado não muda de logotipo.");
+    throw conflict("Sistema inativo não muda de logotipo.");
   }
   return { user, systemId };
 }

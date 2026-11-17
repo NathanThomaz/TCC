@@ -45,7 +45,7 @@ export const obterConsumo: Handler = async (ctx) => {
       )
       .bind(inicio),
     db.prepare(
-      "SELECT owner_id AS conta, COUNT(*) AS n FROM systems WHERE status <> 'archived' GROUP BY owner_id",
+      "SELECT owner_id AS conta, COUNT(*) AS n FROM systems WHERE status <> 'archived' AND deleted_at IS NULL GROUP BY owner_id",
     ),
   ]);
   type Conta = {
