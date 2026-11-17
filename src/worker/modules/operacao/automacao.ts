@@ -250,7 +250,11 @@ async function nomesExistentes(
   tabela: "products" | "customers",
   systemId: string,
 ) {
-  const { results } = await ctx.env.DB.prepare(`SELECT name FROM ${tabela} WHERE system_id = ?`)
+  // Clientes contam pelo nome completo: "Maria Silva" na planilha repete Maria + Silva.
+  const coluna = tabela === "customers" ? nomeClienteSql("customers") : "name";
+  const { results } = await ctx.env.DB.prepare(
+    `SELECT ${coluna} AS name FROM ${tabela} WHERE system_id = ?`,
+  )
     .bind(systemId)
     .all<{ name: string }>();
   return new Set(results.map((r) => chaveNome(r.name)));
@@ -262,7 +266,9 @@ async function nomesExistentes(
  * sem acento é a de antes (nomesExistentes), que pega todos os casos fora de uma corrida.
  */
 const SEM_NOME_IGUAL = (tabela: "products" | "customers") =>
-  `WHERE NOT EXISTS (SELECT 1 FROM ${tabela} WHERE system_id = ? AND lower(name) = lower(?))`;
+  `WHERE NOT EXISTS (SELECT 1 FROM ${tabela} WHERE system_id = ? AND lower(${
+    tabela === "customers" ? nomeClienteSql("customers") : "name"
+  }) = lower(?))`;
 
 /** Separa as linhas novas das que repetem um nome (já cadastrado ou repetido na planilha). */
 function separarRepetidos<T extends { nome: string }>(linhas: T[], existentes: Set<string>) {

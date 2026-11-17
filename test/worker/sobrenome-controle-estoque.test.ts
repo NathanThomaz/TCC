@@ -126,6 +126,25 @@ describe("sobrenome do cliente", () => {
     expect(editado.body.cliente).toMatchObject({ sobrenome: null, nomeCompleto: "Maria" });
   });
 
+  it("editar sem mandar o sobrenome (tela antiga) não apaga o que está gravado", async () => {
+    const p = await ativar({ ...COMERCIO_A_PRAZO, modulos: [...COMERCIO_A_PRAZO.modulos] });
+    const id = (await call("POST", p("/clientes"), { nome: "Maria", sobrenome: "Silva" })).body
+      .cliente!.id;
+    const r = await call("PATCH", p(`/clientes/${id}`), { nome: "Maria", campos: {} });
+    expect(r.body.cliente).toMatchObject({ sobrenome: "Silva", nomeCompleto: "Maria Silva" });
+  });
+
+  it("importar 'Maria Silva' não duplica a Maria Silva cadastrada com sobrenome", async () => {
+    const p = await ativar({ ...COMERCIO_A_PRAZO, modulos: [...COMERCIO_A_PRAZO.modulos] });
+    await call("POST", p("/clientes"), { nome: "Maria", sobrenome: "Silva" });
+    const imp = await call("POST", p("/clientes/importar"), {
+      linhas: [{ nome: "Maria Silva" }, { nome: "João Souza" }],
+    });
+    expect(imp.status).toBe(201);
+    const nomes = (await call("GET", p("/clientes"))).body.clientes!.map((c) => c.nomeCompleto);
+    expect(nomes.sort()).toEqual(["João Souza", "Maria Silva"]);
+  });
+
   it("cliente sem sobrenome continua como antes", async () => {
     const p = await ativar({ ...COMERCIO_A_PRAZO, modulos: [...COMERCIO_A_PRAZO.modulos] });
     const r = await call("POST", p("/clientes"), { nome: "Zé" });

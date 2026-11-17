@@ -82,15 +82,11 @@ const FORNECEDORES: Pessoa = {
   inativo: {},
 };
 
-// Sobrenome só no cadastro de clientes (migration 0018); vazio vira null.
+// Sobrenome só no cadastro de clientes (migration 0018). Ausente = não mexe (na edição, fica o
+// gravado; uma tela antiga não apaga); "" ou null = sem sobrenome.
 const PessoaBody = z.object({
   nome,
-  sobrenome: z
-    .string()
-    .trim()
-    .max(120)
-    .nullish()
-    .transform((s) => s || null),
+  sobrenome: z.string().trim().max(120).nullish(),
   campos: z.unknown().optional(),
 });
 
@@ -206,7 +202,7 @@ function criarPessoa(p: Pessoa): Handler {
               .prepare(
                 `INSERT INTO customers (id, system_id, name, surname, extra_json, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
               )
-              .bind(id, op.systemId, body.nome, body.sobrenome, extra, op.user.id, now, now)
+              .bind(id, op.systemId, body.nome, body.sobrenome || null, extra, op.user.id, now, now)
           : db
               .prepare(
                 `INSERT INTO ${p.table} (id, system_id, name, extra_json, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -246,9 +242,18 @@ function editarPessoa(p: Pessoa): Handler {
       p.table === "customers"
         ? db
             .prepare(
-              `UPDATE customers SET name = ?, surname = ?, extra_json = ?, updated_at = max(updated_at, ?) WHERE id = ? AND system_id = ?`,
+              `UPDATE customers SET name = ?1, surname = CASE WHEN ?2 THEN ?3 ELSE surname END,
+                 extra_json = ?4, updated_at = max(updated_at, ?5) WHERE id = ?6 AND system_id = ?7`,
             )
-            .bind(body.nome, body.sobrenome, extra, now, id, op.systemId)
+            .bind(
+              body.nome,
+              body.sobrenome !== undefined ? 1 : 0,
+              body.sobrenome || null,
+              extra,
+              now,
+              id,
+              op.systemId,
+            )
         : db
             .prepare(
               `UPDATE ${p.table} SET name = ?, extra_json = ?, updated_at = max(updated_at, ?) WHERE id = ? AND system_id = ?`,

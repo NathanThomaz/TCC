@@ -227,6 +227,19 @@ describe("telefone e e-mail de fábrica nos clientes (2026-11-17)", () => {
     expect(bloqueantes(rascunhoPadrao("Aulas", "clientes_cobrancas"))).toEqual([]);
   });
 
+  it("no rascunho novo, quando clientes entra com a troca de modelo, as colunas vêm junto", () => {
+    const d = rascunhoPadrao("Teste", "controle_estoque");
+    const r = reconciliarModelo(comModelo(d, "clientes_cobrancas"), "controle_estoque");
+    expect(r.campos.map((c) => c.rotulo)).toEqual(["Telefone", "E-mail"]);
+  });
+
+  it("se clientes já existia, a coluna que o dono tirou não volta", () => {
+    const d = rascunhoPadrao("Teste", "comercio");
+    d.campos = d.campos.filter((c) => c.id !== "telefone");
+    const r = reconciliarModelo(comModelo(d, "comercio_com_servicos"), "comercio");
+    expect(r.campos.map((c) => c.rotulo)).toEqual(["E-mail"]);
+  });
+
   it("sem clientes, nada de colunas de fábrica", () => {
     expect(rascunhoPadrao("Casa", "controle_financeiro").campos).toEqual([]);
   });
