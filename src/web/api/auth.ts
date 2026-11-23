@@ -57,26 +57,53 @@ export async function salvarNome(nome: string, token?: string): Promise<Usuario>
 }
 
 async function exigirAuth() {
-  const auth = await obterAuth();
+  // O SDK pode recusar a configuração já na inicialização (chave malformada).
+  const auth = await obterAuth().catch(() => null);
   if (!auth) throw new ApiError("servico_indisponivel", "O login não está disponível agora.");
   return auth;
 }
 
+/**
+ * Códigos do Firebase que significam e-mail ou senha errados (variam com a versão do SDK e com a
+ * proteção contra enumeração de e-mails). Qualquer outro erro é falha do serviço: chave inválida,
+ * projeto desativado, rede, limite de tentativas. Mostrá-lo como "senha incorreta" escondeu, em
+ * 2026-11-23, o projeto do Firebase excluído por engano.
+ */
+const CREDENCIAIS_ERRADAS = new Set([
+  "auth/invalid-credential",
+  "auth/invalid-login-credentials",
+  "auth/wrong-password",
+  "auth/user-not-found",
+  "auth/invalid-email",
+  "auth/missing-password",
+  "auth/missing-email",
+]);
+
+/** Códigos em que a recuperação responde de forma neutra (não revela se o e-mail tem conta). */
+const RECUPERACAO_NEUTRA = new Set([
+  "auth/user-not-found",
+  "auth/invalid-email",
+  "auth/missing-email",
+  "auth/invalid-recipient-email",
+]);
+
 /** Erros do Firebase traduzidos para os códigos que a tela de entrada conhece. */
 function traduzir(error: unknown): never {
   if (error instanceof ApiError) throw error;
-  if (error instanceof FirebaseError) {
-    if (error.code === "auth/user-disabled") throw new ApiError("conta_desativada", error.message);
-    if (error.code === "auth/network-request-failed" || error.code === "auth/too-many-requests") {
-      throw new ApiError("servico_indisponivel", error.message);
-    }
-    if (error.code === "auth/email-already-in-use") {
+  const codigo = (error as { code?: unknown } | null)?.code;
+  if (error instanceof FirebaseError || typeof codigo === "string") {
+    const mensagem = error instanceof Error ? error.message : String(codigo);
+    if (codigo === "auth/user-disabled") throw new ApiError("conta_desativada", mensagem);
+    if (codigo === "auth/email-already-in-use") {
       throw new ApiError("email_em_uso", "Já existe uma conta com este e-mail.");
     }
-    if (error.code === "auth/weak-password") {
+    if (codigo === "auth/weak-password" || codigo === "auth/password-does-not-meet-requirements") {
       throw new ApiError("senha_fraca", "Escolha uma senha mais forte.");
     }
-    throw new ApiError("credenciais_invalidas", "E-mail ou senha incorretos.");
+    if (typeof codigo === "string" && CREDENCIAIS_ERRADAS.has(codigo)) {
+      throw new ApiError("credenciais_invalidas", "E-mail ou senha incorretos.");
+    }
+    throw new ApiError("servico_indisponivel", mensagem);
   }
   throw new ApiError("servico_indisponivel", "Não conseguimos falar com o servidor.");
 }
@@ -147,8 +174,18 @@ export async function trocarSenha(atual: string, nova: string): Promise<void> {
 /** Link de definir/redefinir senha (também confirma o e-mail; provas/firebase-convite). */
 export async function enviarRecuperacao(email: string): Promise<void> {
   const auth = await exigirAuth();
-  // Resposta neutra: não revela se o e-mail existe.
-  await sendPasswordResetEmail(auth, email.trim()).catch(() => undefined);
+  try {
+    await sendPasswordResetEmail(auth, email.trim());
+  } catch (error) {
+    // Resposta neutra só quando o problema é o e-mail (não revela se ele tem conta). Falha do
+    // serviço (chave, projeto, rede, limite) aparece na tela, em vez de dizer que o link saiu.
+    const codigo = (error as { code?: unknown } | null)?.code;
+    if (typeof codigo === "string" && RECUPERACAO_NEUTRA.has(codigo)) return;
+    throw new ApiError(
+      "servico_indisponivel",
+      error instanceof Error ? error.message : "Não conseguimos enviar o link agora.",
+    );
+  }
 }
 
 /**
@@ -197,6 +234,9 @@ function lerGuardado(chave: string): string | null {
 /**
  * Cria a conta no Firebase e manda o link de confirmação. A conta do Nexus nasce no primeiro
  * acesso com o e-mail confirmado; o nome fica guardado até lá.
+ *
+ * E-mail que já tem conta: a resposta é a mesma de uma conta nova, para a tela não revelar quem
+ * tem conta (revisão do Codex, 2026-11-23). O dono do e-mail recebe o link de redefinir a senha.
  */
 export async function criarConta(nome: string, email: string, senha: string): Promise<void> {
   const auth = await exigirAuth();
@@ -205,6 +245,11 @@ export async function criarConta(nome: string, email: string, senha: string): Pr
     await sendEmailVerification(user);
   } catch (error) {
     await signOut(auth).catch(() => undefined);
+    if ((error as { code?: unknown } | null)?.code === "auth/email-already-in-use") {
+      // A falha deste envio também não pode mudar a resposta da tela (revisão do Codex).
+      await enviarRecuperacao(email).catch(() => undefined);
+      return;
+    }
     traduzir(error);
   }
   await signOut(auth);
