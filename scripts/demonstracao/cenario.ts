@@ -35,6 +35,8 @@ export interface OpcoesCenario {
   relogio: (instante: number) => void;
   /** Último dia do histórico (AAAA-MM-DD, horário de Brasília). */
   ate: string;
+  /** Instante real da carga: nada é gravado depois dele. */
+  limite?: number;
   /** Quantos dias de histórico (padrão 90). */
   dias?: number;
   semente?: number;
@@ -221,7 +223,8 @@ export async function executarCenario(o: OpcoesCenario): Promise<ResumoCenario> 
   const s = new Sorteio(semente);
   const log = o.log ?? (() => undefined);
   const inicio = somarDias(o.ate, -(dias - 1));
-  const fim = instante(o.ate, 23, 59);
+  // Nada depois do fim do último dia nem depois do instante real da carga (dado no futuro).
+  const fim = Math.min(instante(o.ate, 23, 59), o.limite ?? Number.POSITIVE_INFINITY);
   const linha = new Linha();
   const contagem: Record<string, number> = {};
   const recusas: Record<string, number> = {};
@@ -247,11 +250,17 @@ export async function executarCenario(o: OpcoesCenario): Promise<ResumoCenario> 
   const diasDoPeriodo: string[] = [];
   for (let k = 0; k < dias; k++) diasDoPeriodo.push(somarDias(inicio, k));
 
-  // ---- conta e sistemas (no primeiro dia, antes de abrir) ----
-  o.relogio(instante(inicio, 7, 0));
+  // ---- conta e sistemas (no primeiro dia, das 6h, antes do primeiro evento da fila) ----
+  let relogioDaPreparacao = instante(inicio, 6, 0);
+  const passo = () => {
+    relogioDaPreparacao += 2_000;
+    o.relogio(relogioDaPreparacao);
+  };
+  passo();
   if (o.nomeConta) exigir(await api("PATCH", "/session", { nome: o.nomeConta }), "nome da conta");
 
   async function criarSistema(nome: string, rascunho: ConfigDraft): Promise<string> {
+    passo();
     const criado = exigir(await api("POST", "/systems", { nome }), `criar ${nome}`);
     const id = criado.sistema?.id;
     if (!id) throw new Error(`criar ${nome}: resposta sem id`);
@@ -280,9 +289,7 @@ export async function executarCenario(o: OpcoesCenario): Promise<ResumoCenario> 
   const req = (...n: number[]) => n.map((k) => `REQ-${String(k).padStart(2, "0")}`);
 
   const D = await criarSistema(NOMES_SISTEMAS.distribuidora, rascunhoDistribuidora());
-  o.relogio(instante(inicio, 7, 10));
   const E = await criarSistema(NOMES_SISTEMAS.estudio, rascunhoEstudio());
-  o.relogio(instante(inicio, 7, 20));
   const R = await criarSistema(NOMES_SISTEMAS.restaurante, rascunhoRestaurante());
   log(`sistemas ativos: ${D}, ${E}, ${R}`);
 
@@ -509,7 +516,7 @@ export async function executarCenario(o: OpcoesCenario): Promise<ResumoCenario> 
   ): Promise<Produto[]> {
     const produtos: Produto[] = [];
     for (const [k, dados] of lista.entries()) {
-      o.relogio(instante(inicio, 7, 30) + k * 20_000);
+      passo();
       const quantidade = alvo(dados);
       const validade =
         dados.validadeDias === null
@@ -544,6 +551,7 @@ export async function executarCenario(o: OpcoesCenario): Promise<ResumoCenario> 
   async function cadastrarFornecedores(sistema: string, nomes: readonly string[]) {
     const ids: string[] = [];
     for (const nome of nomes) {
+      passo();
       const r = exigir(
         await api("POST", em(sistema, "/fornecedores"), { nome }),
         `fornecedor ${nome}`,
@@ -556,7 +564,8 @@ export async function executarCenario(o: OpcoesCenario): Promise<ResumoCenario> 
     return ids;
   }
 
-  const telefone = () => `(21) 9${s.inteiro(6000, 9999)}-${s.inteiro(1000, 9999)}`;
+  // Faixa fictícia (90000): o número tem cara de celular, mas não é de ninguém conhecido.
+  const telefone = () => `(21) 90000-${String(s.inteiro(0, 9999)).padStart(4, "0")}`;
 
   // Distribuidora: produtos, fornecedores, técnicos e a base de clientes do primeiro dia.
   const alvoDistribuidora = (x: ProdutoDemo) => {
@@ -569,6 +578,7 @@ export async function executarCenario(o: OpcoesCenario): Promise<ResumoCenario> 
   const fornecedoresD = await cadastrarFornecedores(D, FORNECEDORES_DISTRIBUIDORA);
   const tecnicos: string[] = [];
   for (const [nome, sobrenome] of TECNICOS) {
+    passo();
     const r = exigir(
       await api("POST", em(D, "/profissionais"), { nome: `${nome} ${sobrenome}` }),
       "técnico",
@@ -608,8 +618,7 @@ export async function executarCenario(o: OpcoesCenario): Promise<ResumoCenario> 
   const parados = new Set(
     s.embaralhar(planos.filter((x) => x.empresa && x.desde === 0).map((x) => x.nome)).slice(0, 8),
   );
-  async function cadastrarCliente(plano: ClientePlano, t: number): Promise<Cliente> {
-    o.relogio(t);
+  async function cadastrarCliente(plano: ClientePlano): Promise<Cliente> {
     const contato = semAcento(plano.sobrenome ? `${plano.nome} ${plano.sobrenome}` : plano.nome);
     const r = exigir(
       await api("POST", em(D, "/clientes"), {
@@ -639,13 +648,14 @@ export async function executarCenario(o: OpcoesCenario): Promise<ResumoCenario> 
     clientes.push(cliente);
     return cliente;
   }
-  for (const [k, plano] of planos.filter((x) => x.desde === 0).entries()) {
-    await cadastrarCliente(plano, instante(inicio, 7, 45) + k * 5_000);
+  for (const plano of planos.filter((x) => x.desde === 0)) {
+    passo();
+    await cadastrarCliente(plano);
   }
   for (const plano of planos.filter((x) => x.desde > 0)) {
     const dia = diasDoPeriodo[plano.desde] ?? inicio;
     linha.em(instante(dia, 8, s.inteiro(0, 50)), async () => {
-      await cadastrarCliente(plano, instante(dia, 8, 0));
+      await cadastrarCliente(plano);
     });
   }
   log(`distribuidora: ${produtosD.length} produtos, ${clientes.length} clientes no primeiro dia`);
@@ -733,55 +743,59 @@ export async function executarCenario(o: OpcoesCenario): Promise<ResumoCenario> 
     for (const x of itens) x.produto.disponivel -= sinal * unidadesDo(x);
   };
 
-  /** Cria e conclui uma venda; devolve o id quando concluída. */
+  /**
+   * Cria o rascunho agora e agenda a conclusão (ou o descarte) para minutos depois, como um evento
+   * da fila: assim o relógio só anda para a frente e o histórico do estoque fica em ordem.
+   */
   async function vender(
     cliente: Cliente,
     itens: Item[],
-    dia: string,
     t: number,
-  ): Promise<string | null> {
-    o.relogio(t);
+    depois?: (venda: string, quando: number) => Promise<void>,
+  ): Promise<void> {
     const criada = await api("POST", em(D, "/vendas"), {
       cliente: cliente.id,
       itens: corpoItens(itens),
     });
     if (criada.status >= 400 || !criada.body.venda) {
       recusar(`venda: ${criada.body.error?.code ?? criada.status}`);
-      return null;
+      return;
     }
     reservar(itens, 1);
     const venda = criada.body.venda;
     if (s.chance(0.02)) {
-      o.relogio(t + 3 * MIN);
-      exigir(await api("POST", em(D, `/vendas/${venda.id}/descartar`), {}), "descartar venda");
-      reservar(itens, -1);
-      contar("vendas descartadas");
-      return null;
+      linha.em(t + 3 * MIN, async () => {
+        exigir(await api("POST", em(D, `/vendas/${venda.id}/descartar`), {}), "descartar venda");
+        reservar(itens, -1);
+        contar("vendas descartadas");
+      });
+      return;
     }
-    o.relogio(t + s.inteiro(2, 8) * MIN);
-    let forma = formaDePagamento(cliente);
-    let concluida = await api("POST", em(D, `/vendas/${venda.id}/concluir`), {
-      revisao: venda.revisao,
-      formaPagamento: forma,
-    });
-    if (concluida.status >= 400 && forma === "a_prazo") {
-      // Limite de crédito estourado: o cliente paga no Pix, como faria no balcão.
-      recusar(`a prazo recusado: ${concluida.body.error?.code ?? concluida.status}`);
-      forma = "pix";
-      concluida = await api("POST", em(D, `/vendas/${venda.id}/concluir`), {
+    const quando = t + s.inteiro(2, 8) * MIN;
+    linha.em(quando, async () => {
+      let forma = formaDePagamento(cliente);
+      let concluida = await api("POST", em(D, `/vendas/${venda.id}/concluir`), {
         revisao: venda.revisao,
         formaPagamento: forma,
       });
-    }
-    exigir(concluida, `concluir venda de ${cliente.nome}`);
-    contar("vendas concluídas");
-    contar(`pagamento ${forma}`);
-    if (concluida.body.venda?.faixa === "atacado") contar("vendas no atacado");
-    void dia;
-    return venda.id;
+      if (concluida.status >= 400 && forma === "a_prazo") {
+        // Limite de crédito estourado: o cliente paga no Pix, como faria no balcão.
+        recusar(`a prazo recusado: ${concluida.body.error?.code ?? concluida.status}`);
+        forma = "pix";
+        concluida = await api("POST", em(D, `/vendas/${venda.id}/concluir`), {
+          revisao: venda.revisao,
+          formaPagamento: forma,
+        });
+      }
+      exigir(concluida, `concluir venda de ${cliente.nome}`);
+      contar("vendas concluídas");
+      contar(`pagamento ${forma}`);
+      if (concluida.body.venda?.faixa === "atacado") contar("vendas no atacado");
+      if (depois) await depois(venda.id, quando);
+    });
   }
 
-  for (const [k, dia] of diasDoPeriodo.entries()) {
+  for (const dia of diasDoPeriodo) {
     const semana = diaDaSemana(dia);
     if (semana === 0) continue; // domingo fechado
     const quantas = semana === 5 || semana === 6 ? s.inteiro(8, 12) : s.inteiro(5, 8);
@@ -796,23 +810,26 @@ export async function executarCenario(o: OpcoesCenario): Promise<ResumoCenario> 
         const cliente = s.ponderado(ativos, (c) => c.peso);
         const itens = itensDaVenda(cliente);
         if (itens.length === 0) return recusar("venda sem estoque");
-        const id = await vender(cliente, itens, dia, t);
-        if (id && s.chance(0.02)) {
-          linha.em(t + s.inteiro(30, 300) * MIN, async () => {
-            const r = await api("POST", em(D, `/vendas/${id}/cancelar`), {
-              motivo: s.escolher([
-                "Cliente desistiu do pedido",
-                "Pedido lançado em duplicidade",
-                "Produto avariado na entrega",
-              ]),
-              cancelarServicos: true,
+        await vender(cliente, itens, t, (id, quando) => {
+          if (s.chance(0.02)) {
+            linha.em(quando + s.inteiro(30, 300) * MIN, async () => {
+              exigir(
+                await api("POST", em(D, `/vendas/${id}/cancelar`), {
+                  motivo: s.escolher([
+                    "Cliente desistiu do pedido",
+                    "Pedido lançado em duplicidade",
+                    "Produto avariado na entrega",
+                  ]),
+                  cancelarServicos: true,
+                }),
+                "cancelar venda",
+              );
+              reservar(itens, -1);
+              contar("vendas canceladas");
             });
-            if (r.status >= 400)
-              return recusar(`cancelar venda: ${r.body.error?.code ?? r.status}`);
-            reservar(itens, -1);
-            contar("vendas canceladas");
-          });
-        }
+          }
+          return Promise.resolve();
+        });
       });
     }
 
@@ -829,26 +846,24 @@ export async function executarCenario(o: OpcoesCenario): Promise<ResumoCenario> 
         const cliente = s.escolher(candidatos);
         const barril = s.escolher(barris);
         if (barril.disponivel < 1) return recusar("evento sem barril");
-        const itens: Item[] = [{ produto: barril, caixas: 0, unidades: s.chance(0.25) ? 2 : 1 }];
+        const quantos = s.chance(0.25) && barril.disponivel >= 2 ? 2 : 1;
+        const itens: Item[] = [{ produto: barril, caixas: 0, unidades: quantos }];
         const extras = [porNome("Copo descartável"), porNome("Gelo em cubos"), porNome("Carvão")];
         for (const extra of extras) {
           const item = { produto: extra, caixas: 0, unidades: s.inteiro(2, 6) };
           if (s.chance(0.7) && unidadesDo(item) <= extra.disponivel) itens.push(item);
         }
-        if (unidadesDo(itens[0] as Item) > barril.disponivel) (itens[0] as Item).unidades = 1;
-        const venda = await vender(cliente, itens, dia, t);
-        if (!venda) return;
-        await agendarChopeira(cliente, venda, dia, k);
+        await vender(cliente, itens, t, (venda) => agendarChopeira(cliente, venda, dia));
       });
     }
   }
 
-  async function agendarChopeira(cliente: Cliente, venda: string, dia: string, k: number) {
+  async function agendarChopeira(cliente: Cliente, venda: string, dia: string) {
     const diaEvento = somarDias(dia, s.inteiro(1, 3));
     const hora = s.escolher([9, 10, 14, 16]);
     const inicioEv = instante(diaEvento, hora, 0);
     const retirada = instante(somarDias(diaEvento, 1), s.escolher([10, 15]), 0);
-    const endereco = `${s.escolher(RUAS)}, ${s.inteiro(10, 1999)} - Rio de Janeiro`;
+    const endereco = `${s.escolher(RUAS)}, ${s.inteiro(10, 999)} - Bairro Exemplo`;
     for (const tecnico of s.embaralhar(tecnicos)) {
       const r = await api("POST", em(D, "/agenda"), {
         cliente: cliente.id,
@@ -859,12 +874,15 @@ export async function executarCenario(o: OpcoesCenario): Promise<ResumoCenario> 
         venda,
         campos: { endereco },
       });
-      if (r.status >= 400) {
-        recusar(`agenda: ${r.body.error?.code ?? r.status}`);
+      // Técnico ocupado nesse horário: tenta o próximo. Qualquer outro erro interrompe a carga.
+      if (r.status === 409 && r.body.error?.code === "conflito_agenda") {
+        recusar("agenda: conflito_agenda");
         continue;
       }
-      contar("atendimentos agendados", r.body.atendimentos?.length ?? 0);
-      for (const at of r.body.atendimentos ?? []) {
+      const atendimentos = exigir(r, "agendar chopeira").atendimentos ?? [];
+      if (atendimentos.length !== 2) throw new Error("agendar chopeira: o par não foi criado");
+      contar("atendimentos agendados", atendimentos.length);
+      for (const at of atendimentos) {
         linha.em(at.inicio, async () => {
           exigir(await api("POST", em(D, `/agenda/${at.id}/iniciar`), {}), "iniciar atendimento");
           contar("atendimentos iniciados");
@@ -883,9 +901,10 @@ export async function executarCenario(o: OpcoesCenario): Promise<ResumoCenario> 
         categoria: "Locação de chopeira",
         cliente: cliente.id,
       });
-      void k;
       return;
     }
+    // Os três técnicos ocupados: a venda fica sem o serviço (o painel mostra a venda normalmente).
+    recusar("agenda: sem técnico livre");
   }
 
   // ---- distribuidora: compras, validade e saídas ----
@@ -895,7 +914,6 @@ export async function executarCenario(o: OpcoesCenario): Promise<ResumoCenario> 
     fornecedor: string,
     produtos: Produto[],
     dia: string,
-    t: number,
     reposicao: (x: Produto) => number,
     vencimentoDias: number | null,
   ) {
@@ -910,7 +928,6 @@ export async function executarCenario(o: OpcoesCenario): Promise<ResumoCenario> 
       })
       .filter((x) => unidadesDo(x) > 0);
     if (itens.length === 0) return;
-    o.relogio(t);
     const r = exigir(
       await api("POST", em(sistema, "/compras"), {
         fornecedor,
@@ -981,7 +998,6 @@ export async function executarCenario(o: OpcoesCenario): Promise<ResumoCenario> 
             fornecedor,
             produtosD.filter((x) => x.dados.fornecedor === f),
             dia,
-            instante(dia, 9, 5 + f * 7),
             (x) => x.alvo * 0.5,
             21,
           ),
@@ -1001,7 +1017,6 @@ export async function executarCenario(o: OpcoesCenario): Promise<ResumoCenario> 
                 x.dados.fornecedor === f && (x.dados.caixa === null || x.dados.giro === "alto"),
             ),
             dia,
-            instante(dia, 9, 10 + f),
             (x) => x.alvo * 0.4,
             14,
           ),
@@ -1048,7 +1063,7 @@ export async function executarCenario(o: OpcoesCenario): Promise<ResumoCenario> 
       // Lote vencido no depósito: sai do estoque com o motivo.
       for (const x of produtosD) {
         if (x.validade !== null && x.validade < dia && x.disponivel > 0 && s.chance(0.5)) {
-          await saida(D, x, Math.min(x.disponivel, s.inteiro(1, 4)), "Vencido", "Lote vencido");
+          await saida(D, x, x.disponivel, "Vencido", "Lote vencido");
           x.validade = null;
         }
       }
@@ -1240,11 +1255,19 @@ export async function executarCenario(o: OpcoesCenario): Promise<ResumoCenario> 
 
   // Baixas do dia: cada conta pendente tem um destino estável (em dia, atrasada ou em aberto).
   function diaDePagamento(
-    l: { id: string; tipo: string; vencimento: string; venda: string | null },
+    l: {
+      tipo: string;
+      descricao: string;
+      vencimento: string;
+      valorCentavos: number;
+      venda: string | null;
+    },
     sistema: string,
   ) {
-    const u = estavel(l.id, semente);
-    const v = estavel(`${l.id}:dias`, semente);
+    // Pela conta em si (não pelo id, que a API sorteia): a mesma semente dá as mesmas baixas.
+    const chave = `${sistema === E ? "E" : "D"}|${l.tipo}|${l.descricao}|${l.vencimento}|${l.valorCentavos}`;
+    const u = estavel(chave, semente);
+    const v = estavel(`${chave}:dias`, semente);
     if (l.tipo === "pagar")
       return u < 0.9 ? l.vencimento : somarDias(l.vencimento, 1 + Math.floor(v * 4));
     if (l.venda) {
@@ -1306,13 +1329,7 @@ export async function executarCenario(o: OpcoesCenario): Promise<ResumoCenario> 
     linha.em(instante(dia, 7, 30), async () => {
       for (const x of insumos) {
         if (x.validade !== null && x.validade < dia && x.disponivel > 0) {
-          await saida(
-            R,
-            x,
-            Math.min(x.disponivel, s.inteiro(1, 2)),
-            "Vencido",
-            "Passou da validade",
-          );
+          await saida(R, x, x.disponivel, "Vencido", "Passou da validade");
           x.validade = null;
         }
       }
@@ -1341,7 +1358,6 @@ export async function executarCenario(o: OpcoesCenario): Promise<ResumoCenario> 
           fornecedoresR[f] as string,
           insumos.filter((x) => x.dados.fornecedor === f),
           dia,
-          t,
           (x) => (x.dados as InsumoDemo).usoDia * (perecivel(x) ? 3 : 5) + x.dados.minimo,
           null,
         ),
@@ -1352,8 +1368,11 @@ export async function executarCenario(o: OpcoesCenario): Promise<ResumoCenario> 
   // ---- executa em ordem cronológica ----
   let executados = 0;
   let marco = 0;
+  let ultimo = relogioDaPreparacao;
   for (let ev = linha.proximo(); ev; ev = linha.proximo()) {
-    if (ev.t > fim) continue; // depois do último dia: fica no futuro (agenda e contas a vencer)
+    if (ev.t > fim) continue; // depois do fim: fica no futuro (agenda e contas a vencer)
+    if (ev.t < ultimo) throw new Error("evento antes do anterior: o relógio não pode voltar");
+    ultimo = ev.t;
     o.relogio(ev.t);
     await ev.fazer();
     executados++;

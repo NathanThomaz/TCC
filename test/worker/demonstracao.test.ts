@@ -68,10 +68,18 @@ describe("massa de dados da demonstração", () => {
     expect(c["contas a receber lançadas"]).toBeGreaterThan(0);
     expect(c["saídas (Uso na cozinha)"]).toBeGreaterThan(5);
 
+    expect(c["atendimentos agendados"]).toBeGreaterThan(0);
+    expect(c["atendimentos agendados"]! % 2).toBe(0); // sempre o par instalação/retirada
+
     // Recusas aceitas: só as que o próprio negócio provoca (limite de crédito, técnico ocupado).
-    for (const chave of Object.keys(resumo.recusas)) {
-      expect(chave).toMatch(/^(a prazo recusado|agenda|venda sem estoque|evento sem barril)/);
-    }
+    const aceitas = [
+      "a prazo recusado: limite_credito",
+      "agenda: conflito_agenda",
+      "agenda: sem técnico livre",
+      "venda sem estoque",
+      "evento sem barril",
+    ];
+    for (const chave of Object.keys(resumo.recusas)) expect(aceitas).toContain(chave);
 
     const [distribuidora, estudio, restaurante] = resumo.sistemas.map((x) => x.id);
     const painel = await chamar("GET", `/systems/${distribuidora}/painel`);
@@ -85,5 +93,20 @@ describe("massa de dados da demonstração", () => {
     expect(usuarios.results).toEqual([
       { email: "demo@example.com", display_name: "Conta de demonstração" },
     ]);
+  }, 120_000);
+
+  it("para a carga quando a agenda falha por outro motivo que não o técnico ocupado", async () => {
+    const comFalha = async (metodo: string, caminho: string, corpo?: unknown) =>
+      metodo === "POST" && caminho.endsWith("/agenda")
+        ? { status: 500, body: { error: { code: "erro_interno" } } as Corpo }
+        : chamar(metodo, caminho, corpo);
+    await expect(
+      executarCenario({
+        chamar: comFalha,
+        relogio: (t) => (agora = t),
+        ate: "2026-11-20",
+        dias: 12,
+      }),
+    ).rejects.toThrow(/agendar chopeira: HTTP 500/);
   }, 120_000);
 });

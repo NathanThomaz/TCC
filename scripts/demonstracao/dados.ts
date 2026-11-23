@@ -253,17 +253,18 @@ export const TECNICOS = [
   ["Sérgio", "Lacerda"],
 ] as const;
 
+/** Ruas inventadas para o endereço do evento (sem número nem bairro reais). */
 export const RUAS = [
-  "Rua das Laranjeiras",
-  "Rua Conde de Bonfim",
-  "Avenida Maracanã",
-  "Rua Barão de Mesquita",
-  "Rua Uruguai",
-  "Rua Haddock Lobo",
-  "Rua São Francisco Xavier",
-  "Avenida Paulo de Frontin",
-  "Rua Dias da Cruz",
-  "Rua Voluntários da Pátria",
+  "Rua das Acácias Floridas",
+  "Rua dos Ipês Amarelos",
+  "Avenida das Palmeiras Imperiais",
+  "Rua do Mirante Azul",
+  "Travessa dos Girassóis",
+  "Rua da Cachoeira Clara",
+  "Alameda dos Sabiás",
+  "Rua das Hortênsias",
+  "Avenida do Horizonte",
+  "Rua do Sol Nascente",
 ];
 
 // ---- Restaurante (controle de estoque de insumos) ----
