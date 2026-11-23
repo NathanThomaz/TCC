@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import type { InicioDto, ResumoSistemaDto } from "../../shared/api";
 import { TEMPLATE_LABELS } from "../../shared/contract/catalog";
-import { mesDoDia, rotuloDoMes } from "../../shared/dominio/periodo";
+import { rotuloDoMes } from "../../shared/dominio/periodo";
 import { formatarCentavos } from "../../shared/dominio/precos";
 import { obterInicio } from "@/api/sistemas";
 import { useAuth } from "@/lib/auth";
@@ -257,7 +257,16 @@ export function Inicio() {
   if (q.isError && !d) {
     return (
       <>
-        <PageHeader titulo={saudacao} acoes={criar} />
+        <PageHeader
+          titulo={saudacao}
+          acoes={
+            <>
+              {/* Falhou um mês escolhido: o seletor continua, para voltar a outro mês. */}
+              {mes !== null && <FiltroMes valor={mes} onMudar={setMes} />}
+              {criar}
+            </>
+          }
+        />
         <ErrorState mensagem={q.error.message} onTentar={() => void q.refetch()} />
       </>
     );
@@ -308,11 +317,7 @@ export function Inicio() {
           <div className="flex flex-wrap items-center gap-2">
             {/* O filtro só muda as vendas do mês: aparece quando algum sistema vende. */}
             {t.temVendas && (
-              <FiltroMes
-                hoje={d.hoje}
-                valor={mes ?? d.mes}
-                onMudar={(m) => setMes(m === mesDoDia(d.hoje) ? null : m)}
-              />
+              <FiltroMes valor={mes} onMudar={setMes} carregando={q.isPlaceholderData} />
             )}
             {criar}
           </div>
@@ -564,7 +569,8 @@ function UsoIa({
     <div className="flex flex-col rounded-xl border bg-card p-5 shadow-card">
       <h3 className="mb-3 flex items-center gap-2 font-semibold">
         <Sparkles className="size-4.5 text-primary" aria-hidden />{" "}
-        {escopo === "conta" ? "Uso da IA da sua conta" : "Uso da IA no mês"}
+        {/* Sempre o mês atual: o filtro de mês da tela inicial vale só para as vendas. */}
+        {escopo === "conta" ? "Uso da IA da sua conta" : "Uso da IA no mês atual"}
       </h3>
       <p className="text-sm">
         <span className="font-semibold tabular-nums">{formatarCentavos(gasto)}</span>{" "}
@@ -573,7 +579,7 @@ function UsoIa({
       <div
         className="mt-2 h-2 overflow-hidden rounded-full bg-muted"
         role="progressbar"
-        aria-label="Uso da IA no mês"
+        aria-label="Uso da IA no mês atual"
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={pct}

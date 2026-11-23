@@ -1,4 +1,4 @@
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import {
   ArrowDownCircle,
@@ -395,14 +395,18 @@ export function indicadores(p: PainelDto): IndicadorDados[] {
 export function Painel() {
   const app = useApp();
   const { config } = app;
-  // Mês dos números "do mês" (null = o atual); hoje e o estado atual não mudam com ele.
-  const [mes, setMes] = useState<string | null>(null);
+  // Mês dos números "do mês" (null = o atual), guardado por sistema: ao trocar de sistema, volta
+  // ao mês atual. Hoje e o estado atual não mudam com ele.
+  const [filtro, setFiltro] = useState<{ sistema: string; mes: string | null } | null>(null);
+  const mes = filtro?.sistema === app.id ? filtro.mes : null;
   const q = useQuery({
     queryKey: ["painel", app.id, mes ?? "atual"],
     queryFn: () => obterPainel(app.id, mes ?? undefined),
     refetchInterval: 60_000,
-    // Ao trocar o mês, os números anteriores ficam na tela até os novos chegarem.
-    placeholderData: keepPreviousData,
+    // Ao trocar o mês, os números anteriores ficam na tela até os novos chegarem; nunca os de
+    // outro sistema.
+    placeholderData: (anterior, consulta) =>
+      consulta?.queryKey[1] === app.id ? anterior : undefined,
   });
   const p = q.data;
   const outroMes = p !== undefined && p.mes !== mesDoDia(p.hoje);
@@ -411,20 +415,18 @@ export function Painel() {
 
   return (
     <div className="space-y-6">
-      {p && (
-        <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-2">
-          {outroMes && (
-            <p className="text-sm text-muted-foreground">
-              Números de {nomeDoMes(p.mes)}; hoje, estoque e contas em aberto continuam atuais.
-            </p>
-          )}
-          <FiltroMes
-            hoje={p.hoje}
-            valor={mes ?? p.mes}
-            onMudar={(m) => setMes(m === mesDoDia(p.hoje) ? null : m)}
-          />
-        </div>
-      )}
+      <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-2">
+        {outroMes && !q.isPlaceholderData && (
+          <p className="text-sm text-muted-foreground">
+            Números de {nomeDoMes(p.mes)}; hoje, estoque e contas em aberto continuam atuais.
+          </p>
+        )}
+        <FiltroMes
+          valor={mes}
+          onMudar={(m) => setFiltro({ sistema: app.id, mes: m })}
+          carregando={q.isPlaceholderData}
+        />
+      </div>
       <section aria-labelledby="titulo-numeros" aria-busy={q.isPlaceholderData}>
         <h2 id="titulo-numeros" className="sr-only">
           Números do negócio

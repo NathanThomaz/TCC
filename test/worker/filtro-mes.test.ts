@@ -93,6 +93,23 @@ describe("filtro de mês", () => {
       quantidade: out?.n,
       totalCentavos: out?.total,
     });
+    // Os outros números do mês seguem o filtro: as formas de pagamento somam as vendas do mês, e
+    // as compras do mês batem com o banco.
+    const somaFormas = (outubro.body.painel?.pagamentos ?? []).reduce(
+      (t, f) => t + f.quantidade,
+      0,
+    );
+    expect(somaFormas).toBe(out?.n);
+    const { inicio, fim } = limitesDoMes("2026-10");
+    const compras = await env.DB.prepare(
+      `SELECT COUNT(*) AS n FROM purchases WHERE system_id = ? AND status = 'completed'
+         AND created_at >= ? AND created_at < ?`,
+    )
+      .bind(distribuidora, inicio, fim)
+      .first<{ n: number }>();
+    expect(outubro.body.painel?.compras?.noMes.quantidade).toBe(compras?.n);
+    expect(compras?.n).toBeGreaterThan(0);
+
     // Hoje e o estado atual não dependem do filtro.
     expect(outubro.body.painel?.vendas?.hoje).toEqual(atual.body.painel?.vendas?.hoje);
     expect(outubro.body.painel?.estoque).toEqual(atual.body.painel?.estoque);
@@ -112,7 +129,7 @@ describe("filtro de mês", () => {
   });
 
   it("recusa mês futuro ou mal escrito", async () => {
-    for (const mes of ["2026-12", "2026-13", "2026-1", "outubro"]) {
+    for (const mes of ["2026-12", "2026-13", "2026-1", "outubro", ""]) {
       expect((await chamar("GET", `/systems/${distribuidora}/painel?mes=${mes}`)).status, mes).toBe(
         422,
       );

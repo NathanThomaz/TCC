@@ -39,7 +39,7 @@ export function triggerConflict(error: unknown, messages: Record<string, string>
 /** Mês dos números "do mês" pedido em `?mes=AAAA-MM`; ausente = o mês de hoje (undefined). */
 export function mesDaConsulta(ctx: Pick<RequestContext, "url" | "clock">): string | undefined {
   const mes = ctx.url.searchParams.get("mes");
-  if (mes === null || mes === "") return undefined;
+  if (mes === null) return undefined;
   if (!mesValido(mes, paraCampoLocal(ctx.clock.now()).slice(0, 10))) {
     throw validationFailed("Mês inválido: use AAAA-MM, no máximo o mês atual.");
   }
