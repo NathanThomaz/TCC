@@ -279,8 +279,13 @@ export function Entrar() {
                         onClick={() => reenviar.mutate()}
                       >
                         {reenviar.isPending && <Loader2 className="animate-spin" aria-hidden />}
-                        {reenviar.isSuccess ? "Confirmação reenviada" : "Reenviar confirmação"}
+                        {reenviar.isSuccess ? "Enviado: confira o e-mail" : "Reenviar confirmação"}
                       </Button>
+                    )}
+                    {codigo === "email_nao_confirmado" && reenviar.isError && (
+                      <p className="mt-2 text-destructive">
+                        Não conseguimos reenviar agora. Tente de novo em instantes.
+                      </p>
                     )}
                   </div>
                 </div>

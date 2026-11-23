@@ -5,12 +5,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const entrar = vi.fn();
 const criarConta = vi.fn();
+const enviarRecuperacao = vi.fn();
 let aberto = false;
 vi.mock("@/api/auth", () => ({
   entrar: (...args: unknown[]) => entrar(...args) as unknown,
   criarConta: (...args: unknown[]) => criarConta(...args) as unknown,
   cadastroAberto: () => Promise.resolve(aberto),
-  enviarRecuperacao: () => Promise.resolve(),
+  enviarRecuperacao: (...args: unknown[]) => enviarRecuperacao(...args) as unknown,
   reenviarConfirmacao: () => Promise.resolve(),
 }));
 vi.mock("@/lib/auth", () => ({
@@ -30,6 +31,7 @@ afterEach(() => {
   cleanup();
   aberto = false;
   criarConta.mockReset();
+  enviarRecuperacao.mockReset();
 });
 
 function renderizar() {
@@ -65,6 +67,31 @@ describe("Entrar", () => {
     renderizar();
     expect(screen.getByText(/O acesso é criado pelo administrador/)).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Criar conta" })).toBeNull();
+  });
+
+  describe("recuperar senha", () => {
+    function pedirLink() {
+      renderizar();
+      fireEvent.click(screen.getByRole("button", { name: "Esqueci minha senha" }));
+      fireEvent.change(screen.getByLabelText("E-mail"), {
+        target: { value: "pessoa@exemplo.com" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Enviar link" }));
+    }
+
+    it("mostra que o serviço falhou, em vez de dizer que o link saiu", async () => {
+      enviarRecuperacao.mockRejectedValueOnce(new ApiError("servico_indisponivel", "x"));
+      pedirLink();
+      expect((await screen.findByRole("alert")).textContent).toMatch(/Serviço indisponível/);
+      expect(enviarRecuperacao).toHaveBeenCalledWith("pessoa@exemplo.com");
+    });
+
+    it("com sucesso, não mostra alerta de erro", async () => {
+      enviarRecuperacao.mockResolvedValueOnce(undefined);
+      pedirLink();
+      expect(await screen.findByText("Se o e-mail existir, enviamos um link.")).toBeTruthy();
+      expect(screen.queryByText(/Serviço indisponível/)).toBeNull();
+    });
   });
 
   describe("cadastro aberto (ADR-009)", () => {
