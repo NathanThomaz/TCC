@@ -19,7 +19,8 @@ import type { Handler, RequestContext } from "../http/router";
 import { consumoDaContaMicroBrl, consumoDoMes, limiteDaContaMicroBrl } from "../ia/orcamento";
 import { canonicalJson, sha256Hex } from "../lib/hash";
 import { chaveNomeSistema } from "../../shared/dominio/nomes";
-import { isUnique, parse, triggerConflict } from "./comum";
+import { limitesDoMes, mesDoDia } from "../../shared/dominio/periodo";
+import { isUnique, mesDaConsulta, parse, triggerConflict } from "./comum";
 
 // Sistemas e o ciclo de configuração (seção 8): rascunho → versão validada → aprovação da versão
 // exata (hash) → ativação. Invariantes críticos também estão no D1 (migrations 0001 e 0002).
@@ -212,6 +213,7 @@ export const obterInicio: Handler = async (ctx) => {
   const user = await authenticate(ctx, ctx.auth);
   const db = ctx.env.DB;
   const agora = ctx.clock.now();
+  const mesEscolhido = mesDaConsulta(ctx);
   const admin = user.role === "admin";
   // Ativos primeiro, para os números de hoje não sumirem atrás de rascunhos recentes.
   const { results: linhas } = admin
@@ -280,8 +282,9 @@ export const obterInicio: Handler = async (ctx) => {
   const dia = Number(hoje.slice(8, 10));
   const inicioHoje = deCampoLocal(`${hoje}T00:00`)!;
   const inicioAmanha = deCampoLocal(`${iso(ano, mes, dia + 1)}T00:00`)!;
-  const inicioMes = deCampoLocal(`${iso(ano, mes, 1)}T00:00`)!;
-  const inicioProximoMes = deCampoLocal(`${iso(ano, mes + 1, 1)}T00:00`)!;
+  // Filtro de mês (?mes=AAAA-MM): só as vendas "no mês" mudam; o resto é de hoje.
+  const mesDoInicio = mesEscolhido ?? mesDoDia(hoje);
+  const { inicio: inicioMes, fim: inicioProximoMes } = limitesDoMes(mesDoInicio);
 
   const [vendas, clientes, estoque, agenda, contas, pedidos] = await db.batch([
     db
@@ -380,6 +383,7 @@ export const obterInicio: Handler = async (ctx) => {
 
   const resumo: InicioDto = {
     hoje,
+    mes: mesDoInicio,
     sistemas: sistemas.map((row) => {
       const dados = configDe.get(row.id);
       const config = dados?.config ?? null;

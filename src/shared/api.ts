@@ -383,6 +383,8 @@ export interface ContasApiBody {
 export interface PainelDto {
   /** Data de hoje no fuso do Nexus (AAAA-MM-DD). Cada bloco só vem com o módulo ativo. */
   hoje: string;
+  /** Mês dos números "do mês" (AAAA-MM): o de hoje ou o escolhido no filtro. */
+  mes: string;
   vendas?: {
     hoje: { quantidade: number; totalCentavos: number };
     mes: { quantidade: number; totalCentavos: number };
@@ -490,6 +492,8 @@ export interface ResumoSistemaDto {
 export interface InicioDto {
   /** Hoje no fuso do Nexus (AAAA-MM-DD). */
   hoje: string;
+  /** Mês das vendas "no mês" (AAAA-MM): o de hoje ou o escolhido no filtro. */
+  mes: string;
   sistemas: {
     sistema: SystemDto;
     /** Da versão ativa (sistema ativo) ou da última versão salva (rascunho). */

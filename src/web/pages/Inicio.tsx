@@ -1,5 +1,6 @@
 import { Link } from "@/lib/rotas";
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import {
   Archive,
   ArrowRight,
@@ -21,6 +22,7 @@ import {
 } from "lucide-react";
 import type { InicioDto, ResumoSistemaDto } from "../../shared/api";
 import { TEMPLATE_LABELS } from "../../shared/contract/catalog";
+import { mesDoDia, rotuloDoMes } from "../../shared/dominio/periodo";
 import { formatarCentavos } from "../../shared/dominio/precos";
 import { obterInicio } from "@/api/sistemas";
 import { useAuth } from "@/lib/auth";
@@ -29,6 +31,7 @@ import { cn } from "@/lib/utils";
 import { CriarSistemaDialog } from "@/components/nexus/CriarSistemaDialog";
 import { ModelosParaComecar } from "@/components/nexus/ModelosParaComecar";
 import { EmptyState, ErrorState, PageHeader } from "@/components/nexus/Estados";
+import { FiltroMes } from "@/components/nexus/FiltroMes";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -126,6 +129,8 @@ export function numerosDoInicio(
   t: ReturnType<typeof totaisDoInicio>,
   alertas: number,
   conta: (status: string) => number,
+  /** "no mês" ou "em outubro" (filtro de mês). */
+  noMes = "no mês",
 ): NumeroInicio[] {
   const destaque = "bg-accent text-accent-foreground";
   const lista: NumeroInicio[] = t.temVendas
@@ -138,7 +143,7 @@ export function numerosDoInicio(
           detalhe: `${plural(t.qtdHoje, "venda", "vendas")} em todos os sistemas`,
         },
         {
-          rotulo: "Vendas no mês",
+          rotulo: `Vendas ${noMes}`,
           icone: TrendingUp,
           cor: destaque,
           valor: formatarCentavos(t.vendasMes),
@@ -227,7 +232,14 @@ const dataPorExtenso = (iso: string) => {
 
 export function Inicio() {
   const { usuario } = useAuth();
-  const q = useQuery({ queryKey: ["inicio"], queryFn: obterInicio, refetchInterval: 60_000 });
+  // Mês das vendas "no mês" (null = o atual); o resto do resumo é sempre de hoje.
+  const [mes, setMes] = useState<string | null>(null);
+  const q = useQuery({
+    queryKey: ["inicio", mes ?? "atual"],
+    queryFn: () => obterInicio(mes ?? undefined),
+    refetchInterval: 60_000,
+    placeholderData: keepPreviousData,
+  });
   const d = q.data;
   const saudacao = `Olá, ${usuario?.nome ?? ""}!`;
 
@@ -270,7 +282,8 @@ export function Inicio() {
   const conta = (s: string) => d.sistemas.filter((x) => x.sistema.status === s).length;
   const ativos = d.sistemas.filter((s) => s.sistema.status === "active");
   const rascunhos = d.sistemas.filter((s) => s.sistema.status === "draft");
-  const numeros = numerosDoInicio(t, alertas.length, conta);
+  const noMes = rotuloDoMes(d.mes, d.hoje);
+  const numeros = numerosDoInicio(t, alertas.length, conta, noMes);
 
   return (
     <>
@@ -292,7 +305,17 @@ export function Inicio() {
                   : `Tudo em dia em ${plural(ativos.length, "sistema ativo", "sistemas ativos")}${rascunhos.length ? ` · ${plural(rascunhos.length, "rascunho", "rascunhos")}` : ""}.`}
             </p>
           </div>
-          {criar}
+          <div className="flex flex-wrap items-center gap-2">
+            {/* O filtro só muda as vendas do mês: aparece quando algum sistema vende. */}
+            {t.temVendas && (
+              <FiltroMes
+                hoje={d.hoje}
+                valor={mes ?? d.mes}
+                onMudar={(m) => setMes(m === mesDoDia(d.hoje) ? null : m)}
+              />
+            )}
+            {criar}
+          </div>
         </div>
       </section>
       {q.isError && (
@@ -335,7 +358,7 @@ export function Inicio() {
             </div>
             <div className={GRADE}>
               {[...ativos, ...rascunhos].slice(0, 7).map((s) => (
-                <CartaoSistema key={s.sistema.id} item={s} />
+                <CartaoSistema key={s.sistema.id} item={s} noMes={noMes} />
               ))}
               <CriarSistemaDialog
                 gatilho={
@@ -443,7 +466,7 @@ export function Inicio() {
   );
 }
 
-function CartaoSistema({ item }: { item: ItemSistema }) {
+function CartaoSistema({ item, noMes }: { item: ItemSistema; noMes: string }) {
   const { sistema: s, resumo: r, modelo, modulos } = item;
   const ativo = s.status === "active";
   const critico = r?.estoque?.criticos ?? 0;
@@ -451,7 +474,10 @@ function CartaoSistema({ item }: { item: ItemSistema }) {
     ? (
         [
           r.vendas && ["Vendas hoje", formatarCentavos(r.vendas.hoje.totalCentavos)],
-          r.vendas && ["No mês", formatarCentavos(r.vendas.mes.totalCentavos)],
+          r.vendas && [
+            noMes.charAt(0).toUpperCase() + noMes.slice(1),
+            formatarCentavos(r.vendas.mes.totalCentavos),
+          ],
           r.atendimentosHoje !== undefined && ["Atendimentos hoje", String(r.atendimentosHoje)],
           r.clientesAtivos !== undefined && ["Clientes ativos", String(r.clientesAtivos)],
         ].filter(Boolean) as [string, string][]

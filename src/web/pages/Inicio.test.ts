@@ -24,6 +24,7 @@ const resumo: ResumoSistemaDto = {
 };
 const dados: InicioDto = {
   hoje: "2026-11-13",
+  mes: "2026-11",
   sistemas: [
     {
       sistema: sistema("a", "active"),

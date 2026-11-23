@@ -499,8 +499,12 @@ export async function acaoAtendimento(
   return exigir(r.atendimentos, "atendimentos");
 }
 
-/** Painel do sistema ativo: números calculados no backend, só dos módulos ativos. */
-export async function obterPainel(sistema: string): Promise<PainelDto> {
-  const r = await chamar<{ painel?: PainelDto }>(`${base(sistema)}/painel`);
+/**
+ * Painel do sistema ativo: números calculados no backend, só dos módulos ativos. `mes` (AAAA-MM)
+ * escolhe o mês dos números "do mês"; sem ele, o mês de hoje.
+ */
+export async function obterPainel(sistema: string, mes?: string): Promise<PainelDto> {
+  const filtro = mes ? `?mes=${encodeURIComponent(mes)}` : "";
+  const r = await chamar<{ painel?: PainelDto }>(`${base(sistema)}/painel${filtro}`);
   return exigir(r.painel, "painel");
 }

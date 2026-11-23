@@ -1,5 +1,8 @@
 import type { z } from "zod";
+import { paraCampoLocal } from "../../shared/dominio/agenda";
+import { mesValido } from "../../shared/dominio/periodo";
 import { AppError, validationFailed } from "../http/errors";
+import type { RequestContext } from "../http/router";
 
 // Utilidades dos módulos de negócio: validação do corpo e tradução das recusas do D1.
 
@@ -31,4 +34,14 @@ export function triggerConflict(error: unknown, messages: Record<string, string>
   const code = triggerCode(error, Object.keys(messages));
   if (code) throw new AppError(409, code, messages[code] ?? code);
   throw error;
+}
+
+/** Mês dos números "do mês" pedido em `?mes=AAAA-MM`; ausente = o mês de hoje (undefined). */
+export function mesDaConsulta(ctx: Pick<RequestContext, "url" | "clock">): string | undefined {
+  const mes = ctx.url.searchParams.get("mes");
+  if (mes === null || mes === "") return undefined;
+  if (!mesValido(mes, paraCampoLocal(ctx.clock.now()).slice(0, 10))) {
+    throw validationFailed("Mês inválido: use AAAA-MM, no máximo o mês atual.");
+  }
+  return mes;
 }

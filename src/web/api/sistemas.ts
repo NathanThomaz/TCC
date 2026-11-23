@@ -15,9 +15,13 @@ export async function listarSistemas(): Promise<Sistema[]> {
   return exigir((await chamar<SystemsApiBody>("/systems")).sistemas, "sistemas");
 }
 
-/** Resumo da tela inicial: sistemas com os números do painel, pedidos e uso da IA. */
-export async function obterInicio(): Promise<InicioDto> {
-  return exigir((await chamar<SystemsApiBody>("/inicio")).inicio, "resumo");
+/**
+ * Resumo da tela inicial: sistemas com os números do painel, pedidos e uso da IA. `mes` (AAAA-MM)
+ * escolhe o mês das vendas "no mês"; sem ele, o mês de hoje.
+ */
+export async function obterInicio(mes?: string): Promise<InicioDto> {
+  const filtro = mes ? `?mes=${encodeURIComponent(mes)}` : "";
+  return exigir((await chamar<SystemsApiBody>(`/inicio${filtro}`)).inicio, "resumo");
 }
 
 export async function criarSistema(nome: string, chave = novaChave()): Promise<Sistema> {
