@@ -14,7 +14,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc -p tsconfig.json && tsc -p src/shared && tsc -p src/worker && tsc -p src/web && tsc -p test && tsc -p provas/d1-atomicidade && tsc -p provas/gemini-entrevista",
+    "typecheck": "tsc -p tsconfig.json && tsc -p src/shared && tsc -p src/worker && tsc -p src/web && tsc -p test && tsc -p provas/d1-atomicidade && tsc -p provas/gemini-entrevista && tsc -p scripts/demonstracao",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -22,7 +22,9 @@
     "cenarios:verificar": "node experiments/cenarios/verificar.js",
     "db:migrate:local": "wrangler d1 migrations apply DB --local",
     "db:migrations:list": "wrangler d1 migrations list DB --local",
-    "backup:d1": "node scripts/backup-d1.js"
+    "backup:d1": "node scripts/backup-d1.js",
+    "demonstracao": "esbuild scripts/demonstracao/executar.ts --bundle --platform=node --format=esm --target=node22 --packages=external --log-level=warning --outfile=.wrangler/demonstracao/executar.mjs && node .wrangler/demonstracao/executar.mjs",
+    "demonstracao:migrar": "wrangler d1 migrations apply DB --local --persist-to .wrangler/demonstracao"
   },
   "dependencies": {
     "@fontsource-variable/inter": "5.3.0",
@@ -64,6 +66,7 @@
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.1.2",
+    "esbuild": "0.28.2",
     "eslint": "10.14.0",
     "eslint-plugin-react-hooks": "7.1.1",
     "globals": "17.13.0",

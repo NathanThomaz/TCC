@@ -1,0 +1,20 @@
+{
+  // Só para scripts/demonstracao/executar.ts: o mesmo D1 de produção do wrangler.jsonc, acessado
+  // pelo binding remoto do Wrangler (com o login do dono). Não é usado no deploy. Cadastro aberto
+  // desligado: a carga nunca cria conta, só usa a de demonstração que já existe.
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "nexus-demonstracao",
+  "compatibility_date": "2026-10-23",
+  "vars": {
+    "APP_ENV": "production",
+    "CADASTRO_ABERTO": "false",
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "nexus-prod",
+      "database_id": "79c154c6-4370-4833-ae68-029e05f39eef",
+      "remote": true,
+    },
+  ],
+}
