@@ -20,7 +20,11 @@ import { executarCenario, type Corpo, type Metodo, type Resposta } from "./cenar
 
 function argumento(nome: string): string | undefined {
   const k = process.argv.indexOf(`--${nome}`);
-  return k >= 0 ? process.argv[k + 1] : undefined;
+  if (k < 0) return undefined;
+  const valor = process.argv[k + 1];
+  // Opção sem valor não cai no padrão em silêncio.
+  if (valor === undefined || valor.startsWith("--")) throw new Error(`--${nome} sem valor.`);
+  return valor;
 }
 
 function dataValida(texto: string): boolean {

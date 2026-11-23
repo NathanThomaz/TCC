@@ -171,13 +171,13 @@ function semAcento(texto: string): string {
 interface Evento {
   t: number;
   seq: number;
-  fazer: () => Promise<void>;
+  fazer: () => Promise<unknown>;
 }
 
 class Linha {
   private itens: Evento[] = [];
   private seq = 0;
-  em(t: number, fazer: () => Promise<void>) {
+  em(t: number, fazer: () => Promise<unknown>) {
     const ev = { t, seq: this.seq++, fazer };
     let lo = 0;
     let hi = this.itens.length;
@@ -564,8 +564,8 @@ export async function executarCenario(o: OpcoesCenario): Promise<ResumoCenario> 
     return ids;
   }
 
-  // Faixa fictícia (90000): o número tem cara de celular, mas não é de ninguém conhecido.
-  const telefone = () => `(21) 90000-${String(s.inteiro(0, 9999)).padStart(4, "0")}`;
+  // Número que não existe: no plano de numeração do Brasil, o assinante nunca começa com 1.
+  const telefone = () => `(21) 10000-${String(s.inteiro(0, 9999)).padStart(4, "0")}`;
 
   // Distribuidora: produtos, fornecedores, técnicos e a base de clientes do primeiro dia.
   const alvoDistribuidora = (x: ProdutoDemo) => {
@@ -688,7 +688,7 @@ export async function executarCenario(o: OpcoesCenario): Promise<ResumoCenario> 
   }
   const unidadesDo = (x: Item) => x.caixas * (x.produto.dados.caixa ?? 1) + x.unidades;
 
-  function itensDaVenda(cliente: Cliente): Item[] {
+  function itensDaVenda(cliente: Cliente, dia: string): Item[] {
     const grande = cliente.empresa && s.chance(0.15);
     const n = cliente.empresa ? (grande ? s.inteiro(5, 9) : s.inteiro(2, 6)) : s.inteiro(1, 4);
     const itens: Item[] = [];
@@ -696,6 +696,7 @@ export async function executarCenario(o: OpcoesCenario): Promise<ResumoCenario> 
     for (let k = 0; k < n * 2 && itens.length < n; k++) {
       const produto = s.ponderado(vendaveis, pesoGiro);
       if (usados.has(produto.id)) continue;
+      if (produto.validade !== null && produto.validade < dia) continue; // lote vencido não sai
       usados.add(produto.id);
       const caixa = produto.dados.caixa;
       let caixas = 0;
@@ -753,6 +754,11 @@ export async function executarCenario(o: OpcoesCenario): Promise<ResumoCenario> 
     t: number,
     depois?: (venda: string, quando: number) => Promise<void>,
   ): Promise<void> {
+    // O desfecho (conclusão ou descarte) é sorteado antes: se cair depois do fim da carga, a venda
+    // nem começa, para não sobrar rascunho segurando estoque.
+    const descartar = s.chance(0.02);
+    const quando = t + (descartar ? 3 : s.inteiro(2, 8)) * MIN;
+    if (quando > fim) return;
     const criada = await api("POST", em(D, "/vendas"), {
       cliente: cliente.id,
       itens: corpoItens(itens),
@@ -763,15 +769,14 @@ export async function executarCenario(o: OpcoesCenario): Promise<ResumoCenario> 
     }
     reservar(itens, 1);
     const venda = criada.body.venda;
-    if (s.chance(0.02)) {
-      linha.em(t + 3 * MIN, async () => {
+    if (descartar) {
+      linha.em(quando, async () => {
         exigir(await api("POST", em(D, `/vendas/${venda.id}/descartar`), {}), "descartar venda");
         reservar(itens, -1);
         contar("vendas descartadas");
       });
       return;
     }
-    const quando = t + s.inteiro(2, 8) * MIN;
     linha.em(quando, async () => {
       let forma = formaDePagamento(cliente);
       let concluida = await api("POST", em(D, `/vendas/${venda.id}/concluir`), {
@@ -808,7 +813,7 @@ export async function executarCenario(o: OpcoesCenario): Promise<ResumoCenario> 
         const ativos = clientes.filter((c) => c.ultimoDia === null || c.ultimoDia >= dia);
         if (ativos.length === 0) return;
         const cliente = s.ponderado(ativos, (c) => c.peso);
-        const itens = itensDaVenda(cliente);
+        const itens = itensDaVenda(cliente, dia);
         if (itens.length === 0) return recusar("venda sem estoque");
         await vender(cliente, itens, t, (id, quando) => {
           if (s.chance(0.02)) {
@@ -973,9 +978,9 @@ export async function executarCenario(o: OpcoesCenario): Promise<ResumoCenario> 
     unidades: number,
     motivo: string,
     observacao?: string,
-  ) {
+  ): Promise<boolean> {
     const n = Math.min(unidades, produto.disponivel);
-    if (n < 1) return;
+    if (n < 1) return false;
     const r = await api("POST", em(sistema, "/estoque/saidas"), {
       produto: produto.id,
       caixas: 0,
@@ -983,9 +988,13 @@ export async function executarCenario(o: OpcoesCenario): Promise<ResumoCenario> 
       motivo,
       ...(observacao ? { observacao } : {}),
     });
-    if (r.status >= 400) return recusar(`saída: ${r.body.error?.code ?? r.status}`);
+    if (r.status >= 400) {
+      recusar(`saída: ${r.body.error?.code ?? r.status}`);
+      return false;
+    }
     produto.disponivel -= n;
     contar(`saídas (${motivo})`);
+    return true;
   }
 
   for (const dia of diasDoPeriodo) {
@@ -1062,9 +1071,9 @@ export async function executarCenario(o: OpcoesCenario): Promise<ResumoCenario> 
     linha.em(instante(dia, 7, 50), async () => {
       // Lote vencido no depósito: sai do estoque com o motivo.
       for (const x of produtosD) {
-        if (x.validade !== null && x.validade < dia && x.disponivel > 0 && s.chance(0.5)) {
-          await saida(D, x, x.disponivel, "Vencido", "Lote vencido");
-          x.validade = null;
+        if (x.validade !== null && x.validade < dia && x.disponivel > 0) {
+          // Só esquece a validade se o lote saiu mesmo; senão ele continua fora das vendas.
+          if (await saida(D, x, x.disponivel, "Vencido", "Lote vencido")) x.validade = null;
         }
       }
     });
@@ -1315,6 +1324,7 @@ export async function executarCenario(o: OpcoesCenario): Promise<ResumoCenario> 
         x.acumulado += uso * s.entre(0.6, 1.4);
         const limiar = Math.max(3, uso * 4);
         if (x.acumulado < limiar) continue;
+        if (x.validade !== null && x.validade < dia) continue; // vencido não vai para a cozinha
         const n = Math.floor(x.acumulado);
         x.acumulado -= n;
         await saida(R, x, n, "Uso na cozinha", "Retirada para a cozinha");
@@ -1329,8 +1339,7 @@ export async function executarCenario(o: OpcoesCenario): Promise<ResumoCenario> 
     linha.em(instante(dia, 7, 30), async () => {
       for (const x of insumos) {
         if (x.validade !== null && x.validade < dia && x.disponivel > 0) {
-          await saida(R, x, x.disponivel, "Vencido", "Passou da validade");
-          x.validade = null;
+          if (await saida(R, x, x.disponivel, "Vencido", "Passou da validade")) x.validade = null;
         }
       }
     });

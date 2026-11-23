@@ -1,6 +1,11 @@
 import { env } from "cloudflare:workers";
 import { beforeEach, describe, expect, it } from "vitest";
-import { executarCenario, NOMES_SISTEMAS, type Corpo } from "../../scripts/demonstracao/cenario";
+import {
+  executarCenario,
+  instante,
+  NOMES_SISTEMAS,
+  type Corpo,
+} from "../../scripts/demonstracao/cenario";
 import type { VerifiedToken } from "../../src/worker/auth/firebase-token";
 import { InvalidTokenError } from "../../src/worker/auth/firebase-token";
 import { createApp } from "../../src/worker/app";
@@ -88,6 +93,12 @@ describe("massa de dados da demonstração", () => {
     expect((await chamar("GET", `/systems/${estudio}/financeiro`)).status).toBe(200);
     expect((await chamar("GET", `/systems/${restaurante}/estoque`)).status).toBe(200);
 
+    // Nenhum rascunho de venda sobrou segurando estoque.
+    const rascunhos = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM sales WHERE status = 'draft'",
+    ).first<{ n: number }>();
+    expect(rascunhos?.n).toBe(0);
+
     // A conta é única e recebeu o nome; nada ficou fora dela.
     const usuarios = await env.DB.prepare("SELECT email, display_name FROM users").all();
     expect(usuarios.results).toEqual([
@@ -108,5 +119,31 @@ describe("massa de dados da demonstração", () => {
         dias: 12,
       }),
     ).rejects.toThrow(/agendar chopeira: HTTP 500/);
+  }, 120_000);
+
+  it("carga no meio do dia: nada depois do instante real nem venda aberta pela metade", async () => {
+    const opcoes = { chamar, relogio: (t: number) => (agora = t), ate: "2026-11-20", dias: 7 };
+    // Mesma semente, mesmos horários: uma venda do último dia mostra onde cortar no meio dela.
+    await executarCenario(opcoes);
+    const venda = await env.DB.prepare(
+      `SELECT created_at, completed_at FROM sales
+       WHERE status = 'completed' AND created_at >= ? ORDER BY created_at LIMIT 1`,
+    )
+      .bind(instante("2026-11-20", 0, 0))
+      .first<{ created_at: number; completed_at: number }>();
+    expect(venda).not.toBeNull();
+    const corte = Math.floor((venda!.created_at + venda!.completed_at) / 2);
+    expect(corte).toBeGreaterThan(venda!.created_at);
+
+    await limparBanco();
+    await executarCenario({ ...opcoes, limite: corte });
+    const depois = await env.DB.prepare(
+      `SELECT (SELECT COUNT(*) FROM sales WHERE created_at > ?1 OR status = 'draft')
+            + (SELECT COUNT(*) FROM stock_movements WHERE created_at > ?1)
+            + (SELECT COUNT(*) FROM financial_entries WHERE created_at > ?1) AS n`,
+    )
+      .bind(corte)
+      .first<{ n: number }>();
+    expect(depois?.n).toBe(0);
   }, 120_000);
 });
