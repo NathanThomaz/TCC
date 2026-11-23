@@ -157,10 +157,11 @@ export function Entrar() {
             >
               <MailCheck className="size-5 shrink-0 text-success" aria-hidden />
               <div>
-                <p className="font-medium">Conta criada. Falta confirmar o e-mail.</p>
+                <p className="font-medium">Pronto. Falta confirmar o e-mail.</p>
                 <p className="mt-1 text-muted-foreground">
                   Enviamos um link para <strong>{email.trim()}</strong>. Abra o link (confira o
-                  spam) e depois entre com o seu e-mail e senha.
+                  spam) e depois entre com o seu e-mail e senha. Se este e-mail já tinha conta, o
+                  link serve para redefinir a senha.
                 </p>
               </div>
             </div>

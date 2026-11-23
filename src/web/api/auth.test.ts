@@ -93,6 +93,46 @@ describe("entrar", () => {
   });
 });
 
+describe("criarConta", () => {
+  it("e-mail que já tem conta responde igual a uma conta nova e manda o link de redefinir", async () => {
+    firebase.createUserWithEmailAndPassword.mockRejectedValue(
+      erroFirebase("auth/email-already-in-use"),
+    );
+    firebase.sendPasswordResetEmail.mockResolvedValue();
+    await expect(
+      criarConta("Maria", " maria@exemplo.com ", "senha-ficticia"),
+    ).resolves.toBeUndefined();
+    expect(firebase.sendPasswordResetEmail).toHaveBeenCalledWith(
+      expect.anything(),
+      "maria@exemplo.com",
+    );
+  });
+
+  it("e-mail que já tem conta: falha no envio do link não muda a resposta", async () => {
+    firebase.createUserWithEmailAndPassword.mockRejectedValue(
+      erroFirebase("auth/email-already-in-use"),
+    );
+    firebase.sendPasswordResetEmail.mockRejectedValue(erroFirebase("auth/too-many-requests"));
+    await expect(
+      criarConta("Maria", "maria@exemplo.com", "senha-ficticia"),
+    ).resolves.toBeUndefined();
+  });
+
+  it("só o cadastro novo guarda o nome pendente", async () => {
+    localStorage.clear();
+    firebase.createUserWithEmailAndPassword.mockRejectedValueOnce(
+      erroFirebase("auth/email-already-in-use"),
+    );
+    firebase.sendPasswordResetEmail.mockResolvedValue();
+    await criarConta("Intruso", "existente@exemplo.com", "senha-ficticia");
+    expect(localStorage.getItem("nexus:nome-pendente:existente@exemplo.com")).toBeNull();
+
+    firebase.createUserWithEmailAndPassword.mockResolvedValueOnce({ user: {} });
+    await criarConta("Maria Souza", "Nova@Exemplo.com", "senha-ficticia");
+    expect(localStorage.getItem("nexus:nome-pendente:nova@exemplo.com")).toBe("Maria Souza");
+  });
+});
+
 describe("configuração e política de senha", () => {
   it("chave recusada já na inicialização vira servico_indisponivel", async () => {
     obterAuth.mockRejectedValueOnce(erroFirebase("auth/invalid-api-key"));

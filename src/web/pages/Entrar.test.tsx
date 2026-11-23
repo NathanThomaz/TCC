@@ -118,7 +118,7 @@ describe("Entrar", () => {
       criarConta.mockResolvedValueOnce(undefined);
       await abrirCadastro();
       preencher("senha-ficticia-1");
-      expect(await screen.findByText("Conta criada. Falta confirmar o e-mail.")).toBeTruthy();
+      expect(await screen.findByText("Pronto. Falta confirmar o e-mail.")).toBeTruthy();
       expect(criarConta).toHaveBeenCalledWith(
         "Maria Souza",
         "maria@exemplo.com",
@@ -135,11 +135,11 @@ describe("Entrar", () => {
       expect(criarConta).not.toHaveBeenCalled();
     });
 
-    it("avisa quando o e-mail já tem conta", async () => {
-      criarConta.mockRejectedValueOnce(new ApiError("email_em_uso", "x"));
+    it("falha do serviço no cadastro aparece como indisponível", async () => {
+      criarConta.mockRejectedValueOnce(new ApiError("servico_indisponivel", "x"));
       await abrirCadastro();
       preencher("senha-ficticia-1");
-      expect(await screen.findByText("Este e-mail já tem conta")).toBeTruthy();
+      expect(await screen.findByText("Serviço indisponível")).toBeTruthy();
     });
   });
 });

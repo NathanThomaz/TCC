@@ -234,6 +234,9 @@ function lerGuardado(chave: string): string | null {
 /**
  * Cria a conta no Firebase e manda o link de confirmação. A conta do Nexus nasce no primeiro
  * acesso com o e-mail confirmado; o nome fica guardado até lá.
+ *
+ * E-mail que já tem conta: a resposta é a mesma de uma conta nova, para a tela não revelar quem
+ * tem conta (revisão do Codex, 2026-11-23). O dono do e-mail recebe o link de redefinir a senha.
  */
 export async function criarConta(nome: string, email: string, senha: string): Promise<void> {
   const auth = await exigirAuth();
@@ -242,6 +245,11 @@ export async function criarConta(nome: string, email: string, senha: string): Pr
     await sendEmailVerification(user);
   } catch (error) {
     await signOut(auth).catch(() => undefined);
+    if ((error as { code?: unknown } | null)?.code === "auth/email-already-in-use") {
+      // A falha deste envio também não pode mudar a resposta da tela (revisão do Codex).
+      await enviarRecuperacao(email).catch(() => undefined);
+      return;
+    }
     traduzir(error);
   }
   await signOut(auth);
