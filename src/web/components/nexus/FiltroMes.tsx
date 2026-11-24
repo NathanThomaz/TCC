@@ -21,14 +21,18 @@ export function FiltroMes({
   valor,
   onMudar,
   carregando = false,
+  hoje: hojeDaApi,
 }: {
   valor: string | null;
   onMudar: (mes: string | null) => void;
   /** Os números na tela ainda são do mês anterior, enquanto os do escolhido carregam. */
   carregando?: boolean;
+  /** Hoje segundo a última resposta da API (acompanha a virada do mês com a tela aberta). */
+  hoje?: string | undefined;
 }) {
-  // Lido uma vez ao montar: basta para a lista de meses.
-  const [hoje] = useState(() => paraCampoLocal(Date.now()).slice(0, 10));
+  // Sem resposta ainda (ou com erro), vale o relógio deste aparelho, lido uma vez ao montar.
+  const [hojeLocal] = useState(() => paraCampoLocal(Date.now()).slice(0, 10));
+  const hoje = hojeDaApi ?? hojeLocal;
   const atual = mesDoDia(hoje);
   const escolhido = valor ?? atual;
   const meses = mesesDoFiltro(hoje);

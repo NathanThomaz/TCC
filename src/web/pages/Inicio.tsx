@@ -261,8 +261,8 @@ export function Inicio() {
           titulo={saudacao}
           acoes={
             <>
-              {/* Falhou um mês escolhido: o seletor continua, para voltar a outro mês. */}
-              {mes !== null && <FiltroMes valor={mes} onMudar={setMes} />}
+              {/* Com a consulta falhando, o seletor continua, para tentar outro mês. */}
+              <FiltroMes valor={mes} onMudar={setMes} />
               {criar}
             </>
           }
@@ -317,7 +317,12 @@ export function Inicio() {
           <div className="flex flex-wrap items-center gap-2">
             {/* O filtro só muda as vendas do mês: aparece quando algum sistema vende. */}
             {t.temVendas && (
-              <FiltroMes valor={mes} onMudar={setMes} carregando={q.isPlaceholderData} />
+              <FiltroMes
+                valor={mes}
+                onMudar={setMes}
+                carregando={q.isPlaceholderData}
+                hoje={d.hoje}
+              />
             )}
             {criar}
           </div>
@@ -342,7 +347,7 @@ export function Inicio() {
             <h2 id="titulo-hoje" className="sr-only">
               Resumo de hoje
             </h2>
-            <div className={GRADE}>
+            <div className={cn(GRADE, "transition-opacity", q.isPlaceholderData && "opacity-60")}>
               {numeros.map((n) => (
                 <Numero key={n.rotulo} {...n} />
               ))}

@@ -425,6 +425,7 @@ export function Painel() {
           valor={mes}
           onMudar={(m) => setFiltro({ sistema: app.id, mes: m })}
           carregando={q.isPlaceholderData}
+          hoje={p?.hoje}
         />
       </div>
       <section aria-labelledby="titulo-numeros" aria-busy={q.isPlaceholderData}>
@@ -440,7 +441,13 @@ export function Painel() {
         ) : q.isError ? (
           <ErrorState mensagem={q.error.message} onTentar={() => void q.refetch()} />
         ) : (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          // Enquanto o mês escolhido carrega, os números do anterior ficam esmaecidos.
+          <div
+            className={cn(
+              "grid gap-3 transition-opacity sm:grid-cols-2 lg:grid-cols-4",
+              q.isPlaceholderData && "opacity-60",
+            )}
+          >
             {p &&
               indicadores(p).map((i) => (
                 <Indicador
