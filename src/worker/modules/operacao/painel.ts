@@ -1,8 +1,10 @@
 import type { PainelDto } from "../../../shared/api";
 import type { ConfigDraft } from "../../../shared/contract/schema";
 import { deCampoLocal, inicioDoDiaLocal, paraCampoLocal } from "../../../shared/dominio/agenda";
+import { limitesDoMes, mesDoDia } from "../../../shared/dominio/periodo";
 import { regraDo } from "../../../shared/dominio/regras";
 import { json } from "../../http/responses";
+import { mesDaConsulta } from "../comum";
 import type { Handler } from "../../http/router";
 import { nomeClienteSql } from "../comum";
 import { abrirOperacao } from "./contexto";
@@ -44,17 +46,22 @@ const CRITICOS = 6;
 
 export const obterPainel: Handler = async (ctx) => {
   const op = await abrirOperacao(ctx, null);
+  const agora = ctx.clock.now();
   return json({
-    painel: await calcularPainel(ctx.env.DB, op.systemId, op.config, ctx.clock.now()),
+    painel: await calcularPainel(ctx.env.DB, op.systemId, op.config, agora, mesDaConsulta(ctx)),
   });
 };
 
-/** Números do painel de um sistema ativo (também usados no resumo da tela inicial). */
+/**
+ * Números do painel de um sistema ativo (também usados no resumo da tela inicial). `mes` (AAAA-MM,
+ * já validado) escolhe o mês dos números "do mês"; sem ele, o mês de hoje.
+ */
 export async function calcularPainel(
   db: D1Database,
   systemId: string,
   config: ConfigDraft,
   agora: number,
+  mesEscolhido?: string,
 ): Promise<PainelDto> {
   const hoje = paraCampoLocal(agora).slice(0, 10);
   const [ano, mes, dia] = hoje.split("-").map(Number) as [number, number, number];
@@ -62,11 +69,11 @@ export async function calcularPainel(
     new Date(Date.UTC(a, m - 1, d)).toISOString().slice(0, 10);
   const inicioHoje = deCampoLocal(`${hoje}T00:00`)!;
   const inicioAmanha = deCampoLocal(`${iso(ano, mes, dia + 1)}T00:00`)!;
-  const inicioMes = deCampoLocal(`${iso(ano, mes, 1)}T00:00`)!;
-  const inicioProximoMes = deCampoLocal(`${iso(ano, mes + 1, 1)}T00:00`)!;
+  const mesDoPainel = mesEscolhido ?? mesDoDia(hoje);
+  const { inicio: inicioMes, fim: inicioProximoMes } = limitesDoMes(mesDoPainel);
   const tem = (m: string) => config.modulos.includes(m as never);
   const s = systemId;
-  const painel: PainelDto = { hoje };
+  const painel: PainelDto = { hoje, mes: mesDoPainel };
 
   if (tem("vendas")) {
     const soma = (de: number, ate: number) =>
@@ -396,7 +403,7 @@ export async function calcularPainel(
         ? { vencendoEmBreve: { dias: aviso.dias, quantidade: n("bn"), totalCentavos: n("bt") } }
         : {}),
     };
-    const orcamento = await orcamentoDoMes(db, s, config, dia);
+    const orcamento = await orcamentoDoMes(db, s, config, `${mesDoPainel}-01`);
     if (orcamento) painel.financeiro.orcamento = orcamento;
   }
 

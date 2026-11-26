@@ -35,7 +35,7 @@ const ids = (p: PainelDto) => indicadores(p).map((i) => i.id);
 
 describe("indicadores do painel", () => {
   it("comércio: 8 indicadores de vendas, clientes e estoque", () => {
-    expect(ids({ hoje: "", vendas, clientes, estoque })).toEqual([
+    expect(ids({ hoje: "", mes: "", vendas, clientes, estoque })).toEqual([
       "vendas-hoje",
       "vendas-mes",
       "ticket",
@@ -48,19 +48,29 @@ describe("indicadores do painel", () => {
   });
 
   it("serviços: 8 indicadores de clientes e agenda", () => {
-    expect(ids({ hoje: "", clientes, agenda })).toHaveLength(LIMITE_INDICADORES);
-    expect(ids({ hoje: "", clientes, agenda })).toContain("novos");
+    expect(ids({ hoje: "", mes: "", clientes, agenda })).toHaveLength(LIMITE_INDICADORES);
+    expect(ids({ hoje: "", mes: "", clientes, agenda })).toContain("novos");
   });
 
   it("comércio com serviços: os 8 mais importantes, sem passar do limite", () => {
-    const lista = ids({ hoje: "", vendas, clientes, estoque, agenda });
+    const lista = ids({ hoje: "", mes: "", vendas, clientes, estoque, agenda });
     expect(lista).toHaveLength(LIMITE_INDICADORES);
     expect(lista).toEqual(expect.arrayContaining(["atendimentos-hoje", "ticket", "proximos-7"]));
   });
 
+  it('filtro de mês: os rótulos dizem o mês escolhido; no mês atual, "no mês"', () => {
+    const rotulos = (mes: string) =>
+      indicadores({ hoje: "2026-12-02", mes, vendas, clientes }).map((i) => i.rotulo);
+    expect(rotulos("2026-12")).toContain("Vendas no mês");
+    expect(rotulos("2026-11")).toEqual(
+      expect.arrayContaining(["Vendas em novembro", "Ticket médio em novembro"]),
+    );
+    expect(rotulos("2026-11").join(" ")).not.toContain("no mês");
+  });
+
   it("ticket médio sem vendas é zero, não divisão por zero", () => {
     const sem = { ...vendas, mes: { quantidade: 0, totalCentavos: 0 } };
-    const ticket = indicadores({ hoje: "", vendas: sem }).find((i) => i.id === "ticket");
+    const ticket = indicadores({ hoje: "", mes: "", vendas: sem }).find((i) => i.id === "ticket");
     expect(ticket!.valor).toBe("R$ 0,00");
   });
 
@@ -81,6 +91,7 @@ describe("indicadores do painel", () => {
     };
     const lista = ids({
       hoje: "",
+      mes: "",
       vendas,
       clientes,
       estoque,
@@ -92,6 +103,7 @@ describe("indicadores do painel", () => {
     expect(lista).toEqual(expect.arrayContaining(["vencidos", "a-receber", "a-pagar"]));
     const semVencidos = ids({
       hoje: "",
+      mes: "",
       vendas,
       clientes,
       estoque,
@@ -108,7 +120,7 @@ describe("indicadores do painel", () => {
       valorVendaCentavos: 4500,
       lucroPrevistoCentavos: 1500,
     };
-    const lista = ids({ hoje: "", vendas, clientes, estoque: { ...estoque, custo } });
+    const lista = ids({ hoje: "", mes: "", vendas, clientes, estoque: { ...estoque, custo } });
     expect(lista).toContain("lucro-estoque");
     expect(lista).not.toContain("valor-estoque");
   });

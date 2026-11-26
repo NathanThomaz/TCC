@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import {
   ArrowDownCircle,
   ArrowUpCircle,
@@ -28,9 +29,11 @@ import {
 import type { PainelDto } from "../../../shared/api";
 import type { ModuleId } from "../../../shared/contract/catalog";
 import { formatarDataHora } from "../../../shared/dominio/agenda";
+import { mesDoDia, nomeDoMes, rotuloDoMes } from "../../../shared/dominio/periodo";
 import { formatarCentavos } from "../../../shared/dominio/precos";
 import { obterPainel } from "@/api/operacao";
 import { ErrorState } from "@/components/nexus/Estados";
+import { FiltroMes } from "@/components/nexus/FiltroMes";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ROTULO_PAGAMENTO, textoDaRegra } from "@/lib/nexus";
 import { Link } from "@/lib/rotas";
@@ -108,6 +111,8 @@ export const LIMITE_INDICADORES = 8;
  * prioridades fazem os três modelos completarem 8: comércio, serviços e comércio com serviços.
  */
 export function indicadores(p: PainelDto): IndicadorDados[] {
+  // "no mês" ou "em outubro": o filtro de mês muda só os números do período.
+  const noMes = rotuloDoMes(p.mes, p.hoje);
   const lista: IndicadorDados[] = [];
   const add = (i: IndicadorDados) => lista.push(i);
   if (p.vendas) {
@@ -123,7 +128,7 @@ export function indicadores(p: PainelDto): IndicadorDados[] {
     add({
       id: "vendas-mes",
       prioridade: 2,
-      rotulo: "Vendas no mês",
+      rotulo: `Vendas ${noMes}`,
       icone: TrendingUp,
       valor: formatarCentavos(v.mes.totalCentavos),
       detalhe: `${vendasTexto(v.mes.quantidade)} · ${plural(v.canceladasNoMes, "cancelada", "canceladas")}`,
@@ -131,7 +136,7 @@ export function indicadores(p: PainelDto): IndicadorDados[] {
     add({
       id: "ticket",
       prioridade: 6,
-      rotulo: "Ticket médio no mês",
+      rotulo: `Ticket médio ${noMes}`,
       icone: Receipt,
       valor: formatarCentavos(
         v.mes.quantidade ? Math.round(v.mes.totalCentavos / v.mes.quantidade) : 0,
@@ -155,7 +160,7 @@ export function indicadores(p: PainelDto): IndicadorDados[] {
       rotulo: "Clientes ativos",
       icone: Users,
       valor: String(c.ativos),
-      detalhe: `${plural(c.novosNoMes, "novo", "novos")} no mês · ${plural(c.inativos, "inativo", "inativos")}`,
+      detalhe: `${plural(c.novosNoMes, "novo", "novos")} ${noMes} · ${plural(c.inativos, "inativo", "inativos")}`,
     });
     if (p.vendas) {
       add({
@@ -165,16 +170,16 @@ export function indicadores(p: PainelDto): IndicadorDados[] {
         icone: UserCheck,
         valor: String(p.vendas.clientesNoMes),
         // Contagem simples: quem comprou e depois foi inativado continua contando no mês.
-        detalhe: "Diferentes, com venda concluída no mês",
+        detalhe: `Diferentes, com venda concluída ${noMes}`,
       });
     } else {
       add({
         id: "novos",
         prioridade: 13,
-        rotulo: "Clientes novos no mês",
+        rotulo: `Clientes novos ${noMes}`,
         icone: UserPlus,
         valor: String(c.novosNoMes),
-        detalhe: "Cadastrados neste mês",
+        detalhe: noMes === "no mês" ? "Cadastrados neste mês" : `Cadastrados ${noMes}`,
       });
     }
   }
@@ -235,7 +240,7 @@ export function indicadores(p: PainelDto): IndicadorDados[] {
     add({
       id: "concluidos-mes",
       prioridade: 11,
-      rotulo: "Concluídos no mês",
+      rotulo: `Concluídos ${noMes}`,
       icone: CalendarCheck,
       valor: String(a.concluidosNoMes),
       detalhe:
@@ -254,7 +259,7 @@ export function indicadores(p: PainelDto): IndicadorDados[] {
     add({
       id: "cancelados-mes",
       prioridade: 14,
-      rotulo: "Cancelados no mês",
+      rotulo: `Cancelados ${noMes}`,
       icone: Ban,
       alerta: a.canceladosNoMes > 0 && a.canceladosNoMes >= a.concluidosNoMes,
       valor: String(a.canceladosNoMes),
@@ -331,7 +336,7 @@ export function indicadores(p: PainelDto): IndicadorDados[] {
       rotulo: "A receber",
       icone: ArrowDownCircle,
       valor: formatarCentavos(f.aReceber.totalCentavos),
-      detalhe: `${plural(f.aReceber.quantidade, "conta pendente", "contas pendentes")} · ${formatarCentavos(f.recebidoNoMesCentavos)} recebidos no mês`,
+      detalhe: `${plural(f.aReceber.quantidade, "conta pendente", "contas pendentes")} · ${formatarCentavos(f.recebidoNoMesCentavos)} recebidos ${noMes}`,
     });
     add({
       id: "a-pagar",
@@ -339,7 +344,7 @@ export function indicadores(p: PainelDto): IndicadorDados[] {
       rotulo: "A pagar",
       icone: ArrowUpCircle,
       valor: formatarCentavos(f.aPagar.totalCentavos),
-      detalhe: `${plural(f.aPagar.quantidade, "conta pendente", "contas pendentes")} · ${formatarCentavos(f.pagoNoMesCentavos)} pagos no mês`,
+      detalhe: `${plural(f.aPagar.quantidade, "conta pendente", "contas pendentes")} · ${formatarCentavos(f.pagoNoMesCentavos)} pagos ${noMes}`,
     });
   }
   if (p.pagamentos) {
@@ -347,12 +352,12 @@ export function indicadores(p: PainelDto): IndicadorDados[] {
     add({
       id: "forma-mais-usada",
       prioridade: 10.5,
-      rotulo: "Forma mais usada no mês",
+      rotulo: `Forma mais usada ${noMes}`,
       icone: Banknote,
       valor: mais ? ROTULO_PAGAMENTO[mais.forma] : "—",
       detalhe: mais
         ? `${formatarCentavos(mais.totalCentavos)} em ${vendasTexto(mais.quantidade)}`
-        : "Nenhuma venda no mês",
+        : `Nenhuma venda ${noMes}`,
     });
   }
   if (p.compras) {
@@ -361,7 +366,7 @@ export function indicadores(p: PainelDto): IndicadorDados[] {
     add({
       id: "compras-mes",
       prioridade: 11.5,
-      rotulo: "Compras no mês",
+      rotulo: `Compras ${noMes}`,
       icone: ShoppingBag,
       valor: formatarCentavos(c.noMes.totalCentavos),
       detalhe: `${plural(c.noMes.quantidade, "compra", "compras")} · ${plural(c.fornecedoresAtivos, "fornecedor ativo", "fornecedores ativos")}`,
@@ -390,18 +395,40 @@ export function indicadores(p: PainelDto): IndicadorDados[] {
 export function Painel() {
   const app = useApp();
   const { config } = app;
+  // Mês dos números "do mês" (null = o atual), guardado por sistema: ao trocar de sistema, volta
+  // ao mês atual. Hoje e o estado atual não mudam com ele.
+  const [filtro, setFiltro] = useState<{ sistema: string; mes: string | null } | null>(null);
+  const mes = filtro?.sistema === app.id ? filtro.mes : null;
   const q = useQuery({
-    queryKey: ["painel", app.id],
-    queryFn: () => obterPainel(app.id),
+    queryKey: ["painel", app.id, mes ?? "atual"],
+    queryFn: () => obterPainel(app.id, mes ?? undefined),
     refetchInterval: 60_000,
+    // Ao trocar o mês, os números anteriores ficam na tela até os novos chegarem; nunca os de
+    // outro sistema.
+    placeholderData: (anterior, consulta) =>
+      consulta?.queryKey[1] === app.id ? anterior : undefined,
   });
   const p = q.data;
+  const outroMes = p !== undefined && p.mes !== mesDoDia(p.hoje);
   const regras = config.regras.map((r) => textoDaRegra(r, config));
   const caminho = (c: string) => `/sistemas/$id/app/${c}`;
 
   return (
     <div className="space-y-6">
-      <section aria-labelledby="titulo-numeros">
+      <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-2">
+        {outroMes && !q.isPlaceholderData && (
+          <p className="text-sm text-muted-foreground">
+            Números de {nomeDoMes(p.mes)}; hoje, estoque e contas em aberto continuam atuais.
+          </p>
+        )}
+        <FiltroMes
+          valor={mes}
+          onMudar={(m) => setFiltro({ sistema: app.id, mes: m })}
+          carregando={q.isPlaceholderData}
+          hoje={p?.hoje}
+        />
+      </div>
+      <section aria-labelledby="titulo-numeros" aria-busy={q.isPlaceholderData}>
         <h2 id="titulo-numeros" className="sr-only">
           Números do negócio
         </h2>
@@ -414,7 +441,13 @@ export function Painel() {
         ) : q.isError ? (
           <ErrorState mensagem={q.error.message} onTentar={() => void q.refetch()} />
         ) : (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          // Enquanto o mês escolhido carrega, os números do anterior ficam esmaecidos.
+          <div
+            className={cn(
+              "grid gap-3 transition-opacity sm:grid-cols-2 lg:grid-cols-4",
+              q.isPlaceholderData && "opacity-60",
+            )}
+          >
             {p &&
               indicadores(p).map((i) => (
                 <Indicador
@@ -605,7 +638,7 @@ export function Painel() {
               className="rounded-xl border bg-card p-4 shadow-card"
             >
               <h2 id="titulo-orcamento-painel" className="mb-3 text-lg font-semibold">
-                Orçamento do mês
+                Orçamento {outroMes ? `de ${nomeDoMes(p.mes)}` : "do mês"}
               </h2>
               <OrcamentoDoMes itens={p.financeiro.orcamento} />
             </section>
