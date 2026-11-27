@@ -152,19 +152,15 @@ async function vendas(ctx: RequestContext, op: Operacao, c: Consulta): Promise<R
   };
 }
 
+const LISTA_ESTOQUE = 20;
+
 async function estoque(ctx: RequestContext, op: Operacao, c: Consulta): Promise<Resposta> {
   if (!temModulo(op.config, "estoque")) return semModulo("estoque");
-  const { results } = await ctx.env.DB.prepare(
-    `SELECT p.name, p.physical, (SELECT COALESCE(SUM(r.quantity), 0) FROM reservations r
-       WHERE r.product_id = p.id AND r.status = 'active' AND r.expires_at > ?1) AS reserved
-     FROM products p WHERE p.system_id = ?2 AND p.status = 'active'
-       AND (?3 IS NULL OR instr(${modulos.semAcentoSql("p.name")}, ?3) > 0)
-     ORDER BY p.name COLLATE NOCASE LIMIT 20`,
-  )
-    .bind(ctx.clock.now(), op.systemId, modulos.termoBusca(c.produto))
-    .all<{ name: string; physical: number; reserved: number }>();
-  const filtros = c.produto ? [`Produto: contém “${c.produto}”`] : ["Todos os produtos ativos"];
-  if (results.length === 0) {
+  const produtos = await modulos.saldosDoEstoque(ctx, op, c.produto);
+  const filtros = c.produto
+    ? [`Produto: contém “${c.produto}”`]
+    : ["Todos os produtos ativos, do que está acabando para o que tem mais"];
+  if (produtos.length === 0) {
     return {
       texto: c.produto
         ? `Nenhum produto ativo com “${c.produto}” no nome.`
@@ -173,13 +169,36 @@ async function estoque(ctx: RequestContext, op: Operacao, c: Consulta): Promise<
       origem: "saldos de estoque agora",
     };
   }
+  // Com um produto citado, em ordem de nome; sem ele, a pergunta é "o que está acabando": abaixo
+  // do mínimo primeiro e depois do menor disponível (mesmo critério do painel).
+  const ordenados = c.produto
+    ? produtos
+    : [...produtos].sort(
+        (a, b) =>
+          Number(b.abaixo) - Number(a.abaixo) ||
+          a.disponivel - b.disponivel ||
+          a.nome.localeCompare(b.nome, "pt-BR"),
+      );
+  const abaixo = produtos.filter((p) => p.abaixo).length;
+  const temMinimo = produtos.some((p) => p.minimo !== null);
+  const cabecalho =
+    c.produto || !temMinimo
+      ? ""
+      : abaixo === 0
+        ? "Nenhum produto abaixo do estoque mínimo. Os de menor saldo:\n"
+        : `${abaixo} ${abaixo === 1 ? "produto abaixo" : "produtos abaixo"} do estoque mínimo:\n`;
+  const linhas = ordenados.slice(0, LISTA_ESTOQUE).map((p) => {
+    const minimo = p.minimo !== null ? `, mínimo ${p.minimo}` : "";
+    const alerta = p.abaixo ? (p.disponivel <= 0 ? " (sem estoque)" : " (abaixo do mínimo)") : "";
+    return `${p.nome}: físico ${p.fisico}, reservado ${p.reservado}, disponível ${p.disponivel}${minimo}${alerta}`;
+  });
   return {
-    texto: results
-      .map(
-        (p) =>
-          `${p.name}: físico ${p.physical}, reservado ${p.reserved}, disponível ${p.physical - p.reserved}`,
-      )
-      .join("\n"),
+    texto:
+      cabecalho +
+      linhas.join("\n") +
+      (ordenados.length > LISTA_ESTOQUE
+        ? `\n(Mostrando ${LISTA_ESTOQUE} de ${ordenados.length}; cite o nome do produto para ver outro.)`
+        : ""),
     filtros,
     origem: "saldos de estoque agora (disponível = físico − reservado em pedidos abertos no prazo)",
   };
@@ -337,6 +356,8 @@ async function responder(ctx: RequestContext, op: Operacao, c: Consulta): Promis
       return modulos.pagamentos(ctx, op, c);
     case "compras":
       return modulos.compras(ctx, op, c);
+    case "reposicao":
+      return modulos.reposicao(ctx, op, c);
     case "financeiro":
       return modulos.financeiro(ctx, op, c);
     case "como_usar":
@@ -358,6 +379,19 @@ export const perguntar: Handler = async (ctx) => {
   if (started.kind === "replay") return estado(ctx, op, started.statusCode);
   if (!ctx.ia) throw iaNaoConfigurada();
 
+  // A pergunta anterior vai junto só para a IA entender referências ("dessa compra", "e em
+  // outubro?"); ela continua classificando apenas a atual, e nenhum dado do banco vai para a IA.
+  const anterior = await ctx.env.DB.prepare(
+    `SELECT m.content FROM messages m JOIN conversations c ON c.id = m.conversation_id
+     WHERE c.system_id = ? AND c.user_id = ? AND c.kind = 'consulta' AND m.role = 'usuario'
+     ORDER BY m.seq DESC LIMIT 1`,
+  )
+    .bind(op.systemId, op.user.id)
+    .first<{ content: string }>();
+  const texto = anterior
+    ? `Pergunta anterior (só contexto): ${anterior.content}\nPergunta atual: ${body.texto}`
+    : body.texto;
+
   const resposta = await chamarComOrcamento(
     ctx,
     ctx.ia,
@@ -373,8 +407,7 @@ export const perguntar: Handler = async (ctx) => {
         op.config.aparencia.nome,
         paraCampoLocal(ctx.clock.now()).slice(0, 10),
       ),
-      // Só a pergunta atual: cada consulta é independente e o histórico não vai para a IA.
-      mensagens: [{ papel: "usuario", texto: body.texto }],
+      mensagens: [{ papel: "usuario", texto }],
       schema: consultaGeminiSchema(),
     },
   );
