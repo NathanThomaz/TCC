@@ -523,12 +523,125 @@ describe("chat de consulta: módulos opcionais e bordas (revisão do Codex)", ()
     expect(pag.texto).toBe("A prazo: 1 venda, R$ 12,00");
     const fin = await ultima({ intencao: "financeiro" });
     expect(fin.texto).toContain("A receber (pendente): R$ 12,00. A pagar (pendente): R$ 40,00.");
-    expect(fin.texto).toContain("Vencidas: 2 (R$ 40,00).");
+    expect(fin.texto).toContain(
+      "Vencidas: 2 (R$ 40,00); pergunte “quem está devendo?” para ver a lista.",
+    );
     const prod = await ultima({ intencao: "produtos", produto: "água" });
     expect(prod.texto).toContain("custo R$ 1,00 (margem de 67% no varejo)");
     // Isolamento: no sistema original (sem os módulos), nada disso aparece.
     S = original;
     expect((await ultima({ intencao: "compras" })).texto).toContain("não tem o módulo");
+  });
+
+  it("financeiro com foco: vencidas com atraso, a receber e a pagar no período (pedido do dono, 2026-11-27)", async () => {
+    await comModulos();
+    // As duas compras venceram em 01/11 (hoje é 05/11); a venda a prazo vence em 30 dias.
+    const vencidas = await ultima({ intencao: "financeiro", foco: "vencidas" });
+    const linhas = vencidas.texto.split("\n");
+    expect(linhas[0]).toBe("2 contas vencidas, total de R$ 40,00:");
+    expect(linhas.slice(1)).toHaveLength(2);
+    for (const l of linhas.slice(1)) {
+      expect(l).toMatch(/^01\/11\/2026 · a pagar · .+ · R\$ 20,00 \(vencida há 4 dias\)$/);
+    }
+    const receber = await ultima({ intencao: "financeiro", foco: "receber" });
+    expect(receber.texto).toMatch(
+      /^1 conta a receber, total de R\$ 12,00:\n05\/12\/2026 · a receber · .*Ana.* · R\$ 12,00$/,
+    );
+    const pagarDez = await ultima({
+      intencao: "financeiro",
+      foco: "pagar",
+      periodo: { de: "2026-12-01", ate: "2026-12-31" },
+    });
+    expect(pagarDez.texto).toBe("Não há contas pendentes a pagar nesse período.");
+    expect(pagarDez.filtros).toEqual([
+      "Pendentes a pagar, com vencimento de 01/12/2026 a 31/12/2026",
+    ]);
+    // Sem foco, os próximos vencimentos são de hoje em diante (as vencidas têm o próprio recorte).
+    const geral = await ultima({ intencao: "financeiro" });
+    expect(geral.texto).toMatch(/Próximos vencimentos:\n05\/12\/2026 · a receber/);
+    expect(geral.texto).not.toContain("vencida há");
+    // "Quem está me devendo?" = só a receber vencidas; "o que estou devendo?" = a pagar vencidas.
+    const devendo = await ultima({
+      intencao: "financeiro",
+      foco: "receber",
+      apenas_vencidas: true,
+    });
+    expect(devendo.texto).toBe("Não há contas a receber vencidas.");
+    const devo = await ultima({ intencao: "financeiro", foco: "pagar", apenas_vencidas: true });
+    expect(devo.texto.split("\n")[0]).toBe("2 contas a pagar vencidas, total de R$ 40,00:");
+    expect(devo.texto).toMatch(/(Sul|Norte)/);
+    expect(devo.filtros).toEqual(["A pagar vencidas: antes de 05/11/2026"]);
+    // As vencidas também respeitam o período citado (pelo vencimento).
+    const semana = await ultima({
+      intencao: "financeiro",
+      foco: "vencidas",
+      periodo: { de: "2026-11-02", ate: "2026-11-04" },
+    });
+    expect(semana.texto).toBe("Não há contas vencidas nesse período.");
+    const invertido = await ultima({
+      intencao: "financeiro",
+      foco: "vencidas",
+      periodo: { de: "2026-11-04", ate: "2026-11-02" },
+    });
+    expect(invertido.texto).toBe("Não entendi o período. Pode repetir as datas?");
+  });
+
+  it("validade: vencidos e vencendo dentro do aviso; sem a regra, diz que não controla", async () => {
+    expect((await ultima({ intencao: "validade" })).texto).toBe(
+      "Este sistema não controla a validade dos produtos (a regra de validade não está ligada).",
+    );
+    const id = (await call("POST", "/systems", ADMIN, { nome: "Com validade" })).body.sistema!.id;
+    const v = (
+      await call("POST", `/systems/${id}/versions`, ADMIN, {
+        origem: "formulario",
+        rascunho: {
+          ...DISTRIBUIDORA,
+          regras: [
+            ...DISTRIBUIDORA.regras,
+            { tipo: "validade_produto", dias_aviso: 7, requisitos: ["REQ-01"] },
+          ],
+        },
+      })
+    ).body.versao!;
+    await call("POST", `/systems/${id}/versions/${v.id}/approve`, ADMIN, { hash: v.hash });
+    await call("POST", `/systems/${id}/activate`, ADMIN, { versao: v.id });
+    S = id;
+    for (const [nome, validade, estoqueInicial] of [
+      ["Iogurte", "2026-11-03", 4],
+      ["Leite", "2026-11-08", 10],
+      ["Queijo", "2026-11-20", 3],
+      ["Manteiga", "2026-11-06", undefined],
+    ] as const) {
+      expect(
+        (
+          await call("POST", p("/produtos"), ADMIN, {
+            nome,
+            varejoCentavos: 500,
+            atacadoCentavos: 450,
+            validade,
+            ...(estoqueInicial ? { estoqueInicial } : {}),
+          })
+        ).status,
+      ).toBe(201);
+    }
+    // Queijo vence depois do aviso; manteiga não tem estoque.
+    expect((await ultima({ intencao: "validade" })).texto.split("\n")).toEqual([
+      "Iogurte: venceu há 2 dias (03/11/2026), 4 unidades em estoque",
+      "Leite: vence em 3 dias (08/11/2026), 10 unidades em estoque",
+    ]);
+    // Muitos vencidos não escondem o que vence logo (listas separadas, cada uma com limite).
+    for (let k = 0; k < 11; k++) {
+      await call("POST", p("/produtos"), ADMIN, {
+        nome: `Vencido ${String(k).padStart(2, "0")}`,
+        varejoCentavos: 500,
+        atacadoCentavos: 450,
+        validade: "2026-10-01",
+        estoqueInicial: 1,
+      });
+    }
+    const muitos = (await ultima({ intencao: "validade" })).texto;
+    expect(muitos).toContain("Leite: vence em 3 dias");
+    expect(muitos).toContain("(Mostrando 10 de 12 vencidos.)");
   });
 
   it("mais de 15 fornecedores: o total soma todos; cliente com compra fora do período", async () => {

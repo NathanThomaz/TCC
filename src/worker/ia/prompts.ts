@@ -225,6 +225,7 @@ export const INTENCOES = [
   "pagamentos",
   "compras",
   "reposicao",
+  "validade",
   "financeiro",
   "regras",
   "como_usar",
@@ -242,6 +243,10 @@ export const ConsultaSchema = z.object({
   /** Trecho do nome do cliente ou do fornecedor citado (opcionais: perguntas antigas não têm). */
   cliente: z.string().trim().min(1).max(80).nullable().optional(),
   fornecedor: z.string().trim().min(1).max(80).nullable().optional(),
+  /** Recorte do financeiro: só as vencidas, só o que tem a receber ou só o que tem a pagar. */
+  foco: z.enum(["vencidas", "receber", "pagar"]).nullable().optional(),
+  /** Com foco receber ou pagar: só as vencidas ("quem está me devendo?"). */
+  apenas_vencidas: z.boolean().nullable().optional(),
   /** Módulo de uma pergunta de "como usar". */
   modulo: z.enum(MODULES).nullable().optional(),
 });
@@ -268,7 +273,8 @@ INTENÇÕES (escolha a mais próxima; o sistema responde sobre todos os módulos
 - pagamentos: vendas por forma de pagamento (Pix, dinheiro, cartão, a prazo).
 - compras: compras JÁ FEITAS, fornecedores, quanto foi comprado de quem.
 - reposicao: o que comprar ou repor, prioridade de compra, sugestão de pedido ao fornecedor, quanto custaria repor o estoque ("o que devo comprar?", "o que repor primeiro?", "quanto vou gastar para repor?").
-- financeiro: contas a pagar e a receber, vencidas, próximos vencimentos, quanto entrou e saiu.
+- validade: produtos vencidos ou perto de vencer ("o que está vencendo?", "tem algo vencido?").
+- financeiro: contas a pagar e a receber, vencidas, quem está devendo, próximos vencimentos, quanto entrou e saiu.
 - regras: como o sistema está configurado (regras de venda, estoque, agenda, formas de pagamento).
 - como_usar: como fazer algo nas telas do sistema ("como cadastro um produto?", "como cancelo uma venda?").
 - fora_do_escopo: pedido para ALTERAR dados (vender, cancelar, ajustar, agendar, pagar) pelo chat, perguntas sobre outro sistema ou assuntos que não são do sistema.
@@ -279,6 +285,8 @@ ARGUMENTOS:
 - profissional: trecho do nome do profissional citado; senão null.
 - cliente: trecho do nome do cliente citado; senão null.
 - fornecedor: trecho do nome do fornecedor citado; senão null.
+- foco: em financeiro, "vencidas" para todos os atrasos ("o que está atrasado?", "tenho contas vencidas?"), "receber" para o que tem a receber ("quanto vou receber esta semana?"), "pagar" para contas a pagar ("o que tenho para pagar?"); senão null.
+- apenas_vencidas: true com foco "receber" ou "pagar" quando a pergunta é só sobre atrasos de um lado ("quem está devendo?" ou "quem está me devendo?" = foco receber; "quais contas estou devendo?" = foco pagar); senão null.
 - modulo: em como_usar, o módulo da pergunta (${MODULES.join(", ")}); senão null.
 
 PERGUNTA ANTERIOR: às vezes o texto traz "Pergunta anterior (só contexto)" e "Pergunta atual". Classifique só a ATUAL; use a anterior apenas para entender referências como "dessa compra", "desses produtos" ou "e em outubro?" (ex.: depois de "o que devo comprar?", "qual o valor total dessa compra?" é reposicao).

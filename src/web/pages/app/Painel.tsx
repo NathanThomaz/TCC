@@ -206,6 +206,19 @@ export function indicadores(p: PainelDto): IndicadorDados[] {
         valor: formatarCentavos(e.valorVarejoCentavos),
         detalhe: `${plural(e.unidades, "unidade", "unidades")} a preço de varejo`,
       });
+    } else if (!p.vendas) {
+      // Só controle de estoque (sem vendas): o preço de venda não diz nada, e um "lucro previsto"
+      // negativo assustaria sem motivo. Vale quanto o estoque custou (pedido do dono, 2026-11-27).
+      add({
+        id: "custo-estoque",
+        prioridade: 6.2,
+        rotulo: "Valor do estoque",
+        icone: Warehouse,
+        valor: formatarCentavos(e.custo.valorCustoCentavos),
+        detalhe: e.custo.semCusto
+          ? `Pelo valor de compra · ${plural(e.custo.semCusto, "produto sem valor de compra ficou", "produtos sem valor de compra ficaram")} fora`
+          : `${plural(e.unidades, "unidade", "unidades")} pelo valor de compra`,
+      });
     } else {
       add({
         id: "lucro-estoque",

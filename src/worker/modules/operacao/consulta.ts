@@ -358,6 +358,8 @@ async function responder(ctx: RequestContext, op: Operacao, c: Consulta): Promis
       return modulos.compras(ctx, op, c);
     case "reposicao":
       return modulos.reposicao(ctx, op, c);
+    case "validade":
+      return modulos.validade(ctx, op);
     case "financeiro":
       return modulos.financeiro(ctx, op, c);
     case "como_usar":

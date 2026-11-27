@@ -124,4 +124,19 @@ describe("indicadores do painel", () => {
     expect(lista).toContain("lucro-estoque");
     expect(lista).not.toContain("valor-estoque");
   });
+
+  it("só controle de estoque (sem vendas): mostra o valor de compra, não o lucro previsto", () => {
+    const custo = {
+      produtos: 2,
+      semCusto: 0,
+      valorCustoCentavos: 629388,
+      valorVendaCentavos: 627988,
+      lucroPrevistoCentavos: -1400,
+    };
+    const lista = indicadores({ hoje: "", mes: "", estoque: { ...estoque, custo } });
+    expect(lista.map((i) => i.id)).not.toContain("lucro-estoque");
+    const valor = lista.find((i) => i.id === "custo-estoque");
+    expect(valor?.valor).toBe("R$ 6.293,88");
+    expect(valor?.alerta).toBeFalsy();
+  });
 });

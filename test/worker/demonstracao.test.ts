@@ -146,4 +146,126 @@ describe("massa de dados da demonstração", () => {
       .first<{ n: number }>();
     expect(depois?.n).toBe(0);
   }, 120_000);
+
+  /**
+   * Primeira carga (de 09/11, com a mensalidade de novembro) cortada em `corte`, continuação até
+   * 02/12 (atravessa o dia 1º, quando as mensalidades de dezembro são lançadas). Confere que nada
+   * se repete, nada é gravado no passado e nenhum cadastro é criado.
+   */
+  async function cortarEContinuar(corte: number, ateDaPrimeira: string) {
+    const primeira = await executarCenario({
+      chamar,
+      relogio: (t) => (agora = t),
+      ate: ateDaPrimeira,
+      dias: Math.round((corte - instante("2026-11-09", 12)) / 86_400_000) + 1,
+      limite: corte,
+    });
+    const desde = (await env.DB.prepare(
+      `SELECT MAX(t) AS t FROM (SELECT MAX(created_at) AS t FROM stock_movements
+           UNION ALL SELECT MAX(max(created_at, COALESCE(paid_at, 0))) FROM financial_entries
+           UNION ALL SELECT MAX(created_at) FROM sales)`,
+    ).first<{ t: number }>())!.t;
+    expect(desde).toBeLessThanOrEqual(corte);
+    const contar = async () =>
+      env.DB.prepare(
+        `SELECT (SELECT COUNT(*) FROM sales) AS vendas, (SELECT COUNT(*) FROM customers) AS clientes,
+           (SELECT COUNT(*) FROM products) AS produtos, (SELECT COUNT(*) FROM systems) AS sistemas,
+           (SELECT COUNT(*) FROM stock_movements WHERE created_at <= ?1)
+             + (SELECT COUNT(*) FROM sales WHERE created_at <= ?1)
+             + (SELECT COUNT(*) FROM financial_entries WHERE created_at <= ?1) AS passado`,
+      )
+        .bind(desde)
+        .first<{
+          vendas: number;
+          clientes: number;
+          produtos: number;
+          sistemas: number;
+          passado: number;
+        }>();
+    const antes = await contar();
+    const segunda = await executarCenario({
+      chamar,
+      relogio: (t) => (agora = t),
+      ate: "2026-12-02",
+      continuar: { desde },
+    });
+    expect(segunda.sistemas).toEqual(primeira.sistemas);
+    const aceitas = [
+      "a prazo recusado: limite_credito",
+      "agenda: conflito_agenda",
+      "agenda: sem técnico livre",
+      "venda sem estoque",
+      "evento sem barril",
+    ];
+    for (const chave of Object.keys(segunda.recusas)) expect(aceitas).toContain(chave);
+    expect(segunda.contagem["vendas concluídas"]).toBeGreaterThan(10);
+    expect(segunda.contagem.sistemas).toBeUndefined();
+    expect(segunda.contagem.produtos).toBeUndefined();
+
+    const depois = await contar();
+    expect(depois?.sistemas).toBe(antes?.sistemas);
+    expect(depois?.clientes).toBe(antes?.clientes);
+    expect(depois?.produtos).toBe(antes?.produtos);
+    expect(depois?.passado).toBe(antes?.passado);
+    expect(depois!.vendas).toBeGreaterThan(antes!.vendas);
+    const vendasDia2 = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM sales WHERE status = 'completed' AND completed_at >= ?",
+    )
+      .bind(instante("2026-12-02", 0, 0))
+      .first<{ n: number }>();
+    expect(vendasDia2?.n).toBeGreaterThan(0);
+
+    // Contas fixas e mensalidades não se repetem; as de dezembro saem uma por aluno de novembro.
+    const repetidas = await env.DB.prepare(
+      `SELECT description, due_date, COUNT(*) AS n FROM financial_entries
+       WHERE description NOT LIKE 'Venda a prazo%' AND description NOT LIKE 'Locação de chopeira%'
+         AND description NOT LIKE 'Aula avulsa%' AND description NOT LIKE 'Mensalidade%'
+       GROUP BY system_id, description, due_date HAVING COUNT(*) > 1`,
+    ).all();
+    expect(repetidas.results).toEqual([]);
+    const mensalidades = await env.DB.prepare(
+      `SELECT SUM(due_date = '2026-11-10') AS nov, SUM(due_date = '2026-12-10') AS dez
+       FROM financial_entries WHERE description LIKE 'Mensalidade de %'`,
+    ).first<{ nov: number; dez: number }>();
+    // E nenhuma falta: as quatro contas fixas que vencem em 10/12 (três lançadas em 30/11, entre
+    // 8h05 e 8h55, e a internet do estúdio em 02/12) existem uma vez cada.
+    const contasDe10 = await env.DB.prepare(
+      `SELECT description FROM financial_entries
+       WHERE due_date = '2026-12-10' AND description LIKE '% - dezembro' ORDER BY description`,
+    ).all<{ description: string }>();
+    expect(contasDe10.results.map((r) => r.description)).toEqual([
+      "Contabilidade - dezembro",
+      "Honorários do contador - dezembro",
+      "Internet - dezembro",
+      "Internet e telefone - dezembro",
+    ]);
+    expect(mensalidades?.nov).toBeGreaterThan(30);
+    expect(mensalidades?.dez).toBe(mensalidades?.nov);
+    // Nenhum rascunho aberto nem atendimento "agendado" no passado.
+    const pendentes = await env.DB.prepare(
+      `SELECT (SELECT COUNT(*) FROM sales WHERE status = 'draft') AS rascunhos,
+         (SELECT COUNT(*) FROM appointments WHERE status IN ('scheduled', 'in_progress')
+            AND start_at < ?) AS atrasados`,
+    )
+      .bind(instante("2026-12-02", 20, 0))
+      .first<{ rascunhos: number; atrasados: number }>();
+    expect(pendentes).toEqual({ rascunhos: 0, atrasados: 0 });
+    return desde;
+  }
+
+  it("continuar: corte antes das contas do dia (segunda, 7h45)", async () => {
+    // O último registro é o combustível das 7h40: a continuação começa no mesmo dia, antes das
+    // contas fixas das 8h, e não pode relançar as que já foram lançadas.
+    const desde = await cortarEContinuar(instante("2026-11-30", 7, 45), "2026-11-30");
+    expect(desde).toBeGreaterThan(instante("2026-11-30", 7, 0));
+  }, 180_000);
+
+  it("continuar: corte no meio das contas e das mensalidades (revisão do Codex)", async () => {
+    // 30/11 às 8h40: parte das contas que vencem em 10/12 já foi lançada (8h05–8h55), e o novo
+    // sorteio pode pôr uma das que faltam antes do corte.
+    await cortarEContinuar(instante("2026-11-30", 8, 40), "2026-11-30");
+    await limparBanco();
+    // 01/12 às 8h10: o lote das mensalidades de dezembro (8h00–8h22) ficou pela metade.
+    await cortarEContinuar(instante("2026-12-01", 8, 10), "2026-12-01");
+  }, 300_000);
 });
