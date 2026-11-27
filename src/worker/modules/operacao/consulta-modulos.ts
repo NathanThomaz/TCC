@@ -3,6 +3,7 @@ import { MODULE_INFO, PAYMENT_LABELS } from "../../../shared/contract/catalog";
 import type { ConfigDraft } from "../../../shared/contract/schema";
 import { deCampoLocal, formatarDataHora, paraCampoLocal } from "../../../shared/dominio/agenda";
 import { formatarCentavos } from "../../../shared/dominio/precos";
+import { regraDo } from "../../../shared/dominio/regras";
 import type { RequestContext } from "../../http/router";
 import { nomeClienteSql } from "../comum";
 import type { Consulta } from "../../ia/prompts";
@@ -393,6 +394,190 @@ export async function compras(ctx: RequestContext, op: Operacao, c: Consulta): P
       : "Nenhuma compra registrada no período.",
     filtros,
     origem: "compras concluídas (sem canceladas)",
+  };
+}
+
+const DIA = 86_400_000;
+/** Saída média calculada sobre os últimos 30 dias; a sugestão cobre 14 dias de saída. */
+const DIAS_DE_SAIDA = 30;
+const DIAS_DE_COBERTURA = 14;
+
+export interface SaldoProduto {
+  nome: string;
+  fisico: number;
+  reservado: number;
+  disponivel: number;
+  /** Mínimo do produto ou, sem ele, o da regra estoque_minimo. */
+  minimo: number | null;
+  /** Abaixo do mínimo ou, sem mínimo, sem estoque (mesmo critério do painel). */
+  abaixo: boolean;
+  unidadesPorCaixa: number | null;
+  custoCentavos: number | null;
+  /** Unidades que saíram nos últimos 30 dias (0 quando não foi pedido; ver saldosDoEstoque). */
+  saida30: number;
+}
+
+/** Saldos de agora, mínimo, custo e saída dos últimos 30 dias de cada produto ativo. */
+export async function saldosDoEstoque(
+  ctx: RequestContext,
+  op: Operacao,
+  produto: string | null,
+  comSaida = false,
+): Promise<SaldoProduto[]> {
+  const agora = ctx.clock.now();
+  const minimoRegra = regraDo(op.config, "estoque_minimo")?.unidades ?? null;
+  // Saída dos últimos 30 dias (só a reposição precisa; a consulta de estoque não paga o custo):
+  // - vendas, menos os estornos de vendas feitas na própria janela (estorno de venda antiga não
+  //   apaga a saída recente);
+  // - saídas e correções de inventário em saldo líquido (uma baixa desfeita depois não conta);
+  // - a correção do cancelamento de compra (purchase_id) só desfaz a entrada: não é consumo.
+  // Cada parte é limitada a zero separadamente: uma correção para cima não apaga vendas.
+  const parte = (caso: string) =>
+    `max(0, (SELECT COALESCE(SUM(CASE ${caso} ELSE 0 END), 0) FROM stock_movements m
+       WHERE m.system_id = p.system_id AND m.product_id = p.id AND m.created_at >= ?3))`;
+  const saida = comSaida
+    ? `(${parte(`WHEN m.kind = 'venda' THEN -m.delta
+           WHEN m.kind = 'estorno' AND EXISTS (SELECT 1 FROM stock_movements v
+             WHERE v.system_id = m.system_id AND v.product_id = m.product_id AND v.kind = 'venda'
+               AND v.sale_id = m.sale_id AND v.created_at >= ?3) THEN -m.delta`)}
+       + ${parte("WHEN m.kind = 'correcao' AND m.purchase_id IS NULL THEN -m.delta")})`
+    : "0";
+  const { results } = await ctx.env.DB.prepare(
+    `SELECT p.name, p.physical, p.min_units, p.units_per_box,
+       COALESCE(p.last_cost_cents, p.cost_cents) AS custo,
+       (SELECT COALESCE(SUM(r.quantity), 0) FROM reservations r
+         WHERE r.product_id = p.id AND r.status = 'active' AND r.expires_at > ?1) AS reserved,
+       ${saida} AS saida
+     FROM products p WHERE p.system_id = ?2 AND p.status = 'active'
+       AND (?4 IS NULL OR instr(${semAcentoSql("p.name")}, ?4) > 0)
+     ORDER BY p.name COLLATE NOCASE`,
+  )
+    .bind(agora, op.systemId, agora - DIAS_DE_SAIDA * DIA, termoBusca(produto))
+    .all<{
+      name: string;
+      physical: number;
+      min_units: number | null;
+      units_per_box: number | null;
+      custo: number | null;
+      reserved: number;
+      saida: number;
+    }>();
+  return results.map((p) => {
+    const disponivel = p.physical - p.reserved;
+    const minimo = p.min_units ?? minimoRegra;
+    return {
+      nome: p.name,
+      fisico: p.physical,
+      reservado: p.reserved,
+      disponivel,
+      minimo,
+      abaixo: minimo !== null ? disponivel < minimo : disponivel <= 0,
+      unidadesPorCaixa: p.units_per_box,
+      custoCentavos: p.custo,
+      saida30: Math.max(0, p.saida),
+    };
+  });
+}
+
+const umaCasa = (n: number) =>
+  n.toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 1 });
+
+/**
+ * Sugestão de compra (pedido do dono, 2026-11-27): o que repor primeiro, quanto e quanto custa.
+ * Repor até cobrir 14 dias da saída média dos últimos 30 dias e, no mínimo, até o estoque mínimo;
+ * em caixas fechadas quando o produto tem caixa. O custo é o da última compra (ou o cadastrado).
+ * É só uma sugestão calculada: o chat não compra nem altera nada.
+ */
+export async function reposicao(ctx: RequestContext, op: Operacao, c: Consulta): Promise<Resposta> {
+  if (!tem(op.config, "estoque")) return semModulo("estoque");
+  const saldos = await saldosDoEstoque(ctx, op, c.produto, true);
+  if (saldos.length === 0) {
+    return {
+      texto: c.produto
+        ? `Nenhum produto ativo com “${c.produto}” no nome.`
+        : "Não há produtos ativos.",
+      filtros: c.produto ? [`Produto: contém “${c.produto}”`] : [],
+      origem: "cadastro de produtos",
+    };
+  }
+  const calculados = saldos.map((p) => {
+    const porDia = p.saida30 / DIAS_DE_SAIDA;
+    const alvo = Math.max(p.minimo ?? 0, Math.ceil(porDia * DIAS_DE_COBERTURA));
+    let comprar = Math.max(0, alvo - p.disponivel);
+    if (comprar > 0 && p.unidadesPorCaixa) {
+      comprar = Math.ceil(comprar / p.unidadesPorCaixa) * p.unidadesPorCaixa;
+    }
+    const dias = porDia > 0 ? Math.max(0, p.disponivel) / porDia : null;
+    return { ...p, porDia, comprar, dias };
+  });
+  // Sem estoque, sem mínimo e sem saída recente: não há base para calcular quanto comprar.
+  const semBase = calculados.filter((p) => p.comprar === 0 && p.disponivel <= 0).map((p) => p.nome);
+  const avisoSemBase = semBase.length
+    ? `\nSem estoque e sem saída nos últimos ${DIAS_DE_SAIDA} dias (defina a quantidade): ${semBase.slice(0, LISTA).join(", ")}${semBase.length > LISTA ? ` e mais ${semBase.length - LISTA}` : ""}.`
+    : "";
+  const itens = calculados
+    .filter((p) => p.comprar > 0)
+    .sort(
+      (a, b) =>
+        Number(b.abaixo) - Number(a.abaixo) ||
+        (a.dias ?? Infinity) - (b.dias ?? Infinity) ||
+        a.nome.localeCompare(b.nome, "pt-BR"),
+    );
+  const filtros = [
+    c.produto ? `Produto: contém “${c.produto}”` : "Todos os produtos ativos",
+    `Saída média dos últimos ${DIAS_DE_SAIDA} dias`,
+    `Repor para ${DIAS_DE_COBERTURA} dias de saída (no mínimo, até o estoque mínimo)`,
+  ];
+  const origem =
+    "saldos de agora, vendas e saídas dos últimos 30 dias e custo da última compra (sugestão calculada; nada é comprado pelo chat)";
+  if (itens.length === 0) {
+    return {
+      texto: semBase.length
+        ? `Pela saída dos últimos ${DIAS_DE_SAIDA} dias, não há quantidade a sugerir.${avisoSemBase}`
+        : `Nada precisa ser reposto agora: ${c.produto ? "o produto está" : "todos os produtos estão"} no mínimo ou acima dele e com estoque para pelo menos ${DIAS_DE_COBERTURA} dias, pela saída dos últimos ${DIAS_DE_SAIDA} dias.`,
+      filtros,
+      origem,
+    };
+  }
+  const comCusto = itens.filter((p) => p.custoCentavos !== null);
+  const total = comCusto.reduce((soma, p) => soma + p.comprar * p.custoCentavos!, 0);
+  const semCusto = itens.length - comCusto.length;
+  const linhas = itens.slice(0, LISTA).map((p, i) => {
+    const caixas =
+      p.unidadesPorCaixa && p.unidadesPorCaixa > 1
+        ? ` (${plural(p.comprar / p.unidadesPorCaixa, "caixa", "caixas")})`
+        : "";
+    const situacao = [
+      `disponível ${p.disponivel}`,
+      ...(p.minimo !== null ? [`mínimo ${p.minimo}`] : []),
+      p.porDia > 0
+        ? `sai ${umaCasa(p.porDia)} por dia${p.dias !== null ? `, dá para ${umaCasa(Math.floor(p.dias))} ${Math.floor(p.dias) === 1 ? "dia" : "dias"}` : ""}`
+        : "sem saída nos últimos 30 dias",
+    ].join(", ");
+    const custo =
+      p.custoCentavos !== null
+        ? ` ≈ ${formatarCentavos(p.comprar * p.custoCentavos)}`
+        : " (sem custo registrado)";
+    return `${i + 1}. ${p.nome}: comprar ${p.comprar}${caixas}${custo}. Hoje: ${situacao}${p.abaixo ? " (abaixo do mínimo)" : ""}.`;
+  });
+  const abaixo = itens.filter((p) => p.abaixo).length;
+  return {
+    texto:
+      `Sugestão de compra: ${plural(itens.length, "item", "itens")}` +
+      (abaixo ? `, ${abaixo} abaixo do mínimo` : "") +
+      (comCusto.length === 0
+        ? ". Valor total: não dá para estimar, porque nenhum desses itens tem custo registrado"
+        : semCusto
+          ? `. Valor estimado dos ${plural(comCusto.length, "item", "itens")} com custo: ${formatarCentavos(total)} (${plural(semCusto, "item sem custo registrado ficou", "itens sem custo registrado ficaram")} fora da soma)`
+          : `. Valor total estimado: ${formatarCentavos(total)}`) +
+      ".\nEm ordem de prioridade:\n" +
+      linhas.join("\n") +
+      (itens.length > LISTA
+        ? `\n(Mostrando os ${LISTA} mais urgentes de ${itens.length}; o valor acima considera todos.)`
+        : "") +
+      avisoSemBase,
+    filtros,
+    origem,
   };
 }
 

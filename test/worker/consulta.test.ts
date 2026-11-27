@@ -176,6 +176,166 @@ describe("chat de consulta", () => {
     );
   });
 
+  describe("o que está acabando e o que comprar (pedido do dono, 2026-11-27)", () => {
+    /** Arroz abaixo do mínimo, sem saída; água vendendo bem, em caixas de 12; açúcar sobrando. */
+    async function estoqueVariado() {
+      const cliente = (await call("POST", p("/clientes"), ADMIN, { nome: "Mercado" })).body.cliente!
+        .id;
+      const produto = async (corpo: Record<string, unknown>) =>
+        (await call("POST", p("/produtos"), ADMIN, corpo)).body.produto!.id;
+      await produto({
+        nome: "Arroz 5 kg",
+        varejoCentavos: 2500,
+        atacadoCentavos: 2300,
+        custoCentavos: 1800,
+        estoqueMinimo: 5,
+        estoqueInicial: 2,
+      });
+      await produto({
+        nome: "Açúcar",
+        varejoCentavos: 500,
+        atacadoCentavos: 450,
+        custoCentavos: 300,
+        estoqueInicial: 50,
+      });
+      const agua = await produto({
+        nome: "Água",
+        varejoCentavos: 300,
+        atacadoCentavos: 250,
+        unidadesPorCaixa: 12,
+        custoCentavos: 100,
+        estoqueInicial: 30,
+      });
+      const v = (
+        await call("POST", p("/vendas"), ADMIN, {
+          cliente,
+          itens: [{ produto: agua, unidades: 25 }],
+        })
+      ).body.venda!;
+      expect(
+        (await call("POST", p(`/vendas/${v.id}/concluir`), ADMIN, { revisao: v.revisao })).status,
+      ).toBe(200);
+    }
+
+    it("o que está acabando: abaixo do mínimo primeiro, depois o menor disponível", async () => {
+      await estoqueVariado();
+      roteiro.push(consulta({ intencao: "estoque" }));
+      const r = (await perguntar("O que está acabando no estoque?")).body.mensagens!.at(-1)!;
+      expect(r.texto.split("\n")).toEqual([
+        "1 produto abaixo do estoque mínimo:",
+        "Arroz 5 kg: físico 2, reservado 0, disponível 2, mínimo 5 (abaixo do mínimo)",
+        "Água: físico 5, reservado 0, disponível 5",
+        "Açúcar: físico 50, reservado 0, disponível 50",
+        "Cerveja lata: físico 90, reservado 0, disponível 90",
+      ]);
+      expect(r.filtros[0]).toContain("do que está acabando");
+    });
+
+    it("sugestão de compra: prioridade, quantidade em caixas e valor total", async () => {
+      await estoqueVariado();
+      roteiro.push(consulta({ intencao: "reposicao" }));
+      const r = (await perguntar("O que devo comprar com prioridade?")).body.mensagens!.at(-1)!;
+      const linhas = r.texto.split("\n");
+      // Arroz: até o mínimo (5 − 2 = 3) × R$ 18,00. Água: saiu 25 em 30 dias (0,8 por dia), 14
+      // dias pedem 12, tem 5, faltam 7, arredonda para 1 caixa de 12 × R$ 1,00. Açúcar e cerveja
+      // têm estoque para mais de 14 dias e ficam fora.
+      expect(linhas[0]).toBe(
+        "Sugestão de compra: 2 itens, 1 abaixo do mínimo. Valor total estimado: R$ 66,00.",
+      );
+      expect(linhas[2]).toBe(
+        "1. Arroz 5 kg: comprar 3 ≈ R$ 54,00. Hoje: disponível 2, mínimo 5, sem saída nos últimos 30 dias (abaixo do mínimo).",
+      );
+      expect(linhas[3]).toBe(
+        "2. Água: comprar 12 (1 caixa) ≈ R$ 12,00. Hoje: disponível 5, sai 0,8 por dia, dá para 6 dias.",
+      );
+      expect(linhas).toHaveLength(4);
+      expect(r.origem).toContain("nada é comprado pelo chat");
+      // Somente leitura: nenhuma compra nem movimento novo.
+      const compras = await env.DB.prepare("SELECT COUNT(*) AS n FROM purchases").first<{
+        n: number;
+      }>();
+      expect(compras?.n).toBe(0);
+    });
+
+    it("sem nada para repor, diz isso sem inventar números", async () => {
+      roteiro.push(consulta({ intencao: "reposicao", produto: "cerveja" }));
+      const r = (await perguntar("Preciso comprar cerveja?")).body.mensagens!.at(-1)!;
+      expect(r.texto).toContain("Nada precisa ser reposto agora: o produto está");
+    });
+
+    it("produto inexistente e item sem custo: não inventa valor", async () => {
+      roteiro.push(consulta({ intencao: "reposicao", produto: "xyz" }));
+      expect((await perguntar("Preciso comprar xyz?")).body.mensagens!.at(-1)!.texto).toBe(
+        "Nenhum produto ativo com “xyz” no nome.",
+      );
+      await call("POST", p("/produtos"), ADMIN, {
+        nome: "Gelo",
+        varejoCentavos: 800,
+        atacadoCentavos: 700,
+        estoqueMinimo: 10,
+        estoqueInicial: 2,
+      });
+      roteiro.push(consulta({ intencao: "reposicao", produto: "gelo" }));
+      const r = (await perguntar("Preciso comprar gelo?")).body.mensagens!.at(-1)!;
+      expect(r.texto).toContain(
+        "Valor total: não dá para estimar, porque nenhum desses itens tem custo registrado",
+      );
+      expect(r.texto).toContain("1. Gelo: comprar 8 (sem custo registrado).");
+    });
+
+    it("correção de inventário para cima não apaga as vendas (revisão do Codex)", async () => {
+      const cliente = (await call("POST", p("/clientes"), ADMIN, { nome: "Bar" })).body.cliente!.id;
+      const carvao = (
+        await call("POST", p("/produtos"), ADMIN, {
+          nome: "Carvão",
+          varejoCentavos: 2000,
+          atacadoCentavos: 1800,
+          custoCentavos: 1000,
+          estoqueInicial: 5,
+        })
+      ).body.produto!.id;
+      expect(
+        (
+          await call("POST", p("/estoque/correcoes"), ADMIN, {
+            produto: carvao,
+            fisicoEsperado: 5,
+            novoFisico: 35,
+            motivo: "Contagem achou mais sacos",
+          })
+        ).status,
+      ).toBe(201);
+      const v = (
+        await call("POST", p("/vendas"), ADMIN, {
+          cliente,
+          itens: [{ produto: carvao, unidades: 30 }],
+        })
+      ).body.venda!;
+      await call("POST", p(`/vendas/${v.id}/concluir`), ADMIN, { revisao: v.revisao });
+      // Saíram 30 em 30 dias (1 por dia): 14 dias pedem 14, tem 5, comprar 9. Somando a correção
+      // de +30 com as vendas, a saída daria zero e nada seria sugerido.
+      roteiro.push(consulta({ intencao: "reposicao", produto: "carv" }));
+      const r = (await perguntar("Preciso comprar carvão?")).body.mensagens!.at(-1)!;
+      expect(r.texto).toContain("1. Carvão: comprar 9 ≈ R$ 90,00.");
+    });
+
+    it("a IA recebe a pergunta anterior só como contexto da atual", async () => {
+      roteiro.push(consulta({ intencao: "reposicao" }), consulta({ intencao: "reposicao" }));
+      await perguntar("Qual você me recomenda comprar com prioridade?");
+      await perguntar("Qual o valor total dessa compra?");
+      expect(pedidos[0]!.mensagens).toEqual([
+        { papel: "usuario", texto: "Qual você me recomenda comprar com prioridade?" },
+      ]);
+      expect(pedidos[1]!.mensagens).toEqual([
+        {
+          papel: "usuario",
+          texto:
+            "Pergunta anterior (só contexto): Qual você me recomenda comprar com prioridade?\nPergunta atual: Qual o valor total dessa compra?",
+        },
+      ]);
+      expect(pedidos[1]!.instrucoes).toContain("Classifique só a ATUAL");
+    });
+  });
+
   it("pedido de alteração é recusado e nada muda (somente leitura)", async () => {
     const antes = await env.DB.prepare("SELECT COUNT(*) AS n FROM sales").first<{ n: number }>();
     roteiro.push(consulta({ intencao: "fora_do_escopo" }));
@@ -255,6 +415,7 @@ describe("chat de consulta: todos os módulos (pedido do dono, 2026-11-13)", () 
       "resumo_geral",
       "financeiro",
       "compras",
+      "reposicao",
       "como_usar",
       "cliente:",
       "fornecedor:",
@@ -319,6 +480,36 @@ describe("chat de consulta: módulos opcionais e bordas (revisão do Codex)", ()
       formaPagamento: "a_prazo",
     });
   }
+
+  it("sugestão de compra: compra cancelada não vira consumo (revisão do Codex)", async () => {
+    await comModulos();
+    const feijao = (
+      await call("POST", p("/produtos"), ADMIN, {
+        nome: "Feijão",
+        varejoCentavos: 900,
+        atacadoCentavos: 800,
+      })
+    ).body.produto!.id;
+    const f = (await call("POST", p("/fornecedores"), ADMIN, { nome: "Leste" })).body.fornecedor!
+      .id;
+    const compra = (
+      await call("POST", p("/compras"), ADMIN, {
+        fornecedor: f,
+        itens: [{ produto: feijao, unidades: 40, custoUnitarioCentavos: 500 }],
+        vencimento: "2026-11-01",
+      })
+    ).body.compra!;
+    expect(
+      (await call("POST", p(`/compras/${compra.id}/cancelar`), ADMIN, { motivo: "Pedido errado" }))
+        .status,
+    ).toBe(200);
+    // Sem o filtro do purchase_id, as 40 unidades da correção virariam saída e a sugestão pediria
+    // 19 sacos de feijão que ninguém vendeu.
+    const r = await ultima({ intencao: "reposicao", produto: "feij" });
+    expect(r.texto).toBe(
+      "Pela saída dos últimos 30 dias, não há quantidade a sugerir.\nSem estoque e sem saída nos últimos 30 dias (defina a quantidade): Feijão.",
+    );
+  });
 
   it("compras somam todos os fornecedores; pagamentos e financeiro com os números reais", async () => {
     const original = S;
