@@ -35,6 +35,9 @@ function wrangler(extra) {
       cwd: raiz,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
+      // A restauração imprime o resultado de cada comando: com a massa da demonstração (2026-11-27)
+      // passou de 1 MB, o limite padrão, e a conferência falhava com o backup correto.
+      maxBuffer: 256 * 1024 * 1024,
       env: { ...process.env, CI: "1" },
     },
   );

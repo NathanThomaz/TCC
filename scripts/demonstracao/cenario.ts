@@ -3,7 +3,15 @@
 // simulado. Cada venda, compra, saída e conta passa pelas mesmas validações, gatilhos e regras do
 // uso real; nada é gravado direto no banco. O sorteio é determinístico (mesma semente = mesmos
 // dados), e quem chama decide o banco (local ou produção) e a identidade.
-import type { OperacaoApiBody, PainelDto, SystemsApiBody } from "../../src/shared/api";
+import type {
+  ClienteDto,
+  FornecedorDto,
+  OperacaoApiBody,
+  PainelDto,
+  ProdutoDto,
+  ProfissionalDto,
+  SystemsApiBody,
+} from "../../src/shared/api";
 import type { ConfigDraft, Rule } from "../../src/shared/contract/schema";
 import {
   EMPRESAS,
@@ -43,6 +51,12 @@ export interface OpcoesCenario {
   /** Nome da conta mostrado no perfil. */
   nomeConta?: string;
   log?: (mensagem: string) => void;
+  /**
+   * Continua uma carga já feita (pedido do dono, 2026-11-27): em vez de criar, carrega pela API os
+   * três sistemas, produtos (saldo e validade de agora), clientes, técnicos, fornecedores e alunos,
+   * e gera só o movimento depois de `desde` (o último registro da carga anterior) até `ate`.
+   */
+  continuar?: { desde: number };
 }
 
 export interface ResumoCenario {
@@ -218,9 +232,16 @@ interface Cliente {
 }
 
 export async function executarCenario(o: OpcoesCenario): Promise<ResumoCenario> {
-  const dias = o.dias ?? 90;
+  const continuar = o.continuar ?? null;
+  // Na continuação, o período vai do dia do último registro até `ate` (e o sorteio é outro, para
+  // não repetir as escolhas da primeira carga).
+  const diaDoDesde = continuar ? new Date(continuar.desde - FUSO).toISOString().slice(0, 10) : null;
+  const dias = diaDoDesde
+    ? Math.round((instante(o.ate, 12) - instante(diaDoDesde, 12)) / DIA_MS) + 1
+    : (o.dias ?? 90);
+  if (dias < 1) throw new Error("continuar: `ate` é anterior ao último registro da carga");
   const semente = o.semente ?? 20261202;
-  const s = new Sorteio(semente);
+  const s = new Sorteio(continuar ? semente ^ Math.floor(continuar.desde / 1000) : semente);
   const log = o.log ?? (() => undefined);
   const inicio = somarDias(o.ate, -(dias - 1));
   // Nada depois do fim do último dia nem depois do instante real da carga (dado no futuro).
@@ -256,8 +277,32 @@ export async function executarCenario(o: OpcoesCenario): Promise<ResumoCenario> 
     relogioDaPreparacao += 2_000;
     o.relogio(relogioDaPreparacao);
   };
-  passo();
-  if (o.nomeConta) exigir(await api("PATCH", "/session", { nome: o.nomeConta }), "nome da conta");
+  if (!continuar) passo();
+  if (o.nomeConta && !continuar) {
+    exigir(await api("PATCH", "/session", { nome: o.nomeConta }), "nome da conta");
+  }
+
+  /** Continuação: a lista de um cadastro, só os ativos. */
+  async function listar<T extends { status: string }>(
+    caminho: string,
+    chave: "produtos" | "clientes" | "profissionais" | "fornecedores",
+  ): Promise<T[]> {
+    const corpo = exigir(await api("GET", caminho), `listar ${chave}`);
+    return ((corpo[chave] ?? []) as unknown as T[]).filter((x) => x.status === "active");
+  }
+  async function sistemasExistentes(): Promise<[string, string, string]> {
+    const lista = exigir(await api("GET", "/systems"), "listar sistemas").sistemas ?? [];
+    const achar = (nome: string) => {
+      const sistema = lista.find((x) => x.nome === nome && x.status === "active");
+      if (!sistema) throw new Error(`continuar: sistema "${nome}" não encontrado ou inativo`);
+      return sistema.id;
+    };
+    return [
+      achar(NOMES_SISTEMAS.distribuidora),
+      achar(NOMES_SISTEMAS.estudio),
+      achar(NOMES_SISTEMAS.restaurante),
+    ];
+  }
 
   async function criarSistema(nome: string, rascunho: ConfigDraft): Promise<string> {
     passo();
@@ -288,9 +333,13 @@ export async function executarCenario(o: OpcoesCenario): Promise<ResumoCenario> 
     }));
   const req = (...n: number[]) => n.map((k) => `REQ-${String(k).padStart(2, "0")}`);
 
-  const D = await criarSistema(NOMES_SISTEMAS.distribuidora, rascunhoDistribuidora());
-  const E = await criarSistema(NOMES_SISTEMAS.estudio, rascunhoEstudio());
-  const R = await criarSistema(NOMES_SISTEMAS.restaurante, rascunhoRestaurante());
+  const [D, E, R] = continuar
+    ? await sistemasExistentes()
+    : [
+        await criarSistema(NOMES_SISTEMAS.distribuidora, rascunhoDistribuidora()),
+        await criarSistema(NOMES_SISTEMAS.estudio, rascunhoEstudio()),
+        await criarSistema(NOMES_SISTEMAS.restaurante, rascunhoRestaurante()),
+      ];
   log(`sistemas ativos: ${D}, ${E}, ${R}`);
 
   function rascunhoDistribuidora(): ConfigDraft {
@@ -548,6 +597,47 @@ export async function executarCenario(o: OpcoesCenario): Promise<ResumoCenario> 
     return produtos;
   }
 
+  /** Continuação: os produtos do catálogo da demonstração com o saldo e a validade de agora. */
+  async function carregarProdutos(
+    sistema: string,
+    lista: readonly ProdutoDemo[],
+    alvo: (x: ProdutoDemo) => number,
+  ): Promise<Produto[]> {
+    const existentes = await listar<ProdutoDto>(em(sistema, "/produtos"), "produtos");
+    return existentes.flatMap((p) => {
+      const catalogo = lista.find((x) => x.nome === p.nome);
+      if (!catalogo) return []; // produto criado à mão: fica fora do movimento gerado
+      // Preço e caixa do cadastro de agora (a pessoa pode ter editado): a compra calcula as
+      // caixas e a atualização da validade regrava esses campos sem desfazer a edição.
+      const dados: ProdutoDemo = {
+        ...catalogo,
+        varejo: p.varejoCentavos / 100,
+        atacado: p.atacadoCentavos === null ? null : p.atacadoCentavos / 100,
+        caixa: p.unidadesPorCaixa,
+      };
+      return [
+        {
+          id: p.id,
+          dados,
+          disponivel: p.disponivel,
+          alvo: alvo(dados),
+          validade: p.validade,
+          acumulado: 0,
+        },
+      ];
+    });
+  }
+
+  /** Continuação: os ids dos fornecedores do catálogo, na ordem da lista (o índice é a chave). */
+  async function carregarFornecedores(sistema: string, nomes: readonly string[]) {
+    const existentes = await listar<FornecedorDto>(em(sistema, "/fornecedores"), "fornecedores");
+    return nomes.map((nome) => {
+      const f = existentes.find((x) => x.nome === nome);
+      if (!f) throw new Error(`continuar: fornecedor "${nome}" não encontrado`);
+      return f.id;
+    });
+  }
+
   async function cadastrarFornecedores(sistema: string, nomes: readonly string[]) {
     const ids: string[] = [];
     for (const nome of nomes) {
@@ -574,10 +664,16 @@ export async function executarCenario(o: OpcoesCenario): Promise<ResumoCenario> 
     const base = x.giro === "alto" ? 480 : x.giro === "medio" ? 144 : 36;
     return Math.ceil(base / x.caixa) * x.caixa;
   };
-  const produtosD = await cadastrarProdutos(D, PRODUTOS_DISTRIBUIDORA, alvoDistribuidora, 1);
-  const fornecedoresD = await cadastrarFornecedores(D, FORNECEDORES_DISTRIBUIDORA);
-  const tecnicos: string[] = [];
-  for (const [nome, sobrenome] of TECNICOS) {
+  const produtosD = continuar
+    ? await carregarProdutos(D, PRODUTOS_DISTRIBUIDORA, alvoDistribuidora)
+    : await cadastrarProdutos(D, PRODUTOS_DISTRIBUIDORA, alvoDistribuidora, 1);
+  const fornecedoresD = continuar
+    ? await carregarFornecedores(D, FORNECEDORES_DISTRIBUIDORA)
+    : await cadastrarFornecedores(D, FORNECEDORES_DISTRIBUIDORA);
+  const tecnicos: string[] = continuar
+    ? (await listar<ProfissionalDto>(em(D, "/profissionais"), "profissionais")).map((x) => x.id)
+    : [];
+  for (const [nome, sobrenome] of continuar ? [] : TECNICOS) {
     passo();
     const r = exigir(
       await api("POST", em(D, "/profissionais"), { nome: `${nome} ${sobrenome}` }),
@@ -648,15 +744,33 @@ export async function executarCenario(o: OpcoesCenario): Promise<ResumoCenario> 
     clientes.push(cliente);
     return cliente;
   }
-  for (const plano of planos.filter((x) => x.desde === 0)) {
-    passo();
-    await cadastrarCliente(plano);
-  }
-  for (const plano of planos.filter((x) => x.desde > 0)) {
-    const dia = diasDoPeriodo[plano.desde] ?? inicio;
-    linha.em(instante(dia, 8, s.inteiro(0, 50)), async () => {
+  if (continuar) {
+    // Os clientes que já existem (sem sobrenome = empresa), com peso e fiado sorteados como na
+    // primeira carga; quem parou de comprar não é conhecido aqui e volta a comprar.
+    for (const c of await listar<ClienteDto>(em(D, "/clientes"), "clientes")) {
+      const empresa = c.sobrenome === null;
+      clientes.push({
+        id: c.id,
+        nome: c.nome,
+        empresa,
+        peso: empresa ? s.entre(2.5, 6) : s.entre(0.3, 1),
+        fiado: empresa && s.chance(0.55),
+        ultimoDia: null,
+        evento:
+          !empresa || /Buffet|Festas|Clube|Associação|Espaço|Choperia|Casa de Shows/.test(c.nome),
+      });
+    }
+  } else {
+    for (const plano of planos.filter((x) => x.desde === 0)) {
+      passo();
       await cadastrarCliente(plano);
-    });
+    }
+    for (const plano of planos.filter((x) => x.desde > 0)) {
+      const dia = diasDoPeriodo[plano.desde] ?? inicio;
+      linha.em(instante(dia, 8, s.inteiro(0, 50)), async () => {
+        await cadastrarCliente(plano);
+      });
+    }
   }
   log(`distribuidora: ${produtosD.length} produtos, ${clientes.length} clientes no primeiro dia`);
 
@@ -666,8 +780,12 @@ export async function executarCenario(o: OpcoesCenario): Promise<ResumoCenario> 
     const perecivel = ins.validadeDias !== null && ins.validadeDias <= 21;
     return Math.max(ins.minimo + 2, Math.ceil(ins.usoDia * (perecivel ? 5 : 12)) + ins.minimo);
   };
-  const insumos = await cadastrarProdutos(R, INSUMOS_RESTAURANTE, alvoInsumo, 500);
-  const fornecedoresR = await cadastrarFornecedores(R, FORNECEDORES_RESTAURANTE);
+  const insumos = continuar
+    ? await carregarProdutos(R, INSUMOS_RESTAURANTE, alvoInsumo)
+    : await cadastrarProdutos(R, INSUMOS_RESTAURANTE, alvoInsumo, 500);
+  const fornecedoresR = continuar
+    ? await carregarFornecedores(R, FORNECEDORES_RESTAURANTE)
+    : await cadastrarFornecedores(R, FORNECEDORES_RESTAURANTE);
   log(`restaurante: ${insumos.length} insumos`);
 
   // ---- distribuidora: vendas ----
@@ -860,6 +978,42 @@ export async function executarCenario(o: OpcoesCenario): Promise<ResumoCenario> 
         }
         await vender(cliente, itens, t, (venda) => agendarChopeira(cliente, venda, dia));
       });
+    }
+  }
+
+  // Continuação: os atendimentos que a carga anterior agendou para depois do corte também começam
+  // e terminam no horário (senão ficariam "agendados" no passado). Só os da demonstração (ligados
+  // a uma venda de chope); um atendimento lançado à mão fica como está. A agenda é lida em janelas
+  // de 30 dias (a API aceita até 92).
+  if (continuar) {
+    const vistos = new Set<string>();
+    const lista: NonNullable<Corpo["atendimentos"]> = [];
+    for (let de = continuar.desde - 2 * DIA_MS; de < fim + 3 * DIA_MS; de += 30 * DIA_MS) {
+      const corpo = exigir(
+        await api("GET", em(D, `/agenda?de=${de}&ate=${de + 30 * DIA_MS}`)),
+        "agenda existente",
+      );
+      for (const at of corpo.atendimentos ?? []) {
+        if (vistos.has(at.id) || at.venda === null) continue;
+        vistos.add(at.id);
+        lista.push(at);
+      }
+    }
+    for (const at of lista) {
+      if (at.status === "scheduled" && at.inicio > continuar.desde) {
+        linha.em(at.inicio, async () => {
+          exigir(await api("POST", em(D, `/agenda/${at.id}/iniciar`), {}), "iniciar atendimento");
+          contar("atendimentos iniciados");
+        });
+      }
+      if (at.status === "scheduled" || at.status === "in_progress") {
+        const termino = Math.max(continuar.desde + MIN, at.inicio + s.inteiro(40, 58) * MIN);
+        if (at.status === "scheduled" && at.inicio <= continuar.desde) continue; // não começou
+        linha.em(termino, async () => {
+          exigir(await api("POST", em(D, `/agenda/${at.id}/concluir`), {}), "concluir atendimento");
+          contar("atendimentos concluídos");
+        });
+      }
     }
   }
 
@@ -1093,9 +1247,41 @@ export async function executarCenario(o: OpcoesCenario): Promise<ResumoCenario> 
       fornecedor?: string;
     },
   ) {
+    if (continuar && (await jaLancada(sistema, corpo.tipo, corpo.vencimento, corpo.descricao))) {
+      return;
+    }
     const r = await api("POST", em(sistema, "/financeiro"), corpo);
     if (r.status >= 400) return recusar(`lançamento: ${r.body.error?.code ?? r.status}`);
     contar(`contas a ${corpo.tipo} lançadas`);
+  }
+
+  /**
+   * Continuação: a conta (descrição + vencimento) já foi lançada pela carga anterior? Conta como
+   * multiconjunto: duas contas iguais existentes cobrem duas tentativas (dois alunos com o mesmo
+   * nome curto). O horário sorteado de novo não importa: a chave é a conta, não o instante.
+   */
+  const existentes = new Map<string, Map<string, number>>();
+  async function jaLancada(sistema: string, tipo: string, vencimento: string, descricao: string) {
+    const chave = `${sistema}|${tipo}|${vencimento}`;
+    let mapa = existentes.get(chave);
+    if (!mapa) {
+      mapa = new Map();
+      const corpo = exigir(
+        await api(
+          "GET",
+          em(sistema, `/financeiro?tipo=${tipo}&de=${vencimento}&ate=${vencimento}`),
+        ),
+        "contas já lançadas",
+      );
+      for (const l of corpo.lancamentos ?? []) {
+        mapa.set(l.descricao, (mapa.get(l.descricao) ?? 0) + 1);
+      }
+      existentes.set(chave, mapa);
+    }
+    const n = mapa.get(descricao) ?? 0;
+    if (n === 0) return false;
+    mapa.set(descricao, n - 1);
+    return true;
   }
 
   /** Conta fixa do mês: lançada alguns dias antes do vencimento. */
@@ -1110,9 +1296,22 @@ export async function executarCenario(o: OpcoesCenario): Promise<ResumoCenario> 
       const vencimento = somarDias(inicio, k);
       if (vencimento > limite || diaDoMes(vencimento) !== diaVencimento) continue;
       const lancamento = somarDias(vencimento, -antecedencia);
+      // Continuação: o que seria lançado antes do período já foi lançado pela carga anterior.
+      if (continuar && lancamento < inicio) continue;
       const quando = lancamento < inicio ? inicio : lancamento;
-      linha.em(instante(quando, 8, s.inteiro(5, 55)), () => lancar(sistema, gerar(vencimento)));
+      linha.em(depoisDoCorte(instante(quando, 8, s.inteiro(5, 55))), () =>
+        lancar(sistema, gerar(vencimento)),
+      );
     }
+  }
+
+  /**
+   * Continuação: um lançamento do dia do corte cujo horário sorteado cai antes do corte iria para
+   * fora da fila sem nunca ter sido lançado; ele vai para logo depois do corte (jaLancada evita
+   * repetir o que a carga anterior já lançou).
+   */
+  function depoisDoCorte(t: number): number {
+    return continuar ? Math.max(t, continuar.desde + 1_000) : t;
   }
 
   const reais = (min: number, max: number) => centavos(s.entre(min, max));
@@ -1156,28 +1355,71 @@ export async function executarCenario(o: OpcoesCenario): Promise<ResumoCenario> 
       );
     }
   }
+  // Despesas avulsas do meio do período (só na primeira carga).
   const meio = diasDoPeriodo[Math.floor(dias / 2)] ?? inicio;
-  linha.em(instante(meio, 10, 0), () =>
-    lancar(
-      D,
-      despesa("Revisão do caminhão de entregas", "Manutenção", 125_000, somarDias(meio, 7)),
-    ),
-  );
   const terco = diasDoPeriodo[Math.floor(dias / 3)] ?? inicio;
-  linha.em(instante(terco, 11, 0), () =>
-    lancar(D, despesa("Manutenção das chopeiras", "Manutenção", 32_000, somarDias(terco, 5))),
-  );
+  if (!continuar) {
+    linha.em(instante(meio, 10, 0), () =>
+      lancar(
+        D,
+        despesa("Revisão do caminhão de entregas", "Manutenção", 125_000, somarDias(meio, 7)),
+      ),
+    );
+    linha.em(instante(terco, 11, 0), () =>
+      lancar(D, despesa("Manutenção das chopeiras", "Manutenção", 32_000, somarDias(terco, 5))),
+    );
+  }
 
   // Estúdio: alunos com mensalidade (alguns entram e saem no período), aulas avulsas e despesas.
-  const alunos = Array.from({ length: 44 }, (_, k) => {
-    const { nome, sobrenome } = pessoa();
-    return {
-      nome: `${nome} ${sobrenome.split(" ")[0] ?? ""}`,
-      plano: s.escolher(PLANOS_ESTUDIO),
-      entra: k < 36 ? inicio : somarDias(inicio, s.inteiro(20, dias - 10)),
-      sai: k >= 38 ? somarDias(inicio, s.inteiro(30, dias - 5)) : null,
-    };
-  });
+  // Na continuação, os alunos são os que têm a mensalidade mais recente lançada.
+  const alunos = continuar
+    ? await alunosExistentes()
+    : Array.from({ length: 44 }, (_, k) => {
+        const { nome, sobrenome } = pessoa();
+        return {
+          nome: `${nome} ${sobrenome.split(" ")[0] ?? ""}`,
+          plano: s.escolher(PLANOS_ESTUDIO),
+          entra: k < 36 ? inicio : somarDias(inicio, s.inteiro(20, dias - 10)),
+          sai: k >= 38 ? somarDias(inicio, s.inteiro(30, dias - 5)) : null,
+        };
+      });
+  async function alunosExistentes() {
+    // A mensalidade vence no dia 10 e é lançada no dia 1: a do mês do início já foi lançada (se
+    // a carga anterior começou depois do dia 10, vale a do mês anterior).
+    // Se o lote do mês ficou pela metade (corte durante o lançamento), vale o mês com mais
+    // mensalidades: o anterior, completo. As que já existem não são relançadas (jaLancada).
+    const mesAnterior = somarDias(`${inicio.slice(0, 8)}01`, -1).slice(0, 8);
+    let corpo: Corpo = {};
+    let maior = -1;
+    for (const mes of [inicio.slice(0, 8), mesAnterior]) {
+      const vencimento = `${mes}10`;
+      const lido = exigir(
+        await api("GET", em(E, `/financeiro?tipo=receber&de=${vencimento}&ate=${vencimento}`)),
+        "mensalidades",
+      );
+      const n = (lido.lancamentos ?? []).filter((l) =>
+        l.descricao.startsWith("Mensalidade"),
+      ).length;
+      if (n > maior) {
+        maior = n;
+        corpo = lido;
+      }
+    }
+    const lista: {
+      nome: string;
+      plano: (typeof PLANOS_ESTUDIO)[number];
+      entra: string;
+      sai: null;
+    }[] = [];
+    for (const l of corpo.lancamentos ?? []) {
+      const m = /^Mensalidade de [^-]+ - (.+) \((.+)\)$/.exec(l.descricao);
+      const plano = m ? PLANOS_ESTUDIO.find((p) => p.nome === m[2]) : undefined;
+      // Uma mensalidade por aluno no mês (dois alunos podem ter o mesmo nome curto).
+      if (!m || !plano) continue;
+      lista.push({ nome: m[1]!, plano, entra: inicio, sai: null });
+    }
+    return lista;
+  }
   {
     // Mensalidades: vencem no dia 10 e são lançadas no dia 1, uma por aluno ativo.
     const limite = somarDias(o.ate, 40);
@@ -1185,10 +1427,11 @@ export async function executarCenario(o: OpcoesCenario): Promise<ResumoCenario> 
       const vencimento = somarDias(inicio, k);
       if (vencimento > limite || diaDoMes(vencimento) !== 10) continue;
       const lancamento = somarDias(vencimento, -9);
+      if (continuar && lancamento < inicio) continue; // já lançada pela carga anterior
       const quando = lancamento < inicio ? inicio : lancamento;
       for (const [n, aluno] of alunos.entries()) {
         if (aluno.entra > vencimento || (aluno.sai !== null && aluno.sai < lancamento)) continue;
-        linha.em(instante(quando, 8, 0) + n * 30_000, () =>
+        linha.em(depoisDoCorte(instante(quando, 8, 0) + n * 30_000), () =>
           lancar(E, {
             tipo: "receber",
             descricao: `Mensalidade de ${nomeDoMes(vencimento)} - ${aluno.nome} (${aluno.plano.nome})`,
@@ -1380,6 +1623,7 @@ export async function executarCenario(o: OpcoesCenario): Promise<ResumoCenario> 
   let ultimo = relogioDaPreparacao;
   for (let ev = linha.proximo(); ev; ev = linha.proximo()) {
     if (ev.t > fim) continue; // depois do fim: fica no futuro (agenda e contas a vencer)
+    if (continuar && ev.t <= continuar.desde) continue; // a carga anterior já cobriu esse trecho
     if (ev.t < ultimo) throw new Error("evento antes do anterior: o relógio não pode voltar");
     ultimo = ev.t;
     o.relogio(ev.t);

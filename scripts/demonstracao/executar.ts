@@ -3,6 +3,10 @@
 //   npm run demonstracao:migrar && npm run demonstracao -- --alvo local --ate 2026-11-23
 //   npm run backup:d1 -- --env production
 //   npm run demonstracao -- --alvo producao --email <conta> --ate AAAA-MM-DD --conta <id da conta>
+//   npm run demonstracao -- --alvo producao --email <conta> --conta <id> --continuar
+//
+// --continuar completa uma carga já feita: do último registro dela até --ate (padrão: hoje), sem
+// criar sistemas nem cadastros (pedido do dono, 2026-11-27: números de "hoje" no dia da defesa).
 //
 // Roda o Worker do Nexus neste computador (createApp) com o relógio simulado e uma identidade fixa,
 // sobre o D1 local (.wrangler/demonstracao) ou sobre o D1 de produção pelo binding remoto do
@@ -50,6 +54,7 @@ if (!Number.isInteger(dias) || dias < 7 || dias > 180)
 const emailInformado = argumento("email");
 if (alvo === "producao" && !emailInformado) throw new Error("Em produção, informe --email.");
 const email = (emailInformado ?? "demonstracao@example.com").trim().toLowerCase();
+const continuarCarga = process.argv.includes("--continuar");
 
 const proxy = await getPlatformProxy<Env>(
   alvo === "local"
@@ -90,7 +95,28 @@ try {
       throw new Error(`Confira a conta e repita com --conta ${conta.id}`);
     }
   }
-  if (conta) {
+  // --continuar (pedido do dono, 2026-11-27): completa uma carga já feita até `--ate`, a partir do
+  // último registro dela (vendas, movimentos de estoque e contas, inclusive baixas) nos três
+  // sistemas da demonstração. Edições de cadastro não contam: adiariam o corte e pulariam dias.
+  let desde: number | null = null;
+  if (continuarCarga) {
+    if (!conta) throw new Error("--continuar: a conta não existe; faça a carga primeiro.");
+    const r = await env.DB.prepare(
+      `SELECT MAX(t) AS t FROM (
+         SELECT MAX(m.created_at) AS t FROM stock_movements m
+           JOIN systems s ON s.id = m.system_id WHERE s.owner_id = ?1 AND s.name IN (?2, ?3, ?4) AND s.deleted_at IS NULL
+         UNION ALL SELECT MAX(max(f.created_at, COALESCE(f.paid_at, 0))) FROM financial_entries f
+           JOIN systems s ON s.id = f.system_id WHERE s.owner_id = ?1 AND s.name IN (?2, ?3, ?4) AND s.deleted_at IS NULL
+         UNION ALL SELECT MAX(v.created_at) FROM sales v
+           JOIN systems s ON s.id = v.system_id WHERE s.owner_id = ?1 AND s.name IN (?2, ?3, ?4) AND s.deleted_at IS NULL)`,
+    )
+      .bind(conta.id, ...Object.values(NOMES_SISTEMAS))
+      .first<{ t: number | null }>();
+    if (!r?.t) throw new Error("--continuar: a conta não tem movimento para continuar.");
+    desde = r.t;
+    const ultimo = new Date(desde - 3 * 3_600_000).toISOString().replace("T", " ").slice(0, 16);
+    process.stdout.write(`continuando a partir de ${ultimo} (horário de Brasília)\n`);
+  } else if (conta) {
     // Sistemas excluídos ou inativos não aparecem nem operam: não se misturam com a demonstração
     // (pedido do dono, 2026-11-26, para usar a conta em que já tinha feito testes).
     const n = await env.DB.prepare(
@@ -177,10 +203,13 @@ try {
     limite: authTime,
     nomeConta: "Conta de demonstração",
     log: (m) => process.stdout.write(`${m}\n`),
+    ...(desde === null ? {} : { continuar: { desde } }),
   }).finally(() => (console.log = logOriginal));
 
   const duracao = Math.round((Date.now() - t0) / 1000);
-  console.log(`\nAlvo: ${alvo} · ${dias} dias até ${ate} · ${duracao} s`);
+  console.log(
+    `\nAlvo: ${alvo} · ${desde === null ? `${dias} dias` : "continuação"} até ${ate} · ${duracao} s`,
+  );
   console.table(resumo.sistemas);
   console.table(resumo.contagem);
   if (Object.keys(resumo.recusas).length > 0) console.table(resumo.recusas);

@@ -581,6 +581,19 @@ export async function reposicao(ctx: RequestContext, op: Operacao, c: Consulta):
   };
 }
 
+interface Lancamento {
+  kind: string;
+  description: string;
+  amount_cents: number;
+  due_date: string;
+  /** Cliente ou fornecedor vinculado (só nas listas com foco). */
+  contraparte?: string | null;
+}
+
+/** Dias corridos de uma data AAAA-MM-DD até outra. */
+const diasEntre = (de: string, ate: string) =>
+  Math.round((Date.parse(`${ate}T00:00:00Z`) - Date.parse(`${de}T00:00:00Z`)) / DIA);
+
 /** Financeiro: pendentes, vencidas, próximos vencimentos e o que entrou e saiu no período. */
 export async function financeiro(
   ctx: RequestContext,
@@ -590,9 +603,71 @@ export async function financeiro(
   if (!tem(op.config, "financeiro")) return semModulo("financeiro");
   const agora = ctx.clock.now();
   const hoje = hojeLocal(agora);
+  const db = ctx.env.DB;
+  const linha = (l: Lancamento) =>
+    `${dataBr(l.due_date)} · ${l.kind === "receber" ? "a receber" : "a pagar"} · ${l.description}` +
+    // O cliente ou fornecedor vinculado, quando a descrição não o cita.
+    (l.contraparte && !l.description.includes(l.contraparte) ? ` (${l.contraparte})` : "") +
+    ` · ${formatarCentavos(l.amount_cents)}` +
+    (l.due_date < hoje
+      ? ` (vencida há ${plural(diasEntre(l.due_date, hoje), "dia", "dias")})`
+      : "");
+
+  // Com foco (pedido do dono, 2026-11-27): só as vencidas, só a receber ou só a pagar (e, com
+  // apenas_vencidas, "quem está me devendo?" = a receber vencidas), em lista com descrição,
+  // cliente ou fornecedor, valor e vencimento. O período, se citado, recorta pelo vencimento.
+  if (c.foco) {
+    const vencidas = c.foco === "vencidas" || c.apenas_vencidas === true;
+    const tipo = c.foco === "vencidas" ? null : c.foco;
+    const de = c.periodo?.de ?? null;
+    const ate = c.periodo?.ate ?? null;
+    if ((de && !dataExiste(de)) || (ate && !dataExiste(ate)) || (de && ate && de > ate)) {
+      return periodoInvalido;
+    }
+    const filtro = `FROM financial_entries f WHERE f.system_id = ?1 AND f.status = 'pendente'
+       AND (?2 IS NULL OR f.kind = ?2) AND (?3 = 0 OR f.due_date < ?4)
+       AND (?5 IS NULL OR f.due_date >= ?5) AND (?6 IS NULL OR f.due_date <= ?6)`;
+    const args = [op.systemId, tipo, vencidas ? 1 : 0, hoje, de, ate] as const;
+    const [soma, lista] = await db.batch([
+      db
+        .prepare(`SELECT COUNT(*) AS n, COALESCE(SUM(f.amount_cents), 0) AS total ${filtro}`)
+        .bind(...args),
+      db
+        .prepare(
+          `SELECT f.kind, f.description, f.amount_cents, f.due_date,
+             COALESCE((SELECT ${nomeClienteSql("c")} FROM customers c
+                        WHERE c.id = f.customer_id AND c.system_id = f.system_id),
+                      (SELECT s.name FROM suppliers s
+                        WHERE s.id = f.supplier_id AND s.system_id = f.system_id)) AS contraparte
+           ${filtro} ORDER BY f.due_date, f.rowid LIMIT ${LISTA}`,
+        )
+        .bind(...args),
+    ]);
+    const t = (soma?.results[0] ?? {}) as { n?: number; total?: number };
+    const n = Number(t.n ?? 0);
+    const itens = (lista?.results ?? []) as Lancamento[];
+    const direcao = tipo === "receber" ? "a receber" : tipo === "pagar" ? "a pagar" : "";
+    const nome = [direcao, vencidas ? "vencidas" : ""].filter(Boolean).join(" ");
+    const noPeriodo = de && ate ? `, com vencimento de ${dataBr(de)} a ${dataBr(ate)}` : "";
+    return {
+      texto: n
+        ? `${plural(n, "conta", "contas")} ${nome}${noPeriodo}, total de ${formatarCentavos(Number(t.total ?? 0))}:\n` +
+          itens.map(linha).join("\n") +
+          (n > LISTA ? `\n(Mostrando ${LISTA} de ${n}, das mais antigas para as mais novas.)` : "")
+        : vencidas
+          ? `Não há contas ${nome}${de && ate ? " nesse período" : ""}.`
+          : `Não há contas pendentes ${nome}${de && ate ? " nesse período" : ""}.`,
+      filtros: [
+        vencidas
+          ? `${direcao ? `${direcao[0]!.toUpperCase()}${direcao.slice(1)} vencidas` : "Vencidas"}: antes de ${dataBr(hoje)}${noPeriodo}`
+          : `Pendentes ${nome}${noPeriodo}`,
+      ],
+      origem: "lançamentos pendentes do financeiro, pelo vencimento",
+    };
+  }
+
   const per = periodoOuMes(c, agora);
   if (!per) return periodoInvalido;
-  const db = ctx.env.DB;
   const [r, proximos] = await db.batch([
     db
       .prepare(
@@ -606,36 +681,101 @@ export async function financeiro(
          FROM financial_entries WHERE system_id = ?1`,
       )
       .bind(op.systemId, hoje, per.de, per.ate),
+    // Próximos vencimentos de hoje em diante: as vencidas já estão no total e têm o próprio
+    // recorte ("quem está devendo?").
     db
       .prepare(
         `SELECT kind, description, amount_cents, due_date FROM financial_entries
-         WHERE system_id = ? AND status = 'pendente' ORDER BY due_date LIMIT 5`,
+         WHERE system_id = ? AND status = 'pendente' AND due_date >= ?
+         ORDER BY due_date, rowid LIMIT 5`,
       )
-      .bind(op.systemId),
+      .bind(op.systemId, hoje),
   ]);
   const t = (r?.results[0] ?? {}) as Record<string, number | null>;
   const n = (k: string) => Number(t[k] ?? 0);
-  const lista = (proximos?.results ?? []) as {
-    kind: string;
-    description: string;
-    amount_cents: number;
-    due_date: string;
-  }[];
+  const lista = (proximos?.results ?? []) as Lancamento[];
   return {
     texto:
       `A receber (pendente): ${formatarCentavos(n("rt"))}. A pagar (pendente): ${formatarCentavos(n("pt"))}.\n` +
-      `Vencidas: ${n("vn")} (${formatarCentavos(n("vt"))}).\n` +
+      `Vencidas: ${n("vn")} (${formatarCentavos(n("vt"))})${n("vn") ? "; pergunte “quem está devendo?” para ver a lista" : ""}.\n` +
       `No período: recebido ${formatarCentavos(n("recebido"))}, pago ${formatarCentavos(n("pago"))}.` +
-      (lista.length
-        ? `\nPróximos vencimentos:\n${lista
-            .map(
-              (l) =>
-                `${dataBr(l.due_date)} · ${l.kind === "receber" ? "a receber" : "a pagar"} · ${l.description} · ${formatarCentavos(l.amount_cents)}${l.due_date < hoje ? " (vencida)" : ""}`,
-            )
-            .join("\n")}`
-        : ""),
+      (lista.length ? `\nPróximos vencimentos:\n${lista.map(linha).join("\n")}` : ""),
     filtros: [per.texto, `Vencidas: antes de ${dataBr(hoje)}`],
     origem: "lançamentos do financeiro (pendentes, pagos no período pela data da baixa)",
+  };
+}
+
+/** Validade (ADR-015): vencidos e os que vencem dentro do aviso da regra, só com estoque. */
+export async function validade(ctx: RequestContext, op: Operacao): Promise<Resposta> {
+  if (!tem(op.config, "estoque")) return semModulo("estoque");
+  const regra = regraDo(op.config, "validade_produto");
+  if (!regra) {
+    return {
+      texto:
+        "Este sistema não controla a validade dos produtos (a regra de validade não está ligada).",
+      filtros: [],
+      origem: "configuração ativa",
+    };
+  }
+  const hoje = hojeLocal(ctx.clock.now());
+  const [a, m, d] = hoje.split("-").map(Number) as [number, number, number];
+  const limite = new Date(Date.UTC(a, m - 1, d + regra.dias_aviso)).toISOString().slice(0, 10);
+  // Vencidos e vencendo em listas separadas, cada uma com o próprio limite: muitos vencidos não
+  // escondem o que vence amanhã.
+  const db = ctx.env.DB;
+  const POR_LISTA = 10;
+  const consulta = (condicao: string, ...datas: string[]) =>
+    db
+      .prepare(
+        `SELECT name, physical, expires_on, COUNT(*) OVER () AS total FROM products
+         WHERE system_id = ?1 AND status = 'active' AND physical > 0 AND expires_on IS NOT NULL
+           AND ${condicao} ORDER BY expires_on, name COLLATE NOCASE LIMIT ${POR_LISTA}`,
+      )
+      .bind(op.systemId, ...datas);
+  const [vencidos, vencendo] = await db.batch<{
+    name: string;
+    physical: number;
+    expires_on: string;
+    total: number;
+  }>([
+    consulta("expires_on < ?2", hoje),
+    consulta("expires_on >= ?2 AND expires_on <= ?3", hoje, limite),
+  ]);
+  const listas = [vencidos?.results ?? [], vencendo?.results ?? []];
+  const results = listas.flat();
+  const filtros = [
+    `Vencidos ou vencendo até ${dataBr(limite)} (aviso de ${regra.dias_aviso} dias)`,
+  ];
+  const origem = "validade cadastrada nos produtos com estoque";
+  if (!results.length) {
+    return {
+      texto: `Nenhum produto com estoque vence nos próximos ${regra.dias_aviso} dias, e não há vencidos.`,
+      filtros,
+      origem,
+    };
+  }
+  const quando = (dias: number) =>
+    dias < 0
+      ? `venceu há ${plural(-dias, "dia", "dias")}`
+      : dias === 0
+        ? "vence hoje"
+        : `vence em ${plural(dias, "dia", "dias")}`;
+  const cortes = listas.flatMap((lista, k) => {
+    const total = lista[0]?.total ?? 0;
+    return total > lista.length
+      ? [`${lista.length} de ${total} ${k === 0 ? "vencidos" : "vencendo"}`]
+      : [];
+  });
+  return {
+    texto:
+      results
+        .map(
+          (p) =>
+            `${p.name}: ${quando(diasEntre(hoje, p.expires_on))} (${dataBr(p.expires_on)}), ${plural(p.physical, "unidade", "unidades")} em estoque`,
+        )
+        .join("\n") + (cortes.length ? `\n(Mostrando ${cortes.join(" e ")}.)` : ""),
+    filtros,
+    origem,
   };
 }
 
