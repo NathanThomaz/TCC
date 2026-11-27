@@ -16,7 +16,8 @@
 import { getPlatformProxy } from "wrangler";
 import { createApp } from "../../src/worker/app";
 import type { Env } from "../../src/worker/env";
-import { executarCenario, type Corpo, type Metodo, type Resposta } from "./cenario";
+import { chaveNomeSistema } from "../../src/shared/dominio/nomes";
+import { executarCenario, NOMES_SISTEMAS, type Corpo, type Metodo, type Resposta } from "./cenario";
 
 function argumento(nome: string): string | undefined {
   const k = process.argv.indexOf(`--${nome}`);
@@ -90,10 +91,32 @@ try {
     }
   }
   if (conta) {
-    const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM systems WHERE owner_id = ?")
+    // Sistemas excluídos ou inativos não aparecem nem operam: não se misturam com a demonstração
+    // (pedido do dono, 2026-11-26, para usar a conta em que já tinha feito testes).
+    const n = await env.DB.prepare(
+      `SELECT COUNT(*) AS n FROM systems
+       WHERE owner_id = ? AND deleted_at IS NULL AND status <> 'archived'`,
+    )
       .bind(conta.id)
       .first<{ n: number }>();
-    if ((n?.n ?? 0) > 0) throw new Error("A conta de demonstração já tem sistemas; use outra.");
+    if ((n?.n ?? 0) > 0) {
+      throw new Error(
+        "A conta de demonstração já tem sistemas em uso; exclua ou inative antes, ou use outra.",
+      );
+    }
+    // Um inativo com o nome de um sistema da demonstração pararia a carga no meio (409 nome_em_uso).
+    const { results: inativos } = await env.DB.prepare(
+      "SELECT name FROM systems WHERE owner_id = ? AND deleted_at IS NULL",
+    )
+      .bind(conta.id)
+      .all<{ name: string }>();
+    const nomes = Object.values(NOMES_SISTEMAS).map(chaveNomeSistema);
+    const repetido = inativos.find((s) => nomes.includes(chaveNomeSistema(s.name)));
+    if (repetido) {
+      throw new Error(
+        `A conta tem um sistema inativo chamado "${repetido.name}"; exclua ou renomeie.`,
+      );
+    }
   }
   const uid = conta?.firebase_uid ?? `demonstracao-local-${email}`;
 
